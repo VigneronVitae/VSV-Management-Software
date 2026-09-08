@@ -1,7 +1,7 @@
 ---
 Type: record
 Purpose: "Records the single source of build truth for the winery app, so every other document cites status here rather than re-asserting it."
-Depends on: [packages/cellar/docs/spec.md, docs/sorry-ledger.md, docs/compost-ledger.md, docs/methodology-lineage.md, supabase/migrations/0001_core_schema.sql, supabase/migrations/0002_derived_and_rls.sql, supabase/migrations/0003_parties_and_products.sql]
+Depends on: [packages/cellar/docs/spec.md, docs/sorry-ledger.md, docs/compost-ledger.md, docs/methodology-lineage.md, supabase/migrations/0001_core_schema.sql, supabase/migrations/0002_derived_and_rls.sql, supabase/migrations/0003_parties_and_products.sql, supabase/migrations/0004_terms_and_effects.sql]
 Depended on by: [CLAUDE.md, README.md]
 ---
 

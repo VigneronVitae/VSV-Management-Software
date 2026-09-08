@@ -14,9 +14,12 @@ max_rows = 1000
 [db]
 port = 54322
 shadow_port = 54320
-# Match the hosted instance. A migration that applies on one major version and
-# not the other is a discovery best made here rather than on deploy.
-major_version = 15
+# Set to what the migrations are actually verified against, which is Postgres 16.
+# Session 1 pinned 15 and verified on 16, so the pin was a claim rather than a
+# fact. Change this to match the hosted project the moment one exists: a
+# migration that applies on one major version and not the other is a discovery
+# best made here rather than on deploy.
+major_version = 16
 
 [db.pooler]
 enabled = false
