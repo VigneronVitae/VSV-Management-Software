@@ -1,7 +1,7 @@
 ---
 Type: reference
 Purpose: "Orients a new reader: what this repository is, where its build truth lives, how to run it locally, and what to read next."
-Depends on: [CLAUDE.md, packages/cellar/docs/spec.md, docs/status-ledger.md, docs/sorry-ledger.md, docs/compost-ledger.md]
+Depends on: [CLAUDE.md, packages/cellar/docs/spec.md, docs/status-ledger.md, docs/sorry-ledger.md, docs/compost-ledger.md, docs/session-reports/index.md]
 Depended on by: []
 ---
 
@@ -50,6 +50,7 @@ implemented; see sorry S-4.
 | `docs/sorry-ledger.md` | What is open, and which gaps are load-bearing |
 | `docs/compost-ledger.md` | What was killed, and what would bring it back |
 | `docs/methodology-lineage.md` | Why the repository carries the apparatus it does |
+| `docs/session-reports/` | What each working session decided, and what it left open |
 
 ## Licence
 

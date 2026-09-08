@@ -2,13 +2,13 @@
 Type: reference
 Purpose: "Records what each methodological element in this repository is for, what failure it prevents, what it costs, and when dropping it would be correct."
 Depends on: [packages/cellar/docs/spec.md]
-Depended on by: [CLAUDE.md, docs/status-ledger.md, docs/sorry-ledger.md, docs/compost-ledger.md]
+Depended on by: [CLAUDE.md, docs/status-ledger.md, docs/sorry-ledger.md, docs/compost-ledger.md, docs/session-reports/index.md]
 ---
 
 # Methodology Lineage
 
 This repository carries more apparatus than a winery app needs on its face. Four
-ledgers, typed headers, tiered axioms, an agent contract. This document says what each
+ledgers, session reports, typed headers, tiered axioms, an agent contract. This document says what each
 piece is for, so that anyone working here (including its author in six months) can tell
 which parts are load-bearing and which are habit.
 
@@ -283,6 +283,32 @@ abandoning. The second half of that is what survives here.
 **Drop when.** A second facility actually exists, at which point the deferred `org_id`
 stops being deferred and this entry gets rewritten again rather than quietly ignored.
 This entry is now on its second rewrite, which is the mechanism working.
+
+## 15. Session reports
+
+**What.** One record per working session, in `docs/session-reports/`. What was
+decided, what the handover documents did not settle, what was verified and by what
+means, and what was left open.
+
+**Prevents.** The loss of reasoning that happened in conversation and landed in no
+file. The other apparatus here catches specific shapes: the sorry ledger catches
+gaps, the compost ledger catches kills, commit messages catch changes. None of them
+catches the decision nobody flagged as a decision, which is the one where an agent
+picked a default, was not wrong, and left no trace of having chosen. Six months
+later that default reads as though the schema always required it.
+
+**Costs.** One file per session, written at the end while it is fresh, and honest
+about what was not verified. The second half is the expensive half and it is the
+half that makes the record worth reading.
+
+**Not adopted from anywhere.** This one is local rather than scouted from the
+contest field. Treat it with more suspicion than the entries above: independent
+convergence is the reason to trust those, and this has none behind it.
+
+**Drop when.** Commit messages carry the whole record. That is a real condition,
+not a rhetorical one: if a session produces three commits whose messages already
+say why, the report is a fourth copy. It earns its place on sessions that make many
+decisions at once, which is what a scaffold session is.
 
 ---
 
