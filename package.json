@@ -12,7 +12,8 @@
     "lint": "biome check .",
     "format": "biome format --write .",
     "db:reset": "supabase db reset",
-    "doctor": "echo 'doctor: not implemented. See sorry S-4 in docs/sorry-ledger.md. event.subject_id is not a foreign key, so nothing currently checks for orphaned subjects.' && exit 1"
+    "doctor": "echo 'doctor: not implemented. See sorry S-4 in docs/sorry-ledger.md. event.subject_id is not a foreign key, so nothing currently checks for orphaned subjects.' && exit 1",
+    "db:test": "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f tests/schema_assertions.sql"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.14",
