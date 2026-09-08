@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+.pnp/
+.pnp.js
+
+# Build output
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+
+# Environment. Every variant, because the one that leaks is the one that was
+# named something clever.
+.env
+.env.*
+!.env.example
+
+# Supabase local state
+supabase/.branches/
+supabase/.temp/
+supabase/.env
+
+# Real winery data never lands in git. It lives in Supabase, and the only copy
+# that belongs in a repository is the nightly export in compost entry C-2,
+# which is a different repository than this one.
+supabase/seed/*.local.sql
+*.dump
+*.sql.gz
+*.backup
+dumps/
+uploads/
+photos/
+
+# Editors and operating systems
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Logs and caches
+*.log
+npm-debug.log*
+.cache/
+coverage/
