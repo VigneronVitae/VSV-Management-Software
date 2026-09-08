@@ -51,13 +51,18 @@ Marketing says export; whether that is automatable or a manual download is unver
 manual, which the spec already assumes, so this is a possible improvement rather than
 a risk.
 
-**S-7. RLS untested against a real cellar user.**
-The policies in `0002` are written and have never been exercised by a second account.
-`0003` adds a narrower one on top: a cellar user linked to a client party sees only
-that party's nodes. Same status, written and never exercised.
-*Resolves when:* an intern account exists and the admin-only writes actually refuse,
-and a client account exists and sees exactly its own lots. *Until then:* client
-scoping is a policy, not a boundary that is known to hold.
+**S-7. RLS is exercised in Postgres and not through Supabase auth.**
+`tests/schema_assertions.sql` now runs the policies with three accounts under the
+`authenticated` role: a cellar user is refused locations, vessels and terms and
+allowed events, a cellar user linked to no party sees the whole cellar, and a
+client login sees its own lots and none of the others. That is the part Postgres
+decides, and it holds.
+What is still untested is the part Supabase decides: GoTrue issuing a JWT,
+PostgREST mapping it to the `authenticated` role and setting the `sub` claim that
+`auth.uid()` reads. The assertions set that claim directly, so they prove the
+policies and assume the plumbing. *Resolves when:* the walk is run against a real
+Supabase instance with two real accounts and the refusals happen there too.
+*Until then:* treat the policies as correct and the wiring as unverified.
 
 **S-8. Volume losses are not modeled.**
 TTB requires volume to be accounted for, and racking, evaporation, and lees are
@@ -134,6 +139,17 @@ fifth effect is exactly the question S-12 defers. This entry exists so the filin
 reads as a placeholder rather than a judgment. *Resolves when:* S-12 is answered
 and the case goods seam is specified. *Watch for:* the first thing that branches
 on effect and gets bottling wrong, which is the point this stops being harmless.
+
+**S-17. No variety template is seeded, so inferred history generates nothing.**
+`generate_inferred_history` returns zero for every variety, because `template` and
+`template_step` are empty: the six protocols are transcribed and not encoded. A
+lot created by the walk therefore has no history, which is the correct answer for
+a variety with no protocol and is, from inside the app, indistinguishable from a
+template that exists and failed to match. *Resolves when:* the six protocols are
+encoded, at which point the backfill path in build order 1 starts returning
+history and this function starts doing its job. *Not load-bearing:* zero is
+truthful. The risk is that it gets read as a bug in the generator and someone
+goes looking in the wrong place.
 
 ## Discharged
 

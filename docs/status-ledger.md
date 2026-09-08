@@ -1,7 +1,7 @@
 ---
 Type: record
 Purpose: "Records the single source of build truth for the winery app, so every other document cites status here rather than re-asserting it."
-Depends on: [packages/cellar/docs/spec.md, docs/sorry-ledger.md, docs/compost-ledger.md, docs/methodology-lineage.md, supabase/migrations/0001_core_schema.sql, supabase/migrations/0002_derived_and_rls.sql, supabase/migrations/0003_parties_and_products.sql, supabase/migrations/0004_terms_and_effects.sql]
+Depends on: [packages/cellar/docs/spec.md, docs/sorry-ledger.md, docs/compost-ledger.md, docs/methodology-lineage.md, supabase/migrations/0001_core_schema.sql, supabase/migrations/0002_derived_and_rls.sql, supabase/migrations/0003_parties_and_products.sql, supabase/migrations/0004_terms_and_effects.sql, supabase/migrations/0005_account_and_walk.sql, tests/schema_assertions.sql]
 Depended on by: [CLAUDE.md, README.md]
 ---
 
@@ -36,7 +36,9 @@ cannot be reconstructed.
 |---|---|---|
 | Core schema migration | Specified | `0001_core_schema.sql` written, never run |
 | Derived views and functions | Specified | `0002_derived_and_rls.sql` written, never run |
-| Row-level security | Specified | Written; untested against a real second user |
+| Row-level security | In progress | Policies exercised with three accounts in `tests/schema_assertions.sql`. The Supabase auth wiring above them is still unverified. See S-7 |
+| Schema assertions | Built and verified | `tests/schema_assertions.sql`, 29 assertions, all passing. The `psql` half of the definition of done in CLAUDE.md now exists |
+| Account claim and walk kernel | Specified | `0005_account_and_walk.sql` written. Applies clean from empty after 0001 to 0004, against a scratch Postgres 16 |
 | Terms and operation effects | Specified | `0004_terms_and_effects.sql` written. Applies clean from empty after 0001 to 0003, against a scratch Postgres 16 |
 | Term configuration screens | Deferred | Deliberate. Seed data is the editor and add-inline covers the case that blocks a fresh install. See compost ledger C-6 |
 | Parties, ownership, and vessel codes | Specified | `0003_parties_and_products.sql` written. Applies clean from empty against a scratch Postgres 16; never run against this project's own instance |
