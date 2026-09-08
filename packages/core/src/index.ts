@@ -1,4 +1,6 @@
-// Shared across modules: generated database types, the Supabase client, and
-// auth. Anything a second module would also need belongs here; anything only
+// Shared across modules: kernel access, auth, and the row shapes the screens
+// touch. Anything a second module would also need belongs here; anything only
 // one module needs does not.
-export {};
+export * from "./env.ts";
+export * from "./kernel.ts";
+export * from "./types.ts";

@@ -5,6 +5,7 @@
   "type": "module",
   "main": "src/index.ts",
   "dependencies": {
-    "core": "workspace:*"
+    "core": "workspace:*",
+    "@zxing/library": "^0.21.3"
   }
 }

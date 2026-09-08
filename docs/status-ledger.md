@@ -50,8 +50,12 @@ cannot be reconstructed.
 
 | Component | Grade | Notes |
 |---|---|---|
-| Backfill path | Specified | Vessel + lot + placement in one action |
-| Inferred history generation | Specified | Template run in reverse, stamped `inferred` |
+| Backfill path, kernel | Built and verified | `create_vessel_with_wine`: vessel, lot, placement and codes in one transaction. Asserted |
+| Backfill path, screens | In progress | Written, typechecked, built, and never run against a Supabase instance. The stranger's first run is the check and it has not happened |
+| Sign up and account claim | In progress | `claim_account` asserted; the screens above it are unrun |
+| First run, facility party | In progress | Screen written. It explains the wall rather than only showing a form |
+| Code binding by camera | In progress | zxing for 1D and QR, with manual entry beside it rather than behind it. Never run against a camera |
+| Inferred history generation | Built and verified | `generate_inferred_history` asserted. Generates nothing until a template exists, see S-17 |
 | Intake screen | Specified | The one that must be solid before harvest |
 | Press and destem | Specified | |
 | Event entry | Specified | Manual transcription from Wine Meister |
