@@ -5,7 +5,10 @@
 -- Depends on: [packages/cellar/docs/spec.md]
 -- Depended on by: [supabase/migrations/0002_derived_and_rls.sql,
 --                 supabase/migrations/0003_parties_and_products.sql,
---                 docs/status-ledger.md]
+--                 docs/status-ledger.md,
+--                 supabase/migrations/0004_terms_and_effects.sql,
+--                 supabase/migrations/0005_account_and_walk.sql,
+--                 tests/schema_assertions.sql]
 -- Axioms enforced: T0-1 (one node type), T0-3 (provenance on every event),
 --                  T0-5 (append-only history)
 -- Open sorries: S-3 (partial parent consumption), S-4 (subject_id not a FK),

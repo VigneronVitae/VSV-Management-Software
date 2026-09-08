@@ -5,7 +5,10 @@
 -- Depends on: [supabase/migrations/0001_core_schema.sql,
 --              packages/cellar/docs/spec.md]
 -- Depended on by: [supabase/migrations/0003_parties_and_products.sql,
---                 docs/status-ledger.md]
+--                 docs/status-ledger.md,
+--                 supabase/migrations/0004_terms_and_effects.sql,
+--                 supabase/migrations/0005_account_and_walk.sql,
+--                 tests/schema_assertions.sql]
 -- Axioms enforced: T0-2 (derived over stored), T0-4 (a producer cannot grant
 --                  itself standing), T1-1 (pickers, not text fields)
 -- Open sorries: S-7 (RLS untested against a real cellar user)

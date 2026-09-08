@@ -1,7 +1,7 @@
 ---
 Type: record
 Purpose: "Indexes the session reports, and states the convention they follow, so a report added later is findable rather than orphaned."
-Depends on: [docs/session-reports/2026-09-08-scaffold.md, docs/methodology-lineage.md]
+Depends on: [docs/session-reports/2026-09-08-scaffold.md, docs/session-reports/2026-09-08-walk.md, docs/methodology-lineage.md]
 Depended on by: [README.md]
 ---
 
@@ -30,3 +30,4 @@ correction in a later report, not an edit.
 | Date | Session | What it covers |
 |---|---|---|
 | 2026-09-08 | [Repository scaffold](2026-09-08-scaffold.md) | Layout, migration 0003, ledger updates, spec correction and additions, tooling |
+| 2026-09-08 | [Terms, effects, and the walk](2026-09-08-walk.md) | Migrations 0004 and 0005, schema assertions, the inventory walk screens |

@@ -7,7 +7,9 @@
 --              supabase/migrations/0002_derived_and_rls.sql,
 --              supabase/migrations/0003_parties_and_products.sql,
 --              packages/cellar/docs/spec.md]
--- Depended on by: [docs/status-ledger.md]
+-- Depended on by: [docs/status-ledger.md,
+--                 supabase/migrations/0005_account_and_walk.sql,
+--                 tests/schema_assertions.sql]
 -- Axioms enforced: T1-1 (pickers, not text fields), T0-2 (derived over stored)
 -- Open sorries: S-7 (RLS untested), S-15 (an unknown operation records and
 --               drives nothing beyond its effect), S-16 (bottle is not really

@@ -2,7 +2,7 @@
 Type: specification
 Purpose: "Specifies the winery production app's object model, interaction modes, and build order, as the single source of design truth every other document cites."
 Depends on: []
-Depended on by: [CLAUDE.md, README.md, docs/methodology-lineage.md, docs/status-ledger.md, docs/sorry-ledger.md, docs/compost-ledger.md, supabase/migrations/0001_core_schema.sql, supabase/migrations/0002_derived_and_rls.sql, supabase/migrations/0003_parties_and_products.sql]
+Depended on by: [CLAUDE.md, README.md, docs/methodology-lineage.md, docs/status-ledger.md, docs/sorry-ledger.md, docs/compost-ledger.md, supabase/migrations/0001_core_schema.sql, supabase/migrations/0002_derived_and_rls.sql, supabase/migrations/0003_parties_and_products.sql, supabase/migrations/0004_terms_and_effects.sql, supabase/migrations/0005_account_and_walk.sql]
 ---
 
 # Winery Production App, Spec v0.2

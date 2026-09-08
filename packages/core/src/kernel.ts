@@ -35,12 +35,6 @@ export function newId(): Uuid {
   return crypto.randomUUID();
 }
 
-function unwrap<T>(result: { data: T | null; error: { message: string } | null }): T {
-  if (result.error) throw new Error(result.error.message);
-  if (result.data === null) throw new Error("no data returned");
-  return result.data;
-}
-
 // --- identity -------------------------------------------------------------
 
 export async function signUp(email: string, password: string): Promise<void> {
@@ -67,8 +61,17 @@ export async function currentSession(): Promise<{
 }
 
 // Whether this account is admin is the database's answer, not this client's.
+//
+// claim_account returns a composite, and PostgREST renders a composite-returning
+// function as a bare object while a set-returning one comes back as an array.
+// This is the first call a stranger's first run makes, so it accepts either
+// rather than betting on which.
 export async function claimAccount(name: string): Promise<AppUser> {
-  return unwrap(await kernel().rpc("claim_account", { p_name: name }).single());
+  const { data, error } = await kernel().rpc("claim_account", { p_name: name });
+  if (error) throw new Error(error.message);
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) throw new Error("claim_account returned nothing");
+  return row as AppUser;
 }
 
 export async function currentAppUser(): Promise<AppUser | null> {

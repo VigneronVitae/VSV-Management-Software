@@ -403,7 +403,7 @@ begin
   if visible <> own or visible = 0 then
     raise exception 'FAIL: the client sees % rows, owns % of them', visible, own;
   end if;
-  perform test_ok(format('a client login sees its own %s lots and none of the other %s',
+  perform test_ok(format('a client login sees the %s lot it owns and none of the other %s',
                          visible, total - visible));
 end $$;
 

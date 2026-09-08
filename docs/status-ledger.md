@@ -37,7 +37,7 @@ cannot be reconstructed.
 | Core schema migration | Specified | `0001_core_schema.sql` written, never run |
 | Derived views and functions | Specified | `0002_derived_and_rls.sql` written, never run |
 | Row-level security | In progress | Policies exercised with three accounts in `tests/schema_assertions.sql`. The Supabase auth wiring above them is still unverified. See S-7 |
-| Schema assertions | Built and verified | `tests/schema_assertions.sql`, 29 assertions, all passing. The `psql` half of the definition of done in CLAUDE.md now exists |
+| Schema assertions | Built and verified | `tests/schema_assertions.sql`, 28 assertions, all passing. The `psql` half of the definition of done in CLAUDE.md now exists |
 | Account claim and walk kernel | Specified | `0005_account_and_walk.sql` written. Applies clean from empty after 0001 to 0004, against a scratch Postgres 16 |
 | Terms and operation effects | Specified | `0004_terms_and_effects.sql` written. Applies clean from empty after 0001 to 0003, against a scratch Postgres 16 |
 | Term configuration screens | Deferred | Deliberate. Seed data is the editor and add-inline covers the case that blocks a fresh install. See compost ledger C-6 |
