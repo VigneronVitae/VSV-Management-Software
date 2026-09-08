@@ -258,3 +258,71 @@ vice versa.
 Ship 1 and 2 solid before harvest. Everything after is built during pressing downtime,
 because harvest does not pause and a bug during intake means a bin that never got
 recorded.
+
+---
+
+## 8. Scouted from commercial platforms
+
+Read from InnoVint, vintrace, Orion, Process2Wine, and Winemaker's Database.
+Production side only: fruit arrival through bottling. Sales, club, and distribution
+belong to other modules and must not appear in this one.
+
+Everything in this section is specified and none of it is built. None of it is in
+the build order in section 7 either, which is deliberate: section 7 is ordered by
+irrecoverability of failure and nothing here is irrecoverable. These get built in
+pressing downtime or after the vintage.
+
+### 8.1 Dry goods, with live depletion
+
+Yeast, nutrients, SO2, enzymes, fining agents, oak adjuncts, and packaging held as
+stock, with an `addition` event drawing down the material it used.
+
+Two payoffs, and the second is the one that pays for the first. Not running out of
+DAP mid-ferment is the obvious one. The other is that "how much SO2 did we use this
+vintage" becomes a query rather than a reconstruction from notes, which is the
+difference between knowing the number and estimating it in March.
+
+Shape: a `material` table carrying name, kind, unit, current quantity, supplier, and
+an optional lot number, plus a `material_use` join from the addition event carrying
+quantity. Every commercial platform has this and the spec as it stands records only
+that an addition happened.
+
+This is not a purchase order system. Stock goes up because someone says it went up.
+
+### 8.2 Work orders
+
+A work order groups the day's tasks into one assigned, printable unit. Vintrace calls
+them work programs; Orion and Process2Wine both centre on them.
+
+This is how a cellar crew actually runs a morning. With interns it is the difference
+between a board they browse and a sheet they work through, and the sheet wins because
+it says when it is finished.
+
+Tasks already exist, so this is a grouping table and a print view, not a new object
+model. Individual tasks must keep working standalone: a work order nobody filled in
+costs the grouping and nothing else. If the two ever disagree, the task is the record
+and the work order is the paperwork.
+
+### 8.3 Reverse block view
+
+The spec has `block_composition(node)`, which answers "what is this barrel made of."
+The inverse, offered by Winemaker's Database, answers "given this block, which vessels
+currently hold its fruit."
+
+Same traversal in the other direction and cheap to add. It is also the question that
+actually gets asked, because nobody wonders about a block until something is wrong
+with it, and then they need every vessel it touched by the end of the afternoon.
+
+Derived, per T0-2. It is a function over lineage and placements, never a column.
+
+### 8.4 Clone and rootstock on `block`
+
+Pinot Noir here is already tracked by clone (115, 777, Pommard), and the estate's
+distinguishing feature is that the vines are self-rooted. Both are structured fields
+on `block`, not lines in `notes`.
+
+The test is whether anyone will ever filter or group by it. Clone passes: a reserve
+selection is a clone selection as often as it is a barrel selection. Self-rooted
+passes because it is the thing the estate is described by, and a fact that appears in
+the tasting room deserves better than a free-text field three people spell
+differently.

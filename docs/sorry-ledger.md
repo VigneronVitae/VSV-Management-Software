@@ -95,6 +95,22 @@ fields are confirmed and the `bottle` event carries them. *Load-bearing:* bottli
 this vintage against an incomplete event means the case goods module has nothing
 to hang on, and the bottling already happened by the time anyone notices.
 
+**S-13. Blending trials are not modeled.**
+The Chardonnay protocol includes them. A trial is a proposed blend: components and
+percentages, not executed, evaluated against tasting notes, and promoted to a real
+blend when one is chosen. Orion treats a trial blend as a first-class object.
+*Resolves when:* a trial is either modeled as a node that never acquires lineage, or
+declared out of scope with a reason. *Load-bearing:* without it the reasoning behind
+a blend lives in a notebook. Lineage records the blend that was made and loses every
+alternative that was considered and rejected, which is the half that explains it.
+
+**S-14. Activity costing has no input.**
+Commercial platforms attach labour and equipment time to operations, which is what
+makes cost per case computable at the end. Nothing in the schema records either.
+*Resolves when:* volumes reconcile and case goods exist, which is to say S-8 through
+S-12 first. Costing built on unreconciled volumes would produce a cost per case that
+looks authoritative and is not.
+
 ## Discharged
 
 *None. Nothing has been built.*

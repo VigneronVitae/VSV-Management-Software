@@ -79,8 +79,25 @@ the bottling seam (S-12) are named in the sorry ledger and are blocked on the
 winery's compliance advisor. They are listed as a stage so that their absence is
 visible here rather than only in the sorry ledger.
 
-The one with a date on it is S-12. Bottling happens whether or not the event
-that records it is complete.
+The one with a date on it is S-12. Bottling happens whether or not the event that
+records it is complete.
+
+Activity costing (S-14) sits on top of all five and is not reachable until they are
+answered. A cost per case computed from unreconciled volumes looks authoritative and
+is not, which is the failure mode this whole stage is arranged to avoid.
+
+## Specified, not scheduled
+
+Section 8 of the spec, scouted from commercial platforms. Designed and named, and
+absent from the section 7 build order on purpose: that order is by irrecoverability
+of failure and none of these are irrecoverable.
+
+| Component | Grade | Notes |
+|---|---|---|
+| Dry goods with live depletion | Specified | `material` and `material_use`. Not a purchase order system |
+| Work orders | Specified | Grouping table plus a print view. Tasks stay standalone |
+| Reverse block view | Specified | Derived, per T0-2. Same traversal as `block_composition` |
+| Clone and rootstock on `block` | Specified | Structured fields, not `notes` |
 
 ## Deferred on purpose
 
