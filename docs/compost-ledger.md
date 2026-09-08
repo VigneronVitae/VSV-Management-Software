@@ -49,6 +49,20 @@ nobody asks.
 *Surviving fragment:* `created_from` on the task, recording that a step was seeded
 rather than added by hand.
 
+**C-6. Configuration screens for the term vocabulary.**
+*Tried:* admin screens for creating, editing, reordering and deactivating terms:
+varieties, coopers, woods, vessel types, operations.
+*Killed by:* seed data plus an add-inline path on every picker already covers the
+only case that actually blocks anyone, which is a picker with no rows in it on a
+fresh install. A separate configuration surface would be a second way to do the
+same thing, and it would be built before anyone had discovered which fields they
+actually want to edit.
+*Surviving fragment:* add-inline on every picker, which writes a term and selects
+it without leaving the form. Adopted.
+*Reactivate if:* someone needs to deactivate, reorder or relabel terms in bulk, or
+a fork's vocabulary diverges far enough that seeding this winery's list is the
+wrong starting point.
+
 **C-5. Pick as the atomic intake unit.**
 *Tried:* modelling each pick as a lot, with three Pinot Gris picks as one lot carrying
 a pick attribute.

@@ -111,6 +111,30 @@ makes cost per case computable at the end. Nothing in the schema records either.
 S-12 first. Costing built on unreconciled volumes would produce a cost per case that
 looks authoritative and is not.
 
+**S-15. An operation whose effect the kernel understands, and whose meaning it does
+not, still records.**
+This is the intended behaviour and it is the spec's untyped floor applied to
+vocabulary. A brewery defines `whirlpool` with effect `treatment`; the kernel
+records the event, does the one thing the effect names, and knows nothing else
+about it. The same floor covers `setpoint_change`, which the spec is careful to
+call a decision rather than an observation and which carries effect
+`measurement` here, because the only question effect answers is what happens to
+volume and lineage, and for a setpoint the answer is nothing. Named so that it
+reads as a choice rather than an oversight. *Resolves when:* some operation needs
+behaviour beyond its effect, at which point either the kernel learns that
+operation by name or the operation carries more configuration. *Not
+load-bearing:* the failure mode is an operation that records and drives nothing,
+which is visible rather than silent.
+
+**S-16. `bottle` is filed as a transformation and is not really one.**
+It closes a parent and writes lineage, which is why `transformation` is the
+closest of the four effects. It also converts bulk to discrete units, which is a
+change of kind the other three transformations do not make, and whether that is a
+fifth effect is exactly the question S-12 defers. This entry exists so the filing
+reads as a placeholder rather than a judgment. *Resolves when:* S-12 is answered
+and the case goods seam is specified. *Watch for:* the first thing that branches
+on effect and gets bottling wrong, which is the point this stops being harmless.
+
 ## Discharged
 
 *None. Nothing has been built.*

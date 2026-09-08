@@ -37,6 +37,8 @@ cannot be reconstructed.
 | Core schema migration | Specified | `0001_core_schema.sql` written, never run |
 | Derived views and functions | Specified | `0002_derived_and_rls.sql` written, never run |
 | Row-level security | Specified | Written; untested against a real second user |
+| Terms and operation effects | Specified | `0004_terms_and_effects.sql` written. Applies clean from empty after 0001 to 0003, against a scratch Postgres 16 |
+| Term configuration screens | Deferred | Deliberate. Seed data is the editor and add-inline covers the case that blocks a fresh install. See compost ledger C-6 |
 | Parties, ownership, and vessel codes | Specified | `0003_parties_and_products.sql` written. Applies clean from empty against a scratch Postgres 16; never run against this project's own instance |
 | Variety templates (seed) | Specified | Six protocols transcribed, not encoded |
 | Location and vessel inventory | Specified | Requires a physical walk of the winery |
