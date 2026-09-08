@@ -59,6 +59,15 @@ costs an afternoon. A bug in intake costs a bin that cannot be reconstructed.
   not in a comment, not in a commit message.
 - **Ids are client-generated uuids.** Never sequences. An offline write must have
   identity before the server sees it.
+- **A client may not encode a business rule.** If a client computes something the
+  kernel should compute, the next client has to reimplement it and the two will
+  disagree. Rules live in the database, or in a database function. This is what
+  makes a second skin cheap, and it is the thing that decays first, because the
+  rule is always three lines and the round trip is always right there.
+- **Schema changes only ever arrive as a numbered migration.** Never edit schema
+  through the Supabase Studio UI. Studio editing is the easy thing to do at 11pm
+  and it is how local and hosted diverge, silently, in a way that surfaces as a
+  migration that applies on one and fails on the other.
 - **A module package may import from `core` and never from a sibling module.**
   `cellar` may use `core`; a future `cases` or `sales` module may use `core` and
   may not reach into `cellar`. Shared code moves down into `core` or gets
