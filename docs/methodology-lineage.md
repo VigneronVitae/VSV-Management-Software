@@ -259,21 +259,30 @@ backlog protocol between its casework repository and the framework it builds on.
 
 **Drop when.** There is no upstream framework in the picture.
 
-## 14. Disposability declaration
+## 14. Disposability declaration, revised
 
-**What.** The spec states outright that this is a tool for one harvest, not a product.
+**What.** The spec used to state outright that this is a tool for one harvest and not a
+product. That is now false. Two custom crush clients own wine in this cellar and the
+intent is to hand this to other winemakers, so the declaration has been replaced with a
+narrower one: this vintage is the worked case, and generalisation happens after it runs.
 
-**Prevents.** Gold-plating, premature abstraction, and building for hypothetical second
-users. An agent asked to build well will build for scale unless told not to.
+**Prevents.** The same failure by a different route. An agent asked to build well will
+build for scale unless told not to, and "we will generalise later, from the real thing"
+holds that off as effectively as "we will never generalise" did. What changed is that
+the restriction now has to name what is deferred instead of denying the question: no
+multi-facility tenancy, no `org_id`, no abstraction the vintage has not asked for.
 
-**Costs.** Nothing, and it is the cheapest high-value line in the spec.
+**Costs.** More words than "disposable", and a line that has to be revisited when a
+second facility appears rather than one that stays true by construction. The version
+that was true forever was also the version that was about to be wrong.
 
 **Adopted from.** `tmulab/tacet`, which declares its entry throwaway by design and names
 the production effort as a separate future thing, so that simplifying does not feel like
-abandoning.
+abandoning. The second half of that is what survives here.
 
-**Drop when.** A second winery actually wants it, at which point the declaration is
-revised rather than quietly ignored.
+**Drop when.** A second facility actually exists, at which point the deferred `org_id`
+stops being deferred and this entry gets rewritten again rather than quietly ignored.
+This entry is now on its second rewrite, which is the mechanism working.
 
 ---
 

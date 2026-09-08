@@ -14,10 +14,26 @@ Two labels, shared production. Roughly 5 bins per pick. Six varieties with disti
 protocols. Existing measurement capture is Anton Paar Wine Meister on iPad, which
 stays; readings are transcribed manually into this app.
 
-**This build is disposable by declaration.** It is a working tool for one harvest at
-one winery, not a product. Naming that here stops both the author and any agent
-working in this repo from gold-plating it. If it survives to a second harvest, that
-is a decision made after the first, not an assumption held during it.
+**This vintage is the worked case.** The 2026 harvest at one winery is what this is
+built against, and it is built to be handed to other winemakers afterward. Those two
+facts fit together in one order only: generalisation happens after the vintage runs,
+against something real, rather than now against a guess about what other winemakers
+need. Two custom crush clients are already on the books, so the second user is no
+longer hypothetical, which means the restriction has to name what is deferred rather
+than pretend the question will not come up.
+
+What that rules out, concretely:
+
+- **No multi-facility tenancy now.** `owner_id` on the node is in from the start
+  because retrofitting it would mean assigning every existing lot by hand, and there
+  is wine in this cellar that other people own. A facility-level `org_id` is a
+  different problem and is deferred until a second facility actually exists.
+- **No abstraction the vintage has not asked for.** A thing used in one place stays
+  in one place. The generalisation pass has a real corpus to work from later; it does
+  not have one now.
+
+**The deadline is harvest and it does not move.** Build order in section 7 is ordered
+by irrecoverability of failure, not by architectural foundation.
 
 ---
 

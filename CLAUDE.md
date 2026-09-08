@@ -17,10 +17,13 @@ A production-tracking app for a two-label Willamette Valley winery. Bins of frui
 become lots, lots move between vessels, people record what they did. Postgres on
 Supabase, static PWA client, phones in a barn.
 
-**Disposable by declaration.** This is a working tool for one harvest, not a product.
-Do not build for scale, do not add abstraction layers for hypothetical second users,
-do not generalise a thing used in one place. If it survives to a second harvest, that
-is a decision made afterward.
+**This vintage is the worked case.** It is built against one harvest at one winery
+and it is meant to be handed to other winemakers after that harvest proves it. The
+order matters: do not build for scale, do not add abstraction layers, do not
+generalise a thing used in one place. Generalisation is a later pass with a real
+corpus behind it, and anything done now is a guess dressed as foresight. Two custom
+crush clients are already real, which is why `owner_id` exists and why a
+facility-level `org_id` still does not.
 
 **The deadline is harvest and it does not move.** Build order in spec.md §7 is ordered
 by irrecoverability of failure, not by architectural elegance. A bug in the task board

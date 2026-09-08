@@ -50,7 +50,7 @@ create unique index party_app_user_idx
 
 -- Exactly one facility, which is what makes node.owner_id's default
 -- unambiguous. A second facility is a different problem (a facility-level
--- org_id) and is deferred until one exists. See the spec, section 0.
+-- org_id) and is deferred until one exists. See the spec preamble.
 create unique index party_one_facility
   on party(kind) where kind = 'facility' and active;
 
