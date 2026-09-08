@@ -14,9 +14,9 @@ boundary between designed and built should be a checkable fact from the first co
 rather than something reconstructed later.
 
 The design is complete enough to build against and is not complete enough to be
-correct. Six open questions in the sorry ledger are load-bearing, and two of them
-(the topping lineage threshold and the conditional-interval model) will change the
-schema when answered.
+correct. The sorry ledger holds the count and the detail; this ledger does not
+repeat it. Two entries there, the topping lineage threshold and the
+conditional-interval model, will change the schema when they are answered.
 
 **The deadline is harvest**, which is weeks out and does not move. Build order in
 spec.md section 7 is ordered by irrecoverability of failure, not by architectural
@@ -37,8 +37,10 @@ cannot be reconstructed.
 | Core schema migration | Specified | `0001_core_schema.sql` written, never run |
 | Derived views and functions | Specified | `0002_derived_and_rls.sql` written, never run |
 | Row-level security | Specified | Written; untested against a real second user |
+| Parties, ownership, and vessel codes | Specified | `0003_parties_and_products.sql` written. Applies clean from empty against a scratch Postgres 16; never run against this project's own instance |
 | Variety templates (seed) | Specified | Six protocols transcribed, not encoded |
 | Location and vessel inventory | Specified | Requires a physical walk of the winery |
+| Party records | Specified | The facility party and both custom crush clients. First thing the walk creates: `node.owner_id` defaults to the facility party, so no node can be inserted before it exists |
 
 ## Stage 1: capture
 
@@ -68,6 +70,17 @@ cannot be reconstructed.
 | Provenance audit view | Specified | What fraction of a number was never witnessed |
 | Nightly git export | Specified | Backup and diffable daily record |
 | Replay fixtures | Specified | Mid-harvest seed state for dev and forks |
+
+## Stage 4: compliance and case goods
+
+Nothing here is graded, because a grade would imply a design exists. Volume
+losses (S-8), unit conversion (S-9), tax class (S-10), bond status (S-11), and
+the bottling seam (S-12) are named in the sorry ledger and are blocked on the
+winery's compliance advisor. They are listed as a stage so that their absence is
+visible here rather than only in the sorry ledger.
+
+The one with a date on it is S-12. Bottling happens whether or not the event
+that records it is complete.
 
 ## Deferred on purpose
 

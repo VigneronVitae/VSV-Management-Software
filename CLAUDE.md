@@ -30,7 +30,7 @@ costs an afternoon. A bug in intake costs a bin that cannot be reconstructed.
 
 1. `packages/cellar/docs/spec.md`: object model, modes, build order
 2. `docs/status-ledger.md`: what is built, graded
-3. `docs/sorry-ledger.md`: open gaps, seven of them, three load-bearing
+3. `docs/sorry-ledger.md`: open gaps, each marked when it is load-bearing
 4. `docs/compost-ledger.md`: what was killed and what would revive it
 5. `docs/methodology-lineage.md`: what each piece of apparatus is for, and the
    condition under which dropping it is correct
