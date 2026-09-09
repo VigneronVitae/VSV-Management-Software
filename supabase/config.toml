@@ -44,12 +44,16 @@ additional_redirect_urls = ["http://localhost:5173"]
 jwt_expiry = 3600
 enable_refresh_token_rotation = true
 refresh_token_reuse_interval = 10
-# Two roles, both created by an admin. There is no public signup for a winery
-# app and an open one would let anyone insert events.
-enable_signup = false
+# Open, because the first account has to be creatable and there is nobody to
+# create it for you. Closing signup is a decision for the hosted project once
+# the admin account exists; doing it here makes a fresh install impossible to
+# start, which is exactly the hole the first-run walk exists to find.
+enable_signup = true
 
 [auth.email]
-enable_signup = false
+enable_signup = true
+# Local development has no mailbox worth checking. The hosted project decides
+# this for itself.
 enable_confirmations = false
 
 [analytics]
