@@ -57,6 +57,25 @@ export type NodeStage = "bin" | "load" | "ferment" | "maturation" | "finished";
 
 export type Provenance = "observed" | "inferred" | "confirmed";
 
+// Mirrors the thermal_mode enum. A jacket is off, or it is pushing one way.
+export type ThermalMode = "cooling" | "heating" | "off";
+
+// The vessel row itself, as opposed to vessel_state, which is what the page
+// reads. An edit form wants this one: vessel_state resolves location to a name
+// for display and drops the id, which is the thing a picker needs.
+export type VesselRow = {
+  id: Uuid;
+  type_id: Uuid;
+  name: string;
+  capacity_l: number | null;
+  location_id: Uuid | null;
+  owner_id: Uuid | null;
+  has_glycol: boolean;
+  setpoint_c: number | null;
+  mode: ThermalMode;
+  attributes: Record<string, unknown>;
+};
+
 // What the vessel page reads. Mirrors the vessel_state view.
 export type VesselState = {
   id: Uuid;
@@ -76,6 +95,11 @@ export type VesselState = {
   product_type: string | null;
   current_volume_l: number | null;
   is_empty: boolean;
+  // Whose wine, as opposed to whose vessel. Different questions, and on a
+  // custom crush floor they routinely have different answers.
+  lot_owner_id: Uuid | null;
+  lot_owner_name: string | null;
+  lot_facility_owned: boolean;
   codes: string[] | null;
   attributes: Record<string, unknown>;
 };
@@ -89,6 +113,11 @@ export type VesselPayload = {
   capacity_l?: number | null;
   location_id?: Uuid | null;
   owner_id?: Uuid | null;
+  // A jacket and what it is doing. Omitting these is the same as an unjacketed
+  // vessel, which is what the table's own defaults say.
+  has_glycol?: boolean;
+  setpoint_c?: number | null;
+  mode?: ThermalMode;
   attributes?: Record<string, unknown>;
 };
 
@@ -112,6 +141,20 @@ export type WalkResult = {
   node_id: Uuid;
   placement_id: Uuid;
   events_generated: number;
+};
+
+// A lot's history, including what happened to it before it was this lot. A
+// forked barrel inherits its parent's events up to the moment it came off, and
+// nothing after, so `inherited` is what tells the two apart on the page.
+export type HistoryRow = {
+  event_id: Uuid;
+  node_id: Uuid;
+  at: string;
+  operation: string;
+  label: string;
+  provenance: Provenance;
+  data: Record<string, unknown>;
+  inherited: boolean;
 };
 
 export type EventRow = {

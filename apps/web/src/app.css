@@ -203,6 +203,17 @@ h1 {
   flex: 1 1 10rem;
 }
 
+/* An explicit display wins over the hidden attribute's display:none from the
+   UA stylesheet, so every one of these was permanently open and the "Add one"
+   toggle did nothing visible. Anything that sets display needs this alongside
+   it. */
+/* Doubled on purpose. [hidden] and .add-inline are both one selector's worth
+   of specificity, and the class is declared later, so it won. [hidden][hidden]
+   outranks any single class without reaching for !important. */
+[hidden][hidden] {
+  display: none;
+}
+
 .add-inline {
   display: flex;
   flex-direction: column;
@@ -281,6 +292,50 @@ h1 {
   border-bottom: 1px solid var(--rule);
   font-size: 0.94rem;
 }
+/* An event this lot inherited from what it came off, rather than one that
+   happened to it. Quieter than a provenance tag, because it is context. */
+.tag-inherited {
+  background: transparent;
+  border: 1px dashed var(--rule);
+  color: var(--ink-faint);
+}
+
+/* Fields a vessel type does not open by default. Still reachable, because a
+   form that cannot record a true thing is worse than one with an extra tap. */
+.more {
+  border-top: 1px solid var(--rule);
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+}
+.more > summary {
+  cursor: pointer;
+  min-height: var(--tap);
+  display: flex;
+  align-items: center;
+  color: var(--ink-soft);
+  font-size: 0.94rem;
+}
+
+/* A row you can open. Large target because this gets tapped with a wet glove
+   in a barrel room, per the phone-first note at the top of this file. */
+.vessel-row-tappable {
+  cursor: pointer;
+  padding: 0.85rem 0.5rem;
+  margin: 0 -0.5rem;
+  border-radius: 0.4rem;
+  align-items: center;
+}
+.vessel-row-tappable:hover,
+.vessel-row-tappable:focus-visible {
+  background: var(--surface);
+  outline: none;
+}
+.vessel-edit-hint {
+  margin-left: auto;
+  font-size: 0.85rem;
+  opacity: 0.65;
+}
+
 .vessel-name,
 .code-value,
 .event-op {
@@ -327,4 +382,319 @@ h1 {
   display: flex;
   flex-direction: column;
   gap: 0.7rem;
+}
+
+/* The menu you start from. An item with nowhere to go is deliberate: it names
+   what this app does not do yet, in spec.md section 7's order. */
+.menu {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.menu-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.85rem 0;
+  border-bottom: 1px solid var(--rule);
+  cursor: pointer;
+  min-height: var(--tap);
+  justify-content: center;
+}
+.menu-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.menu-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+}
+.menu-name {
+  font-weight: 600;
+  font-size: 1.05rem;
+}
+.menu-badge {
+  margin-left: auto;
+  font-size: 0.82rem;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+.menu-note {
+  color: var(--ink-soft);
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+/* Not built. Readable, not tappable, and honest about it. */
+.menu-soon {
+  cursor: default;
+  opacity: 0.6;
+}
+.menu-soon .menu-name {
+  font-weight: 500;
+}
+.menu-soon .menu-name::after {
+  content: " not yet";
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+/* ---------------------------------------------------------------------------
+   Skins
+
+   Everything above is the foundation and is also, unchanged, the Original
+   skin: the first walk, flat and dense. A skin below is an override layer
+   scoped to the root's data-skin, so adding one cannot alter the one already
+   in a cellar hand's muscle memory.
+
+   A skin may change how a thing looks. It may not change what is asked or in
+   what order, because that order is the schema's and not a matter of taste.
+   --------------------------------------------------------------------------- */
+
+/* --- Cellar -----------------------------------------------------------------
+   For a phone held in a wet glove in a dark barrel room. Larger targets, real
+   separation between things, and a fill gauge on every vessel so occupancy is
+   readable at arm's length rather than needing to be read.
+   --------------------------------------------------------------------------- */
+
+:root[data-skin="cellar"] {
+  --tap: 3.4rem;
+  --card: 12px;
+  --lift: 0 1px 2px rgb(0 0 0 / 0.06), 0 4px 14px rgb(0 0 0 / 0.05);
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-skin="cellar"] {
+    --lift: 0 1px 2px rgb(0 0 0 / 0.4), 0 6px 18px rgb(0 0 0 / 0.35);
+  }
+}
+
+[data-skin="cellar"] body {
+  line-height: 1.5;
+}
+
+[data-skin="cellar"] .screen {
+  gap: 1.4rem;
+}
+
+[data-skin="cellar"] h1 {
+  font-size: 2rem;
+  letter-spacing: -0.02em;
+}
+
+/* A rule that starts at the text rather than a lonely caption. */
+[data-skin="cellar"] .section-head {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  font-size: 0.72rem;
+  margin: 1.6rem 0 0.2rem;
+}
+[data-skin="cellar"] .section-head::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--rule);
+}
+
+[data-skin="cellar"] .lede {
+  font-size: 1.02rem;
+  max-width: 60ch;
+}
+
+/* Fields become cards, so a long form reads as a stack of separate questions
+   rather than one wall. */
+[data-skin="cellar"] .field {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--card);
+  padding: 0.9rem 0.95rem;
+  gap: 0.45rem;
+}
+[data-skin="cellar"] .field-inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.75rem;
+}
+[data-skin="cellar"] .field-label {
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+[data-skin="cellar"] .input {
+  min-height: var(--tap);
+  border-radius: 8px;
+  font-size: 1.05rem;
+  padding: 0.55rem 0.7rem;
+}
+[data-skin="cellar"] .checkbox {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+[data-skin="cellar"] .btn {
+  border-radius: 999px;
+  padding: 0.85rem 1.3rem;
+  letter-spacing: 0.01em;
+}
+[data-skin="cellar"] .btn-primary {
+  box-shadow: var(--lift);
+  font-size: 1.05rem;
+}
+[data-skin="cellar"] .btn-primary:hover:not([disabled]) {
+  filter: brightness(1.08);
+}
+[data-skin="cellar"] .btn-secondary {
+  box-shadow: var(--lift);
+}
+[data-skin="cellar"] .btn-quiet {
+  text-decoration: none;
+  border: 1px solid transparent;
+}
+[data-skin="cellar"] .btn-quiet:hover {
+  border-color: var(--rule);
+  border-radius: 999px;
+}
+
+/* Rows become cards you can hit. The fill gauge is drawn from --fill, which
+   the vessel list publishes whether or not a skin uses it. */
+[data-skin="cellar"] .vessel-row,
+[data-skin="cellar"] .code-row,
+[data-skin="cellar"] .event-row {
+  position: relative;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--card);
+  margin-bottom: 0.6rem;
+  padding: 0.95rem 1rem;
+  box-shadow: var(--lift);
+  font-size: 1rem;
+  align-items: baseline;
+}
+
+[data-skin="cellar"] .vessel-row[style*="--fill"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 4px;
+  width: calc(var(--fill, 0) * 100%);
+  background: var(--accent);
+  opacity: 0.85;
+}
+/* Over capacity is a fact worth seeing rather than a bar that stops at the
+   edge and quietly lies. */
+[data-skin="cellar"] .vessel-row[style*="--fill"].over::before {
+  background: var(--bad);
+  width: 100%;
+}
+
+[data-skin="cellar"] .vessel-name,
+[data-skin="cellar"] .code-value,
+[data-skin="cellar"] .event-op {
+  font-size: 1.05rem;
+}
+[data-skin="cellar"] .vessel-edit-hint {
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  padding: 0.15rem 0.6rem;
+  font-size: 0.78rem;
+  opacity: 1;
+  color: var(--ink-soft);
+}
+
+[data-skin="cellar"] .summary {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--card);
+  padding: 0.4rem 1rem;
+  box-shadow: var(--lift);
+}
+[data-skin="cellar"] .summary-row {
+  padding: 0.7rem 0;
+}
+[data-skin="cellar"] .summary-value {
+  font-size: 1.05rem;
+}
+
+[data-skin="cellar"] .banner {
+  border-radius: var(--card);
+  padding: 0.85rem 1rem;
+  border-left-width: 4px;
+}
+
+[data-skin="cellar"] .add-inline {
+  border-radius: var(--card);
+  border-style: solid;
+  box-shadow: var(--lift);
+}
+
+[data-skin="cellar"] .more {
+  border-top: none;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--card);
+  padding: 0.2rem 1rem;
+}
+[data-skin="cellar"] .more > summary {
+  font-weight: 600;
+}
+
+[data-skin="cellar"] .empty {
+  background: var(--surface);
+  border: 1px dashed var(--rule);
+  border-radius: var(--card);
+  padding: 1.1rem;
+  text-align: center;
+}
+
+/* Somebody else's wine in our barrel. Marked because a custom crush floor is
+   exactly where you must not lose track of that. */
+.tag-owner {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+/* Their barrel, whoever the wine belongs to. Quieter than the wine's own tag,
+   because on a custom crush floor whose wine it is outranks whose barrel. */
+.tag-vessel-owner {
+  background: transparent;
+  border: 1px solid var(--accent);
+  color: var(--ink-soft);
+}
+
+/* The skin picker itself, which every skin gets for free. */
+.skin-picker {
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--rule);
+}
+.skin-note {
+  color: var(--ink-faint);
+  font-size: 0.86rem;
+  margin: 0.4rem 0 0;
+}
+
+[data-skin="cellar"] .menu-item {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--card);
+  box-shadow: var(--lift);
+  margin-bottom: 0.6rem;
+  padding: 1rem;
+  gap: 0.35rem;
+}
+[data-skin="cellar"] .menu-item:not(.menu-soon):hover {
+  border-color: var(--accent);
+}
+[data-skin="cellar"] .menu-name {
+  font-size: 1.15rem;
+}
+[data-skin="cellar"] .menu-soon {
+  background: none;
+  box-shadow: none;
+  border-style: dashed;
 }

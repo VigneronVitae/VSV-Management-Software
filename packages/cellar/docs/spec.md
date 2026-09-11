@@ -60,8 +60,14 @@ by irrecoverability of failure, not by architectural foundation.
 
 - **T1-1. Pickers, not text fields.** Cellar users select from existing objects.
   Free-text vessel names from three people is how the data becomes unusable.
-- **T1-2. Local-first for append-only writes, server-authoritative for mutable
-  state.** Events sync opportunistically; task claiming fails visibly when offline.
+- **T1-2. Local-first for writes the kernel does not have to decide about,
+  server-authoritative for the ones it does.** Events sync opportunistically; task
+  claiming fails visibly when offline. The original wording said append-only versus
+  mutable, and the wire session showed that is the wrong line: `rack` decides whether
+  a transfer moved a lot or made one, and `record_event` decides whether recording
+  against some of a lot's vessels forks it. Both look like appends and are neither.
+  Reproducing those decisions in a client to work offline would be the exact thing
+  the business-rule rule forbids. See S-30.
 - **T1-3. Every scan is a reconciliation opportunity.** The person is standing in
   front of the thing. Confirm location and lot identity while that is free.
 - **T1-4. Intake must be fast before it is complete.** The truck is waiting and hands
@@ -100,7 +106,7 @@ Everything that is wine or becomes wine.
 | unit | `lbs` \| `kg` \| `L` \| `gal` |
 | attributes | bag: `whole_cluster_pct`, `style_intent`, `pick_number`, `cap_rule` |
 | provenance | per T0-3 |
-| closed_at | set by trigger when the node becomes a parent |
+| closed_at | set by trigger when the lot is empty, not when it first feeds something. Drawing 228 L off a 2000 L lot leaves 1772 L, open |
 
 Nodes may be created at any stage with no ancestry. A backfilled 2024 Chardonnay
 enters at `maturation`, participates fully, and grounds nothing about its own history
@@ -195,6 +201,15 @@ consolidating from fermentation height means adding to a partly full vessel.
 Variety, color, and vintage compatibility is checked at the moment it can still
 prevent the mistake. Session list with undo. Volume added is usually unknowable, so
 the record is that it happened and from which source.
+
+**Every session takes a set, and the set is the point.** A session is not a list of
+what you have done, it is a list of what you are supposed to do, and it ends when the
+set is covered rather than when somebody decides they are finished. Scanning is not
+adopted because it is faster than typing; it is adopted because a session that knows
+its set can tell you the two barrels you have not reached. A session with no target
+set is a notepad. This is specified for topping and cap management, and is already
+built once, in `procedure_session`, which lays out one run per vessel in the order
+given and can say which are unfinished.
 
 **Cap management mode.** Scan the fermenter; the app answers punchdown or pumpover,
 derived from the lot's `cap_rule` plus today's event history. This is the first place
@@ -303,6 +318,20 @@ model. Individual tasks must keep working standalone: a work order nobody filled
 costs the grouping and nothing else. If the two ever disagree, the task is the record
 and the work order is the paperwork.
 
+**Creating and completing are different interfaces and this is the creating one.**
+The board in section 5 is a completing surface: it answers what is in front of me,
+what do I do, record it, next. Nothing in this spec describes a person planning a
+morning across twenty vessels, because templates seed tasks on stage entry and no
+human is in that loop. That is the gap. A work order is created by choosing an
+operation and a set of vessels, which is a breadth interface and wants a screen with
+room, and it is worked through on a phone at the tank, which is a depth interface and
+wants one thing at a time.
+
+The two halves are the same object seen from opposite ends, and a work order is
+therefore also the target set of section 5: created as a set, claimed from the board,
+and complete when the set is covered. Specifying them separately would produce two
+mechanisms for one idea.
+
 ### 8.3 Reverse block view
 
 The spec has `block_composition(node)`, which answers "what is this barrel made of."
@@ -326,3 +355,90 @@ selection is a clone selection as often as it is a barrel selection. Self-rooted
 passes because it is the thing the estate is described by, and a fact that appears in
 the tasting room deserves better than a free-text field three people spell
 differently.
+
+### 8.5 Photograph the sheet, confirm the numbers
+
+InnoVint photographs a page of handwritten Brix, temperature and SO2 and maps it onto
+lots without retyping. This matters more here than it does there, because C-1 killed
+direct BLE to the Anton Paar meter and left manual transcription as the standing
+assumption. A photograph is the same need approached from the side that needs no
+reverse engineering, no SDK, and no platform decision, which is what killed C-1.
+
+The shape that fits this repo is not "read the sheet and write the events". It is the
+delta-and-verify boundary already adopted in section 6, and it lands on machinery that
+exists:
+
+- The photograph is stored. Vessel photos already work, so the image is evidence and
+  the reading cites it.
+- A reading proposes events at provenance `inferred`, exactly as the variety template
+  generator does. It may never write `observed` and may never write `confirmed`, which
+  is T0-4 and is already enforced by trigger.
+- A person confirms, vessel by vessel, and confirming is what stamps them. An
+  unconfirmed sheet is a pile of proposals that ground nothing, which is the correct
+  state for a number nobody has checked.
+
+That last point is why this is worth doing and also why it must not be automatic. A
+misread Brix that looks plausible is the failure this repository dislikes most: wrong
+quietly rather than loudly. The photograph path is only an improvement if confirming is
+faster than typing, which is an empirical question and not an obvious yes.
+
+**Cost, stated plainly.** It needs an OCR or vision step, which is a dependency and
+probably a paid external service, and the standing rule is to consult before adding
+either. It also sends a page of a winery's numbers to a third party, and for a custom
+crush client whose privacy the schema now enforces, that is a question to answer rather
+than an implementation detail. Specified, not adopted: the decision to add the
+dependency has not been made. See S-31.
+
+### 8.6 Takeout, and the protocol underneath it
+
+A client who leaves should be able to take their wine with them: every lot, its lineage
+back to the bins, every measurement, treatment and placement, in a form another
+facility can load. Not a report. The graph.
+
+Both commercial platforms make this hard deliberately, and one is on public record
+putting hurdles in front of a customer trying to migrate out. That is not an oversight,
+it is the business model: the accumulated record is the switching cost and it
+compounds. An open, self-hosted system can invert that, and it is the one advantage
+here that a subscription platform cannot copy, because copying it would remove the
+reason their customers stay.
+
+It is also not a feature race, which matters. This repository will not out-build
+InnoVint on features and should not try.
+
+**Where their wine ends.** Lineage from a client lot can walk into lots the facility
+owns, if they bought bulk, or if the lot was topped from the house keg. The boundary is
+an ownership change, and at that edge the export writes a terminal node: what it was,
+how much, and that it was acquired from this facility. The lineage stays grounded and
+the facility's own records do not travel. Truncating without the terminal node would
+hand them a graph that stops for no stated reason, which is worse than either
+alternative.
+
+**What travels and what does not.** Their lots, events and measurements are theirs.
+Vessel identity is not: a placement must be able to say the wine spent nine months in a
+228 litre French oak barrel, medium toast, without saying which barrel. That is the
+same distinction the lot privacy work already draws between a thing's shape and its
+identity, and it should reuse that vocabulary rather than invent a second one.
+
+**Symmetry is what makes it a protocol.** The same document must be loadable, so the
+facility can receive a client arriving from somewhere else. This is where the untyped
+floor earns its keep: an arriving lot whose vocabulary is not shared should land, be
+addressable, and drive nothing until somebody here types it, which is exactly the floor
+S-15 already describes and the assertions already prove for an unknown operation.
+
+**Provenance across the boundary is the hard part and it is not one enum value.** An
+imported event was observed, by someone, elsewhere. It is not `observed` here and not
+`inferred` here. Worse, `event` requires an author and `by_user` references `app_user`,
+so there is no way to name an observer who has no account in this database, and the
+`has_an_author` check refuses the row. A fourth provenance value alone does not solve
+this: the missing thing is not the confidence, it is the identity of whoever is
+asserting it. See S-32.
+
+**Export is much cheaper than import.** The traversal exists, `node_bin_shares` and
+`node_history` already walk the graph, and the boundary rules above are the only new
+logic; export is a walk plus a serialisation. Import needs the authorship question
+answered and a vocabulary reconciliation surface. They should not be estimated together
+and export should not wait for import.
+
+One consequence worth stating because it changes the priority: a document that carries
+a lot and its lineage without depending on this database's generated ids is also the
+portable backup that S-29 says does not currently exist. The same work answers both.

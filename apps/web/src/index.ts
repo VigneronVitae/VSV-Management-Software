@@ -3,7 +3,7 @@
 //
 // There is no shell yet, and no module mounting. This session builds one skin
 // over the kernel and a later session builds the thing that hosts several.
-import { mountWalk } from "cellar";
+import { mountWalk, restoreSkin } from "cellar";
 import { MissingConfig, readConfig } from "core";
 
 const target = document.querySelector<HTMLElement>("#app");
@@ -11,6 +11,9 @@ const target = document.querySelector<HTMLElement>("#app");
 if (!target) {
   throw new Error("#app is missing from index.html");
 }
+
+// Before the first paint, so nobody watches one skin repaint into another.
+restoreSkin();
 
 try {
   readConfig();
