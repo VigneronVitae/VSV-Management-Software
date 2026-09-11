@@ -391,6 +391,13 @@ dependency has not been made. See S-31.
 
 ### 8.6 Takeout, and the protocol underneath it
 
+*Read this section more sceptically than the rest.* It was corrected four times on the
+day it was written, three times on facts about the business and once on a judgment, and
+every correction came from the winemaker rather than from re-reading. Unlike the
+schema, nothing here can be run, so a wrong claim about how wineries buy, sell, hold and
+transfer wine produces no failure until somebody who does it says otherwise. The wire
+session report of 2026-09-10 records what the four were.
+
 A client who leaves should be able to take their wine with them: every lot, its lineage
 back to the bins, every measurement, treatment and placement, in a form another
 facility can load. Not a report. The graph.
