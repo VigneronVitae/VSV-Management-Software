@@ -351,22 +351,26 @@ mildly, and in an unexpected place. Fill count and maintenance history are what 
 barrel is priced on, so a facility that cannot hand those over sells a barrel with no
 provenance and takes less for it than it is worth.
 
-**S-34. Custody and ownership are the same field, and they are not the same thing.**
-`party` answers who owns a lot or a vessel. Nothing answers who is holding it, because
-the schema assumes one facility and the spec preamble defers a facility-level `org_id`
-until a second exists. Custom crush is the arrangement where those two come apart, and
-this winery has already crossed the boundary in the other direction: full barrels came
-from Keeler with the same owner before and after, which is a change of custody and no
-change of hands at all. The app cannot say that wine was somewhere else until a date,
-so it arrives with no past and its lineage stops at the winery door. Spec section 8.6
-needs the distinction to state its own rule, which now has two tests where it had one.
-*Resolves when:* custody is a fact about a lot or a vessel over time, most likely the
-same shape as `placement` but naming a party rather than a vessel, so that arriving and
-departing are the same operation seen from two ends. That is also what `org_id` would
-be for, so this and the deferred multi-facility question should be answered together
-rather than separately. *Load-bearing:* it is the difference between a record that ends
-at the door and one that crosses it, and the crossing has already happened once
-unrecorded.
+**S-34. Which bonded premises holds a lot is not represented, and it is not the same
+question as who owns it.**
+`party` answers who owns a lot or a vessel. Nothing answers which bond it sits in,
+because the schema assumes one facility and the spec preamble defers a facility-level
+`org_id` until a second exists. Custom crush is the arrangement where those come apart,
+and this winery has already crossed the line: full barrels came from Keeler when
+crushing started here, with the same owner before and after. No sale, and still a
+transfer in bond, which is a formal transaction between bonded premises that moves tax
+liability. The app cannot say a lot was at another premises until a date, so it arrives
+with no past and its lineage stops at the winery door.
+
+The operational half is what this entry is about and is buildable: where a lot was,
+whose premises, and when it moved. The reportable half is S-11's and belongs to the
+compliance advisor, per the standing rule at the top of this file. They are not the
+same work and answering the second without the first is impossible, because a report
+cannot be built on a record that begins at the door. *Resolves when:* premises is a
+fact about a lot over time, most likely the same shape as `placement` but naming a
+party rather than a vessel, so arriving and departing are one operation seen from two
+ends. That is also what the deferred `org_id` is for, so the two should be designed
+together. *Load-bearing:* the crossing has already happened once and is unrecorded.
 
 ## Discharged
 

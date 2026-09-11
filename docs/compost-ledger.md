@@ -90,6 +90,27 @@ smaller thing, is not this pattern, and does not need a compost entry to be allo
 *Reactivate if:* a second facility exists, at which point the deferred `org_id` is the
 thing to design and the dropdown is its interface rather than its substitute.
 
+**C-8. Encrypting or hashing the withheld parts of an export.**
+*Tried:* rather than removing the lot names from a sold barrel's history, shipping them
+locked, so the record travels complete and only an entitled reader can open it.
+*Killed by:* it buys less than it costs, in three ways. A hash of a lot name is not
+protection, because the name comes from a space small enough to guess: "Riesling 2025"
+and a few hundred plausible siblings can be tried against any hash in seconds, so the
+lock opens itself. Real encryption fixes that and brings key management with it, which
+means deciding who holds the key, what happens when they lose it, and how a key reaches
+a buyer who has no account here, and that is a trust system rather than a field. And
+neither answers the question that matters, which is who is entitled to open it, better
+than simply not sending the thing.
+*Surviving fragment:* the useful half of the idea, which is that redaction should not
+destroy continuity. A withheld lot now travels as a stable opaque reference, random per
+export rather than derived, so a buyer learns the barrel held one wine for two years
+rather than six in eighteen months without learning whose. Adopted, in spec 8.6.
+*Reactivate if:* the requirement turns out to be escrow rather than redaction, meaning
+something is deliberately handed over sealed for a recipient to open later under a
+condition that is known in advance. That is a different requirement from privacy and it
+would need a named condition, a key holder, and a reason the sealed thing must travel
+now rather than on consent.
+
 **C-5. Pick as the atomic intake unit.**
 *Tried:* modelling each pick as a lot, with three Pinot Gris picks as one lot carrying
 a pick attribute.

@@ -434,12 +434,24 @@ Withholding it would be withholding the useful half.
 *Both at once.* A barrel sold with wine in it is both objects changing hands and both
 travel whole.
 
-*Neither, and it still moves.* Full barrels were brought from Keeler to this winery
-when crushing started here. Nothing was bought or sold: the same party owned the wine
-before and after, and the barrels with it. What changed was custody, which facility
-physically held the thing, and that is a different axis from ownership entirely. It is
-the axis custom crush runs on, because a client owning wine that somebody else holds
-is the whole arrangement.
+*No sale, and still a transfer.* Full barrels were brought from Keeler to this winery
+when crushing started here. Nobody bought anything and the same party owned the wine
+before and after, but this was a transfer in bond, which is a formal transaction
+between bonded premises and not merely a van journey. The tax liability moved with the
+wine.
+
+So there are two axes and the second one is not custody in the casual sense. Ownership
+answers whose wine it is. The other answers which bonded premises holds it, and
+crossing that line is reportable. It is also the axis custom crush runs on, because a
+client owning wine that somebody else's bond holds is the whole arrangement.
+
+What the reporting requires is not decided here and must not be. S-11 already records
+that bond status is unrepresented and defers it to the winery's compliance advisor,
+and the standing rule on that is that a guessed tax boundary is worse than no number
+at all. What this section claims is narrower: the app should be able to hold the
+operational fact that a lot was at another premises until a date, because without it
+the lineage stops at the door, and a record that stops at the door cannot support a
+report whatever the advisor decides it must contain.
 
 So the rule has two tests rather than one. Ownership decides whose record it is and
 therefore what may be withheld. Custody decides whether it moved at all. A thing can
@@ -454,6 +466,19 @@ export of a vessel redacts the lots exactly as the export of a lot redacts the v
 The buyer learns the barrel held a Chardonnay of that vintage for nine months and does
 not learn whose it was. Same vocabulary as the lot privacy work, pointed the other
 way.
+
+**Redacted is not the same as deleted, and the difference is worth one field.** A
+buyer assessing a used barrel wants to know whether it held one wine for two years or
+six wines in eighteen months, and stripping the lot names destroys that as a side
+effect of protecting them. So a withheld lot travels as a stable opaque reference: the
+same token wherever that lot appears in this export, a different token in any other
+export, generated at random rather than derived from anything.
+
+Random rather than derived is the whole of it. A token computed from the lot name
+would be the same token in every export, so two buyers comparing notes could match
+them, and a name from a space as small as "Riesling 2025" can be recovered by guessing
+whatever function produced it. A random token per export carries continuity and
+nothing else, which is exactly the fact the buyer is entitled to.
 
 **Symmetry is what makes it a protocol.** The same document must be loadable, so the
 facility can receive a client arriving from somewhere else. This is where the untyped
