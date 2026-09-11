@@ -434,6 +434,19 @@ Withholding it would be withholding the useful half.
 *Both at once.* A barrel sold with wine in it is both objects changing hands and both
 travel whole.
 
+*Neither, and it still moves.* Full barrels were brought from Keeler to this winery
+when crushing started here. Nothing was bought or sold: the same party owned the wine
+before and after, and the barrels with it. What changed was custody, which facility
+physically held the thing, and that is a different axis from ownership entirely. It is
+the axis custom crush runs on, because a client owning wine that somebody else holds
+is the whole arrangement.
+
+So the rule has two tests rather than one. Ownership decides whose record it is and
+therefore what may be withheld. Custody decides whether it moved at all. A thing can
+change custody without changing hands, and when it does, everything about it travels,
+because the party receiving it is the party that already owned it and there is nobody
+to protect it from.
+
 The symmetry is what makes it one rule rather than three cases, and it applies in the
 direction that is easy to miss: a sold barrel's occupancy history names the lots that
 sat in it, and some of those belong to clients who did not sell anything. So the
@@ -456,11 +469,19 @@ so there is no way to name an observer who has no account in this database, and 
 this: the missing thing is not the confidence, it is the identity of whoever is
 asserting it. See S-32.
 
-**Export is much cheaper than import.** The traversal exists, `node_bin_shares` and
-`node_history` already walk the graph, and the boundary rules above are the only new
-logic; export is a walk plus a serialisation. Import needs the authorship question
-answered and a vocabulary reconciliation surface. They should not be estimated together
-and export should not wait for import.
+**Export is much cheaper than import, and import is the half this winery has already
+needed.** The traversal exists, `node_bin_shares` and `node_history` already walk the
+graph, and the boundary rules above are the only new logic; export is a walk plus a
+serialisation. Import needs the authorship question answered and a vocabulary
+reconciliation surface. They should not be estimated together.
+
+They should also not be prioritised by cost alone. The departing client is the
+hypothetical; the arriving barrels are what actually happened. The Keeler wine came in
+as new lots with no history before the day it arrived, because `fill_vessel` records
+wine arriving from nowhere, which is S-19. Every measurement and treatment that
+happened to it at the other facility is gone from this record, and the lineage back to
+the fruit stops at the winery door. That is the loss this section exists to prevent,
+and it has already been taken once.
 
 One consequence worth stating because it changes the priority: a document that carries
 a lot and its lineage without depending on this database's generated ids is also the
