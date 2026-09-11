@@ -80,7 +80,7 @@ Not "it runs." Done is:
 
 ```sh
 # schema
-supabase db reset                 # migrations apply clean from empty
+bun run db:up                     # apply pending migrations, keep the data
 psql < tests/schema_assertions.sql # constraints actually refuse what they should
 
 # client
@@ -91,6 +91,15 @@ bun run test
 # the winery-specific one
 bun run doctor                    # reports nothing, against replay fixtures
 ```
+
+**`supabase db reset` destroys everything in the database.** It is how you prove
+the migrations apply from empty and it is not a development loop. Use
+`bun run db:up` day to day; it applies what is pending and leaves the cellar's
+data alone. Before a reset, run `bun run db:backup`, and know that a restore is
+currently imperfect: seeded vocabulary is reissued with new ids on every reset,
+so lots restored afterwards point at varieties that no longer exist. That is
+S-29, and until it is answered the only reliable protection is not resetting a
+database with real inventory in it.
 
 `doctor` is not optional. `event.subject_id` cannot be a foreign key (sorry S-4), so
 `doctor` is the only thing standing between the schema and orphaned records. Run it

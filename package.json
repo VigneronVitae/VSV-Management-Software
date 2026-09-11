@@ -15,7 +15,10 @@
     "doctor": "echo 'doctor: not implemented. See sorry S-4 in docs/sorry-ledger.md. event.subject_id is not a foreign key, so nothing currently checks for orphaned subjects.' && exit 1",
     "db:test": "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f tests/schema_assertions.sql",
     "dev": "bun run --cwd apps/web dev",
-    "build": "bun run --cwd apps/web build"
+    "build": "bun run --cwd apps/web build",
+    "db:up": "supabase migration up",
+    "db:backup": "bash scripts/db-backup.sh",
+    "db:restore": "bash scripts/db-restore.sh"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.14",
