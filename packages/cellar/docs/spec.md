@@ -413,11 +413,34 @@ the facility's own records do not travel. Truncating without the terminal node w
 hand them a graph that stops for no stated reason, which is worse than either
 alternative.
 
-**What travels and what does not.** Their lots, events and measurements are theirs.
-Vessel identity is not: a placement must be able to say the wine spent nine months in a
-228 litre French oak barrel, medium toast, without saying which barrel. That is the
-same distinction the lot privacy work already draws between a thing's shape and its
-identity, and it should reuse that vocabulary rather than invent a second one.
+**What travels and what does not. The rule is one sentence: whatever changed hands
+travels with its identity, and whatever did not travels as shape.**
+
+The first draft of this section said vessel identity never travels, which was written
+with one transaction in mind and is wrong for the others.
+
+*A client leaves and takes their wine.* The barrels stay. A placement should say the
+wine spent nine months in a 228 litre French oak barrel, medium toast, without saying
+which barrel, because which barrel is the facility's asset register and is no use to
+them anyway.
+
+*A barrel is sold to another facility.* Now the barrel is the thing that changed hands
+and its identity is precisely what has value. Cooper, wood, toast, capacity and fill
+count are what a used barrel is priced on, and its maintenance history is what a buyer
+is actually asking about: steamed when, leaked ever, rings tightened, any off smell
+found and what was done. The app holds all of that already as events on the vessel.
+Withholding it would be withholding the useful half.
+
+*Both at once.* A barrel sold with wine in it is both objects changing hands and both
+travel whole.
+
+The symmetry is what makes it one rule rather than three cases, and it applies in the
+direction that is easy to miss: a sold barrel's occupancy history names the lots that
+sat in it, and some of those belong to clients who did not sell anything. So the
+export of a vessel redacts the lots exactly as the export of a lot redacts the vessel.
+The buyer learns the barrel held a Chardonnay of that vintage for nine months and does
+not learn whose it was. Same vocabulary as the lot privacy work, pointed the other
+way.
 
 **Symmetry is what makes it a protocol.** The same document must be loadable, so the
 facility can receive a client arriving from somewhere else. This is where the untyped

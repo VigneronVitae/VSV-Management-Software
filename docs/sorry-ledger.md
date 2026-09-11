@@ -332,6 +332,20 @@ imported history lands as a single attested document rather than as events.
 *Load-bearing:* it is the difference between receiving a client's record and receiving
 a picture of it, and the whole argument for the protocol is that it is not a picture.
 
+**S-33. A vessel cannot leave. Nothing models selling, scrapping or lending one.**
+`vessel` carries `active` and nothing else about its fate, so a barrel sold to another
+facility can only be switched off, which says it stopped being used here and not that
+somebody else owns it now. There is no buyer, no date, no price, and no distinction
+between sold, scrapped, broken up for a table, and lent out for a vintage. It also
+means the takeout in spec section 8.6 has a case it cannot express: the rule there is
+that whatever changed hands travels with its identity, and for a sold barrel nothing
+records that the hands changed. *Resolves when:* a vessel's departure is an event with
+a kind and a counterparty, at which point `active` becomes derived from it rather than
+set by hand, and the export can say which barrels went with the sale. *Load-bearing:*
+mildly, and in an unexpected place. Fill count and maintenance history are what a used
+barrel is priced on, so a facility that cannot hand those over sells a barrel with no
+provenance and takes less for it than it is worth.
+
 ## Discharged
 
 **S-26. `vessel_state` did not obey row level security.** *Found and closed
