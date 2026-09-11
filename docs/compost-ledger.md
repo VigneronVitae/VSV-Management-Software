@@ -20,6 +20,11 @@ device cannot talk to the meter at all, which forces a native app and a platform
 decision.
 *Reactivate if:* manual transcription volume becomes the actual constraint, or the
 device platform changes off iPad.
+*See also:* spec section 8.5, added 2026-09-10. Photographing the written sheet is the
+same need reached from the side that needs no SDK and no reverse engineering, and it
+does not require a native app, which is what made this entry expensive. It has its own
+cost, an external vision dependency, recorded as S-31. If that cost is paid, the
+transcription constraint this entry waits on stops being a reason to revisit BLE.
 
 **C-2. Git as the datastore.**
 *Tried:* using a repository as the live data store, on the model of the Knowledge Game
@@ -62,6 +67,28 @@ it without leaving the form. Adopted.
 *Reactivate if:* someone needs to deactivate, reorder or relabel terms in bulk, or
 a fork's vocabulary diverges far enough that seeding this winery's list is the
 wrong starting point.
+*Partially reactivated 2026-09-09,* by `0011_vessel_type_fields.sql` and the
+vessel type screens. The kill reason was that a configuration surface would be
+built "before anyone had discovered which fields they actually want to edit".
+They were then discovered and named: toast level, fill number, shape, oxygen
+ingress, and per-type glycol visibility. What came back is one screen for one
+kind of term, editing the field descriptors a vessel type carries. The general
+vocabulary editor this entry refused is still refused: there is no screen for
+creating, reordering or deactivating varieties or coopers, and add-inline
+remains the only way to make one.
+
+**C-7. A facility switcher on the account.**
+*Tried:* the pattern a reviewer praised in vintrace, where one login works across
+several facilities and a dropdown switches between them.
+*Killed by:* it is not the same problem. That is multi-tenancy, and this repository
+answers custom crush with `party` ownership of nodes and vessels inside one facility,
+which the spec preamble defers a facility-level `org_id` until a second facility
+actually exists. Building the dropdown would make `party` mean both who owns the wine
+and which site you are looking at, and those come apart the first time a client owns
+wine at two sites. A filter by owner inside one facility is a different and much
+smaller thing, is not this pattern, and does not need a compost entry to be allowed.
+*Reactivate if:* a second facility exists, at which point the deferred `org_id` is the
+thing to design and the dropdown is its interface rather than its substitute.
 
 **C-5. Pick as the atomic intake unit.**
 *Tried:* modelling each pick as a lot, with three Pinot Gris picks as one lot carrying

@@ -29,13 +29,6 @@ Template steps carry an interval from the previous step. "Cold crash until clear
 condition-based step type is added, or conditional steps are excluded from templates
 and created by hand. *Load-bearing:* four of six protocols contain at least one.
 
-**S-3. Partial consumption of a parent is unhandled.**
-The `lineage_closes_parent` trigger closes a parent entirely on first child. Pressing
-half a bin and holding the rest would close the bin while material remains.
-*Resolves when:* either a fraction-sum check replaces the trigger, or partial
-consumption is declared out of scope with a reason. *Load-bearing:* silently wrong,
-not loudly wrong, which is the worse kind.
-
 **S-4. `event.subject_id` is not a foreign key.**
 The cost of one events table across four subject types. A bad subject id fails
 silently. *Resolves when:* `doctor` checks it and is run on a schedule. Until then,
@@ -151,6 +144,212 @@ history and this function starts doing its job. *Not load-bearing:* zero is
 truthful. The risk is that it gets read as a bug in the generator and someone
 goes looking in the wrong place.
 
+**S-18. Creating a vessel already jacketed records no event, though changing it
+later does.**
+Narrowed by 0007. `update_vessel` compares the thermal triple before and after
+and writes a `setpoint_change` against the vessel when it differs, so the half
+of this entry that said a jacket could never be turned on, and that turning it
+on recorded nothing, is closed. What remains is the create path:
+`create_vessel_with_wine` writes the columns and no event, so a tank entered
+into the system already cooling has a current setpoint with no recorded author
+or time, while the same tank switched to cooling a day later has both. The
+inconsistency is the gap, not the missing event on its own. *Resolves when:*
+either the create path writes an opening `setpoint_change` too, or a decision is
+recorded that a vessel's initial state is part of creating it rather than a
+decision about wine. *Not load-bearing:* every change after the first is
+recorded, so a history is missing at most its opening entry, and
+`effective_temp_c` is correct throughout.
+
+**S-19. `fill_vessel` records wine arriving from nowhere.**
+It creates a lot and places it, with no source and no lineage, which is exactly
+right for an inventory walk: you are standing at a tank, there is wine in it,
+and the app has never heard of that wine. It is exactly wrong for a rack, where
+the wine is already a lot in another vessel and the honest record closes one
+placement and opens another. Nothing currently stops somebody using this screen
+to record a rack, and the result is two lots where there was one, with the
+source still showing as full. *Resolves when:* the rack path exists and this
+screen says which of the two it is, or refuses the case it is not for.
+*Load-bearing:* the failure is silent and it duplicates wine, which is the kind
+of wrong that reads as correct until a volume reconciliation disagrees.
+
+**S-20. A field descriptor carries a unit and nothing converts it.**
+`unit` on a vessel type's field descriptor is rendered beside the input and
+stored nowhere. Two vessels of different types can therefore record oxygen
+ingress in different units and compare as if they were the same number, and
+nothing notices. The descriptor format reserves `min`, `max` and `required`,
+which are enforced, alongside `unit`, which is not, so the shape of the thing
+suggests a guarantee it does not make. *Resolves when:* either a unit becomes
+part of the stored value rather than a label on the input, or units are
+restricted to a fixed list per field kind so two descriptors cannot disagree.
+*Load-bearing:* only once a second vessel type records the same quantity, at
+which point any total or average across types is silently wrong. Today one type
+records each thing, so the failure is latent rather than live.
+
+**S-21. A lot's volume is stored and also derivable, and racking changes both.**
+`node.quantity` holds a lot's volume while `placement.volume_l` holds how much of
+it is in each vessel, so the same litres are recorded twice. T0-2 says exactly
+what happens next: "two sources of truth diverge the first time a volume is
+corrected." Racking makes that routine rather than rare, because every transfer
+writes both numbers. Deferred deliberately rather than fixed alongside racking,
+because making a lot's volume derive from its placements is a change to how
+every lot works and would turn one feature into a refactor. *Resolves when:*
+either quantity becomes derived for anything past bin stage, where placements
+exist and weight no longer applies, or a check keeps the two reconciled and
+names which one wins. *Load-bearing:* the divergence is silent, and the number
+people read is whichever the screen happened to ask for.
+
+**S-22. A blend across owners keeps one owner_id and the rest is a note.**
+`node.owner_id` is a single uuid and RLS scopes a custom crush client's view by
+it, so a lot made from two owners' wine cannot record both without either
+hiding the wine from a client who part owns it or rewriting how the policy
+reads ownership. `rack` gives the new lot to the largest contributor and writes
+`mixed_ownership` into its attributes, which is a caption rather than a fact
+anything computes from. The winemaker's point stands, that the risk is the
+barrels being physically combined and not the app recording it, so this refuses
+nothing. *Resolves when:* ownership is derived from lineage the way composition
+already is, and the client scoping policy reads the derived answer.
+*Load-bearing:* a client querying their own inventory will not see wine they
+part own, and the number they do see will be someone else's total.
+
+**S-23. Lees are a quantity on the event and not yet material.**
+`rack` records how much lees came across in its data, and the four operations
+already include `distribute_lees`, but nothing turns lees into a node. So
+racking clean off a barrel leaves solids that the app treats as loss, and lees
+kept for distillation or for bâtonnage elsewhere have no identity and no
+lineage from the wine they came out of. *Resolves when:* lees become a node
+with lineage and a product type, at which point racking clean has two outputs
+rather than one and the loss figure stops absorbing them. *Load-bearing:* only
+for volume reconciliation and for anything downstream that needs to know where
+a lees addition came from. The wine's own record is correct either way.
+
+**S-24. An event recorded before a fork cannot be moved onto the shard.**
+`record_event` forks as it records, so an addition to one barrel makes that
+barrel its own lot in the same breath. But if somebody records the addition
+against the whole lot first and only afterwards realises it went into one
+barrel, the event is already written and history is append-only, so it cannot
+be re-attached. The correction is a new event saying the first one covered less
+than it claimed, which is honest and is also harder to read than the thing
+having been right. *Resolves when:* either a correction operation exists whose
+meaning is "that event applied only to these vessels", and the history walk
+understands it, or the screens make recording against a subset the easy path so
+the mistake is rare. *Load-bearing:* the wrong version is silently wrong in
+exactly the way forking exists to prevent, and only for events entered before
+anyone noticed the divergence.
+
+**S-25. An account belonging to no party is staff, so a client who signs up
+before being linked sees the whole cellar.**
+`is_facility_user()` coalesces a missing party row to true, which is right for a
+cellar hand: they have no party and must still see the cellar. It is wrong for
+the gap between a custom crush client creating an account and an admin attaching
+it to their party. In that window they are an ordinary facility user and can
+read every lot, including other clients'. Nothing warns anybody, and the failure
+is invisible from both sides: the client sees more than they should and the
+admin sees nothing unusual. *Resolves when:* either an account carries an
+intent, so an unlinked one that was created as a client defaults to seeing
+nothing, or linking happens as part of inviting them rather than afterwards.
+*Load-bearing:* it is a confidentiality boundary between two clients who are
+already real, and the exposure lasts exactly as long as somebody forgets.
+
+**S-27. A client with no login cannot set privacy on their own wine.**
+`set_lot_hidden` allows the owner and nobody else, and an admin is deliberately
+excluded so that an admin cannot quietly unhide a client's lot. The cost is that
+a client party with no `app_user_id` attached has no one who can act as it, so
+their wine keeps whatever default it inherited and cannot be changed until they
+log in. That is the correct failure, since the alternative is an admin deciding
+on their behalf, which is the thing the split exists to prevent. It is still a
+gap because the winery can create a client party and lots for it long before
+that client ever signs in. *Resolves when:* either a client can be sent a
+privacy choice to make before they have an account, or an admin may set it once
+with the client's instruction recorded against the change. *Not load-bearing:*
+the default is the safe direction, so the failure is wine that is more hidden
+than the owner might have chosen rather than less.
+
+**S-28. A procedure is a copy of an SOP and nothing reconciles the two.**
+`procedure.sop_text` holds what the steps are supposed to mean, typed in
+alongside them. The winery's actual SOPs are documents in a folder. So there
+are two statements of the same procedure and only one of them is what the
+cellar hand reads on the phone. *Resolves when:* either the documents become
+the source and a procedure is generated from one, or the procedure becomes the
+source and the document is printed from it. *Load-bearing:* the moment somebody
+updates the written SOP and not the app, the phone confidently instructs the
+old way.
+
+**S-29. Seeded vocabulary gets new ids on every reset, so data does not survive
+one.**
+Varieties, operations and vessel types are inserted by migrations with
+`gen_random_uuid()`, so `chardonnay` is a different uuid after every
+`supabase db reset`. A lot backed up before a reset points at a variety that no
+longer exists, and the restore fails on the foreign key. It also means the ids
+in the local database will not match the ids in the hosted one, so anything
+exported from one and loaded into the other breaks the same way. Worked around
+for now by not resetting: `bun run db:up` applies pending migrations and leaves
+data alone. *Resolves when:* seeded rows carry deterministic ids, derived from
+kind and value rather than generated, at which point a backup restores cleanly
+and local and hosted agree. *Load-bearing:* it is the difference between a
+backup that works and one that only looks like it works.
+
+**S-30. Several writes that look appendable are decided by the kernel, so T1-2's
+line is in the wrong place.**
+T1-2 said local-first for append-only writes and server-authoritative for mutable
+state. The wire session built writes that fit neither description: `rack` reads the
+shape of a transfer and decides whether a lot moved or a new one was made, and
+`record_event` decides whether recording against some of a lot's vessels forks it.
+Both are appends by their effect on the record and neither can be performed without
+the kernel, because performing them offline would mean a client reproducing the
+decision, which the hard rule forbids. The axiom has been restated; what is not
+answered is what the offline client actually does when somebody racks a barrel in a
+shed with no signal. *Resolves when:* either those operations queue as intentions that
+the kernel resolves on reconnect, and the screen is honest that the outcome is not yet
+known, or they are declared online-only and the app says so before the person starts.
+*Load-bearing:* it is the difference between an offline mode that works and one that
+guesses, and the guess would be about lot identity.
+
+**S-31. The photograph path needs a vision dependency nobody has approved.**
+Section 8.5 specifies reading a sheet of handwritten numbers into proposed events at
+`inferred`, for a person to confirm. The shape fits the existing verify boundary
+exactly and none of it can be built, because it needs an OCR or vision step, which is
+a dependency and probably a paid external service, and the standing rule is to consult
+before adding either. There is a second question underneath the first: a page of
+numbers sent to a third party is a page of a custom crush client's numbers, and the
+schema now enforces a privacy those clients chose. *Resolves when:* the dependency
+question is put and answered, including whether the step can run locally, and the
+client confidentiality question is answered separately rather than assumed.
+*Not load-bearing:* manual transcription works and is what happens today. The risk is
+building it, finding confirmation is slower than typing, and having paid for a service
+to be slower.
+
+**S-32. An imported event has no way to say who observed it.**
+Section 8.6 wants a client's record to arrive from another facility intact. `event`
+requires an author, `by_user` references `app_user`, and `has_an_author` refuses a row
+with neither a user nor a sensor, so there is no way to record that a measurement was
+taken by somebody who has no account here. A fourth provenance value does not fix it:
+the missing fact is not how confident the reading is, it is who is asserting it, and
+provenance answers the first question only. This blocks import and does not block
+export. *Resolves when:* an event can name an external observer, most likely a party
+reference alongside `by_user` with the author check widened, and provenance gains a
+value meaning observed elsewhere and not verified here, or it is decided that an
+imported history lands as a single attested document rather than as events.
+*Load-bearing:* it is the difference between receiving a client's record and receiving
+a picture of it, and the whole argument for the protocol is that it is not a picture.
+
 ## Discharged
 
-*None. Nothing has been built.*
+**S-26. `vessel_state` did not obey row level security.** *Found and closed
+2026-09-10, in `0017_vessel_state_rls.sql`.* A view runs with its owner's rights
+unless it is created `security_invoker`, and this one was not, while `lot_state`
+and `task_board` were. So `node_read`, correct since 0003, did nothing on the
+view every screen actually reads. Measured before the fix, acting as a client
+with one lot: one row through `node`, one through `lot_state`, two through
+`vessel_state`, including another party's lot by name. Both custom crush clients
+could read the whole cellar from the vessel list. Recorded here rather than only
+in a commit because the lesson outlives the bug: every assertion in this repo
+queried tables, and the screens query views, so nothing noticed for eight
+sessions. There is now a check that every view in `public` is `security_invoker`.
+
+**S-3. Partial consumption of a parent is unhandled.** *Discharged 2026-09-09 by
+the winemaker's rule, in `0013_close_on_empty.sql`.* Taking part of a lot leaves
+the rest of that lot, open, at a reduced volume: 228 L off a 2000 L lot leaves
+1772 L. A lot closes when it is empty and not when it first feeds something, so
+`lineage_closes_parent` is gone and lineage goes back to recording only where
+material came from. The old rule was also written into spec.md, which has been
+corrected rather than left disagreeing with the schema.
