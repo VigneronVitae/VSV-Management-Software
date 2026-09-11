@@ -480,6 +480,56 @@ them, and a name from a space as small as "Riesling 2025" can be recovered by gu
 whatever function produced it. A random token per export carries continuity and
 nothing else, which is exactly the fact the buyer is entitled to.
 
+**The kind of an event travels even when its subject does not, and this is the part
+worth building.** A buyer of a used barrel is not really asking whose wine was in it.
+They are asking whether it is sound: has it ever had an off smell recorded, has it
+leaked, when was it last steamed, how many fills. Every one of those is an event
+already on the vessel, and the answer does not need the lot.
+
+So an exported vessel history carries each event's operation, date and provenance, with
+the lot it concerned reduced to the opaque token above. Three steamings, a leak fixed
+in 2024, and no off-smell entry anywhere in six years, each pointing at a token rather
+than a name.
+
+That is better than a claim, and the difference matters. A seller asserting "this
+barrel has never had an off aroma" is worth exactly as much as the seller. A buyer who
+can see every event that ever happened to the barrel, and can see that none of them is
+an off smell, has derived the same fact and needs to trust nobody. The absence is
+legible because the presences are. This is the one place where handing over more makes
+the private thing safer rather than less safe, because a complete list of kinds with no
+identities proves more than a partial list of anything.
+
+Two honest limits. Dates plus a token still permit correlation: a buyer who knows from
+elsewhere which client had wine here in a given autumn can guess what a token stands
+for, and no export can prevent that without destroying the timeline that makes it
+useful. And the guarantee is only as complete as the recording, so a barrel that smelled
+wrong on a morning nobody wrote down exports as clean. The first is inherent, the
+second is an argument for recording rather than against exporting.
+
+**Selling a barrel with its key, which is a different requirement and a later one.**
+Everything above withholds by leaving out. There is a case it does not cover: a buyer
+who should be able to read the full history later, if the client whose wine it was
+agrees, without the seller having to produce a second export at that moment. The barrel
+is sold with the sealed record, and the key follows or does not.
+
+This is escrow rather than privacy, and the distinction is that the sealed thing is
+handed over now against a condition resolved later. It was killed once as C-8 and the
+kill was too broad: the objections were that a hashed lot name is guessable, which is
+true of hashing and not of encryption, and that nobody obvious holds the key, which
+has an answer. The key belongs to the owner of the history, on exactly the principle
+the lot privacy work already uses, that the owner decides and an admin may read but
+not release.
+
+It stays specified and unbuilt because key custody is the whole of the difficulty and
+none of the appeal. If the app holds a client's key then the app can open the record
+and the seal is decoration. If the client holds it then losing it destroys the history
+irrecoverably, which is a worse failure than the one being solved. See S-35.
+
+The order matters. Event kinds travelling as shape answers what a barrel buyer
+actually asks and costs nothing. Sealed histories answer a rarer question and cost a
+key management system. Build the first and let the second wait for somebody who needs
+it.
+
 **Symmetry is what makes it a protocol.** The same document must be loadable, so the
 facility can receive a client arriving from somewhere else. This is where the untyped
 floor earns its keep: an arriving lot whose vocabulary is not shared should land, be

@@ -110,6 +110,17 @@ something is deliberately handed over sealed for a recipient to open later under
 condition that is known in advance. That is a different requirement from privacy and it
 would need a named condition, a key holder, and a reason the sealed thing must travel
 now rather than on consent.
+*Condition met, 2026-09-10, the same day.* The winemaker named all three. The condition
+is a sale, the key holder is the owner of the history, and the sealed record must travel
+now because the barrel does. So the kill was too broad and is narrowed rather than
+maintained: hashing stays dead, because a lot name is guessable and a hash of one is
+theatre, and encryption under an owner-held key comes back as spec section 8.6,
+specified and unbuilt, with key custody as its open difficulty in S-35.
+*Also surviving, and larger than either:* the separation the winemaker asked for next.
+A buyer wants to know a barrel is sound rather than who owned what, and both are served
+by exporting each event's kind and date while reducing its subject to the opaque token.
+The buyer then derives "no off aroma in six years" from a complete list rather than
+being told it, which needs no key at all and is worth more than the sealed version.
 
 **C-5. Pick as the atomic intake unit.**
 *Tried:* modelling each pick as a lot, with three Pinot Gris picks as one lot carrying

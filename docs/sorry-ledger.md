@@ -372,6 +372,24 @@ party rather than a vessel, so arriving and departing are one operation seen fro
 ends. That is also what the deferred `org_id` is for, so the two should be designed
 together. *Load-bearing:* the crossing has already happened once and is unrecorded.
 
+**S-35. A sealed history needs a key holder, and both candidates are wrong.**
+Spec section 8.6 specifies selling a barrel with its history encrypted under a key
+belonging to whoever owns that history, so the record travels now and opens later if
+the owner agrees. The mechanism is sound and the custody is not decided. If the
+application holds a client's key then the application can open the record, an admin
+with database access can open it, and the seal is decoration on top of the redaction
+that was already there. If the client holds the key then losing it destroys their own
+history permanently, which is a worse outcome than the disclosure being prevented, and
+a winery is not a place where people keep track of key material. Splitting it so that
+neither party alone can open it answers both and introduces a third question, which is
+who runs the recovery when a client dissolves and somebody still needs the record for a
+federal return. *Resolves when:* somebody actually needs a sealed history, at which
+point the condition under which it opens is known and the holder follows from it, rather
+than being chosen in advance for a case nobody has met. *Not load-bearing:* the cheap
+half of the same idea is in the spec and covers what a barrel buyer actually asks, which
+is whether the barrel is sound rather than whose wine made it unsound. A buyer reading a
+complete list of event kinds against opaque tokens derives that without a key.
+
 ## Discharged
 
 **S-26. `vessel_state` did not obey row level security.** *Found and closed
