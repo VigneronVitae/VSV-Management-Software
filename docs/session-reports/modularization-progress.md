@@ -60,6 +60,23 @@ line.
 **A check nobody has watched fail is not a check.** The first two rules above were both
 found by break tests and neither would have been found by reading.
 
+## Predictions for W-6, recorded before measuring
+
+Written before phase 1 ran, after reading the three X reports.
+
+1. **Phase 1 will find more fail-open paths than the four X-1 named, and the population is
+   nearer ten than three.** X-1 itself filed five more as LATENT that are the same shape, and
+   a pass that goes looking rather than stumbling should find a few beyond those.
+2. **The behavioural score will land within a few points of X-1's 112 of 198.** It should not
+   match exactly, because repairing the harness changes denominators: aborting on a vanished
+   substitution target and counting fixture breakage separately both move the count.
+3. **The independent function-body substitutions will catch between 55 and 70 percent.** X-1
+   got 6 of 9 on its own choices against 10 of 10 on the author's, and there is no reason a
+   third set should do better than the second.
+4. **Extending the A25 population to trigger validators will find a fourth instance, and it
+   will be X-2-1.** That is close to cheating, since X-2 already named it, so the honest form
+   of the prediction is that it will find X-2-1 **and nothing else**.
+
 ## Predictions for W-4, recorded before measuring
 
 Per the rule above, written down before phase 1 ran.
