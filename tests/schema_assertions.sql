@@ -23,7 +23,8 @@
 --              supabase/migrations/0018_lot_privacy.sql,
 --              supabase/migrations/0019_procedures.sql,
 --              supabase/migrations/0020_pin_search_path.sql,
---              supabase/migrations/0021_cellar_write_paths.sql]
+--              supabase/migrations/0021_cellar_write_paths.sql,
+--              supabase/migrations/0022_admission_and_authorship.sql]
 -- Depended on by: [docs/status-ledger.md]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
 -- Open sorries: S-7 (what this exercises is Postgres policy evaluation, not
@@ -1865,35 +1866,201 @@ begin
   perform test_ok('an admin may still change anything, so the allow-list is not a wall');
 end $$;
 
--- is_cellar_staff() exists rather than reusing is_facility_user() for one
--- reason, and this is it. is_facility_user() coalesces a missing party row to
--- true, so deactivating a client's party answers true and widens their read to
--- the whole cellar. That is a live defect with its own ledger entry and is not
--- fixed here; what is asserted is that the predicate governing writes does not
--- inherit it.
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- admission: switching an account off takes access away'; end $$;
+
+-- A1 in the findings ledger, found by six independent review runs and the worst
+-- of them: is_facility_user() coalesced a missing party row to true so that a
+-- harvest intern with no party could see the cellar, and a deactivated client
+-- has no findable party row either, so switching a client off promoted them to
+-- staff. Deactivation escalated instead of revoking.
 do $$
-declare facility boolean; staff boolean;
+declare before_ boolean; after_ boolean; nodes_after int;
 begin
+  perform test_act_as('00000000-0000-0000-0000-00000000a003');   -- the client login
+  set local role authenticated;
+  select is_facility_user() into before_;
+  reset role;
+
   update party set active = false
    where id = '00000000-0000-0000-0000-00000000f002';
 
-  perform test_act_as('00000000-0000-0000-0000-00000000a003');   -- the client login
+  perform test_act_as('00000000-0000-0000-0000-00000000a003');
   set local role authenticated;
-  select is_facility_user(), is_cellar_staff() into facility, staff;
+  select is_facility_user() into after_;
+  select count(*) into nodes_after from node;
   reset role;
 
   update party set active = true
    where id = '00000000-0000-0000-0000-00000000f002';
 
-  if staff then
-    raise exception 'FAIL: a deactivated client party counts as cellar staff';
+  if before_ then raise exception 'FAIL: an active client login counts as facility'; end if;
+  if after_ then
+    raise exception 'FAIL: deactivating a client party promoted that login to facility';
   end if;
-  perform test_ok('a deactivated client party is not cellar staff, whatever is_facility_user says');
+  perform test_ok('deactivating a client party revokes rather than promotes');
 
-  if not facility then
-    raise exception
-      'FAIL: is_facility_user no longer widens on a deactivated party, so this assertion is stale and the ledger entry it guards may be closed';
+  if nodes_after <> 0 then
+    raise exception 'FAIL: a deactivated client still sees % nodes', nodes_after;
   end if;
+  perform test_ok('a deactivated client sees nothing, not everything');
+end $$;
+
+-- The intern case the coalesce existed to serve, which must survive the fix.
+do $$
+declare n int; facility boolean;
+begin
+  perform test_act_as('00000000-0000-0000-0000-00000000a002');   -- no party at all
+  set local role authenticated;
+  select is_facility_user() into facility;
+  select count(*) into n from node;
+  reset role;
+  if not facility then raise exception 'FAIL: a cellar hand with no party is not staff'; end if;
+  if n = 0 then raise exception 'FAIL: a cellar hand with no party sees no nodes'; end if;
+  perform test_ok('a login with no party at all is still the harvest intern and still sees the cellar');
+end $$;
+
+-- S-25, discharged by the same predicate. An authenticated identity that never
+-- claimed an account is nobody here, rather than being staff by default.
+do $$
+declare facility boolean;
+begin
+  insert into auth.users (id) values ('00000000-0000-0000-0000-0000000000ff');
+  perform test_act_as('00000000-0000-0000-0000-0000000000ff');
+  set local role authenticated;
+  select is_facility_user() into facility;
+  reset role;
+  if facility then
+    raise exception 'FAIL: a token with no app_user row counts as a facility user';
+  end if;
+  perform test_ok('an account that never claimed is not staff, which is S-25');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- authorship: an event names the person who wrote it'; end $$;
+
+-- A3. The old policy read `by_user = auth.uid() or by_sensor is not null`, so any
+-- string in by_sensor unbound the author check and by_user could name anybody.
+do $$
+begin
+  perform test_act_as('00000000-0000-0000-0000-00000000a002');
+  set local role authenticated;
+
+  begin
+    insert into event (operation_id, subject_type, subject_id, by_user, by_sensor)
+    values (term_id('operation','punchdown'), 'node',
+            '00000000-0000-0000-0000-00000000b001',
+            '00000000-0000-0000-0000-00000000a001',  -- the admin, not the caller
+            'anything');
+    raise exception 'FAIL: an event was written in another user''s name';
+  exception when insufficient_privilege then
+    perform test_ok('a sensor string no longer unbinds the author check');
+  end;
+
+  begin
+    insert into event (operation_id, subject_type, subject_id, by_user)
+    values (term_id('operation','punchdown'), 'node',
+            '00000000-0000-0000-0000-00000000b001',
+            '00000000-0000-0000-0000-00000000a001');
+    raise exception 'FAIL: an event was attributed to somebody else';
+  exception when insufficient_privilege then
+    perform test_ok('an event must name the person writing it');
+  end;
+
+  insert into event (operation_id, subject_type, subject_id, by_user)
+  values (term_id('operation','punchdown'), 'node',
+          '00000000-0000-0000-0000-00000000b001', auth.uid());
+  perform test_ok('recording what you did yourself still works, which is the point of the table');
+
+  reset role;
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- claiming a task needs an identity and an entitlement'; end $$;
+
+-- A8. claim_task was security definer with no view on the caller, so an unclaimed
+-- token could take a task, a null uid wrote null into claimed_by and wedged it
+-- permanently, and an open task assigned to a named person could be taken by
+-- anybody.
+insert into task (id, operation_id, status, subject_type, subject_id, assignee, instructions)
+  values ('00000000-0000-0000-0000-00000000e001',
+          term_id('operation','punchdown'), 'open',
+          'node', '00000000-0000-0000-0000-00000000b001',
+          '00000000-0000-0000-0000-00000000a001',
+          'Assigned to the admin on purpose');
+
+do $$
+declare tsk task; st task_status; cb uuid;
+begin
+  perform test_act_as(null);
+  set local role authenticated;
+  begin
+    tsk := claim_task('00000000-0000-0000-0000-00000000e001');
+    raise exception 'FAIL: a task was claimed with no identity';
+  exception when insufficient_privilege then
+    perform test_ok('claiming with no identity is refused rather than writing a null');
+  end;
+  reset role;
+
+  select status, claimed_by into st, cb from task
+   where id = '00000000-0000-0000-0000-00000000e001';
+  if st <> 'open' or cb is not null then
+    raise exception 'FAIL: the refused claim still wedged the task: % / %', st, cb;
+  end if;
+  perform test_ok('a refused claim leaves the task claimable, which is what wedging meant');
+
+  perform test_act_as('00000000-0000-0000-0000-00000000a002');   -- not the assignee
+  set local role authenticated;
+  begin
+    tsk := claim_task('00000000-0000-0000-0000-00000000e001');
+    raise exception 'FAIL: a task assigned to somebody else was taken';
+  exception when lock_not_available then
+    perform test_ok('a task assigned to somebody else cannot be taken from them');
+  end;
+  reset role;
+
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');   -- the assignee
+  set local role authenticated;
+  tsk := claim_task('00000000-0000-0000-0000-00000000e001');
+  reset role;
+  if tsk.claimed_by <> '00000000-0000-0000-0000-00000000a001' then
+    raise exception 'FAIL: the assignee could not claim their own task';
+  end if;
+  perform test_ok('the assignee claims their own task, and an unassigned task is anyone''s');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- the photo bucket is private in policy, not only in comment'; end $$;
+
+-- A6. Both policies were `using (bucket_id = 'vessel-photos')` and nothing else,
+-- eighteen lines below the comment saying the bucket is private because a barrel
+-- photo shows a chalk mark with a client's lot on it. Asserted against the
+-- catalog rather than by uploading, because the storage schema is part of the
+-- Supabase stack and these migrations stay runnable without it.
+do $$
+declare n int; blanket int;
+begin
+  if not exists (select 1 from information_schema.schemata where schema_name = 'storage') then
+    raise notice 'ok   no storage schema here, so the photo policies are not asserted';
+    return;
+  end if;
+
+  select count(*) into n from pg_policies
+   where schemaname = 'storage' and tablename = 'objects'
+     and policyname in ('vessel_photos_read','vessel_photos_insert','vessel_photos_update');
+  if n <> 3 then
+    raise exception 'FAIL: expected read, insert and update policies on the photo bucket, found %', n;
+  end if;
+  perform test_ok('the photo bucket has an update policy, so re-photographing a vessel works');
+
+  select count(*) into blanket from pg_policies
+   where schemaname = 'storage' and tablename = 'objects'
+     and policyname like 'vessel_photos%'
+     and coalesce(qual, with_check) not like '%is_facility_user%';
+  if blanket > 0 then
+    raise exception 'FAIL: % photo policy(ies) admit every login', blanket;
+  end if;
+  perform test_ok('every vessel-photos policy asks who is looking, which is why the bucket is private');
 end $$;
 
 -- ---------------------------------------------------------------------------

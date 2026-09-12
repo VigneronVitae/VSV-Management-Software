@@ -9,7 +9,7 @@
 --              supabase/migrations/0003_parties_and_products.sql,
 --              supabase/migrations/0004_terms_and_effects.sql,
 --              packages/cellar/docs/spec.md]
--- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql, supabase/migrations/0006_vessel_thermal.sql, supabase/migrations/0008_fill_vessel.sql]
+-- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql, supabase/migrations/0006_vessel_thermal.sql, supabase/migrations/0008_fill_vessel.sql, supabase/migrations/0022_admission_and_authorship.sql]
 -- Axioms enforced: T0-3 (provenance on every event), T0-4 (a producer cannot
 --                  grant itself standing), T0-5 (append-only history),
 --                  T1-1 (pickers, not text fields)

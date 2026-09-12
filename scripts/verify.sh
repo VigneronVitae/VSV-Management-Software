@@ -136,7 +136,8 @@ for f in $(tracked); do
   corpus "$f" && continue
   [ -f "$f" ] || continue
   # Word-bounded on purpose. Without it 'VS-023', a vessel sticker in the
-  # assertions, reads as sorry S-023.
+  # assertions, reads as a sorry numbered 023. This comment deliberately does
+  # not write that id out, because this file is scanned too.
   for id in $(grep -o '\bS-[0-9][0-9]*\b' "$f" 2>/dev/null | sort -u); do
     printf '%s\n' "$sorries" | grep -qx "$id" || fail "$f: names $id, which is not in docs/sorry-ledger.md"
   done

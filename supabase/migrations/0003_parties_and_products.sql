@@ -10,7 +10,8 @@
 --                 supabase/migrations/0004_terms_and_effects.sql,
 --                 supabase/migrations/0005_account_and_walk.sql,
 --                 tests/schema_assertions.sql,
---                 supabase/migrations/0018_lot_privacy.sql]
+--                 supabase/migrations/0018_lot_privacy.sql,
+--                 supabase/migrations/0022_admission_and_authorship.sql]
 -- Axioms enforced: T1-1 (pickers, not text fields), T1-3 (every scan is a
 --                  reconciliation opportunity)
 -- Open sorries: S-7 (RLS untested, now including the client-party policy

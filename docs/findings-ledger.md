@@ -3,7 +3,7 @@ Type: ledger
 Version: 1.0
 Purpose: "Deduplicates the thirteen review reports into one entry per defect, keyed by the database or code identifier rather than by line number, so entries survive the schema reorganization."
 Depends on: [docs/architecture-rulings.md, docs/sorry-ledger.md, docs/review/README.md]
-Depended on by: [docs/status-ledger.md, supabase/migrations/0021_cellar_write_paths.sql]
+Depended on by: [docs/status-ledger.md, supabase/migrations/0021_cellar_write_paths.sql, supabase/migrations/0022_admission_and_authorship.sql]
 ---
 
 # Findings Ledger
@@ -25,6 +25,37 @@ probably real and unconfirmed, and several of the single-source entries are the 
 interesting items in the set, because they took execution rather than reading.
 
 **(p)** marks an entry at least one report probed rather than reasoned.
+
+## What has been closed since the review
+
+The reports describe `c3eae3c`, five migrations and 42 files. This section is the only
+part of this document that changes as work lands, and it is kept here rather than by
+editing the tables, so that a reader can still see what the reviews found.
+
+| Id | Closed by | Note |
+|---|---|---|
+| A1 | `0022_admission_and_authorship.sql` | Probed before and after. Discharges S-25 in the same predicate |
+| A2 | `0013_close_on_empty.sql` | The trigger the finding was about was dropped, for an unrelated reason, four days before the finding arrived |
+| A3 | `0022_admission_and_authorship.sql` | The sensor branch is refused outright rather than made trustworthy. S-39 |
+| A6 | `0022_admission_and_authorship.sql` | Staff only in both directions, and an update policy that 0005 never had. S-40 |
+| A8 | `0022_admission_and_authorship.sql` | A definer function now decides who may call it, which is the check a definer function owes |
+| A14 | `0021_cellar_write_paths.sql` | Predicted racking would be refused silently the day it was built. It was, for four days |
+| B1 | `app.css`, doubled `[hidden]` selector | Every add form had been permanently open |
+| B14 | `vite.config.ts` | `allowedHosts` now names the tunnel, which is what unblocked camera testing on a phone |
+| C1 | `package.json` | `bun run test` is a script. S-38 says what it is standing in for |
+| C2 | `docs/status-ledger.md` | The opening sentence; no grade was touched |
+| C3 | `CLAUDE.md`, `docs/compost-ledger.md` | Eight entries, all with a reactivation condition, in numeric order |
+| C4 | `supabase/config.toml` | Postgres 17, with 22 migrations and 129 assertions run against it |
+| D1 | partly | A throwaway shim proved 22 migrations apply from empty. A committed shim is still not in the tree |
+| D4 | `scripts/verify.sh` | Found forty nine broken edges on its first run |
+| D9 | `scripts/verify.sh` | Em dash rule enforced; the import rule holds vacuously and says so |
+| E6 | `0014_rack.sql` | Racking writes `placement.to_at`, which nothing previously did |
+
+Two entries were made worse by work done after the review and are worth naming as such.
+A13, that every denial is a zero-row match rather than an error, went from a general
+observation to a live defect in five new kernel functions, and `0021` improves it for one
+principal on three tables rather than answering it. B9, that the home screen offers a
+cellar user actions RLS refuses, now offers more of them, because the menu grew.
 
 ## Disposition
 

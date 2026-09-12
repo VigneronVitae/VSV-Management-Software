@@ -241,20 +241,6 @@ the mistake is rare. *Load-bearing:* the wrong version is silently wrong in
 exactly the way forking exists to prevent, and only for events entered before
 anyone noticed the divergence.
 
-**S-25. An account belonging to no party is staff, so a client who signs up
-before being linked sees the whole cellar.**
-`is_facility_user()` coalesces a missing party row to true, which is right for a
-cellar hand: they have no party and must still see the cellar. It is wrong for
-the gap between a custom crush client creating an account and an admin attaching
-it to their party. In that window they are an ordinary facility user and can
-read every lot, including other clients'. Nothing warns anybody, and the failure
-is invisible from both sides: the client sees more than they should and the
-admin sees nothing unusual. *Resolves when:* either an account carries an
-intent, so an unlinked one that was created as a client defaults to seeing
-nothing, or linking happens as part of inviting them rather than afterwards.
-*Load-bearing:* it is a confidentiality boundary between two clients who are
-already real, and the exposure lasts exactly as long as somebody forgets.
-
 **S-27. A client with no login cannot set privacy on their own wine.**
 `set_lot_hidden` allows the owner and nobody else, and an admin is deliberately
 excluded so that an admin cannot quietly unhide a client's lot. The cost is that
@@ -435,7 +421,56 @@ the client is where every defect a person actually meets lives, and it is the ha
 no failing test waiting for it.
 
 
+**S-39. No sensor can write an event, because nothing authenticates a sensor.**
+`event_insert` used to accept any row whose `by_sensor` was not null, which meant a
+string in that column was sufficient to unbind the author check: a person could write
+an event naming somebody else in `by_user`, or name themselves as a thermometer. That
+was A3 in the findings ledger and 0022 closes it by requiring an event written through
+the `authenticated` role to name the caller and nothing else. The cost is that the
+sensor half of `has_an_author` is now unreachable. A real sensor path needs an identity
+for the sensor, which is a row rather than a free string, and a role that is not a
+person's. *Resolves when:* a sensor exists, at which point it gets a registry row and
+writes through `service_role` or through a function that checks the registry, and the
+policy gains a branch that names that mechanism rather than trusting a column.
+*Not load-bearing:* nothing in the cellar is a sensor yet, and the room thermometer the
+spec mentions is read by a person off a display.
+
+**S-40. A vessel photo's visibility follows the vessel and not the lot that was in it.**
+0022 closes the vessel-photos bucket to facility users, which fixes the case where every
+login could read every photo. What it cannot do is let a client see a photo of their own
+wine, because a photo is stored at `<vessel_id>/photo.<ext>` and carries no record of
+what was in the vessel when it was taken. Deriving the owner from the current placement
+would show a barrel's old photograph to whoever holds it now and hide it from the person
+whose wine it actually shows, which is worse than refusing both. *Resolves when:* a
+photo is an event on a vessel with a timestamp, at which point what was in the vessel at
+that moment is a query rather than a guess, and the same change is what lets a photo be
+evidence for a reading under spec 8.5. *Load-bearing:* it is the reason a client sees no
+photographs at all, which is a feature nobody has yet asked for and a limitation worth
+knowing before somebody does.
+
+
 ## Discharged
+
+**S-25. An account belonging to no party is staff, so a client who signs up
+before being linked sees the whole cellar.**
+`is_facility_user()` coalesces a missing party row to true, which is right for a
+cellar hand: they have no party and must still see the cellar. It is wrong for
+the gap between a custom crush client creating an account and an admin attaching
+it to their party. In that window they are an ordinary facility user and can
+read every lot, including other clients'. Nothing warns anybody, and the failure
+is invisible from both sides: the client sees more than they should and the
+admin sees nothing unusual. *Resolves when:* either an account carries an
+intent, so an unlinked one that was created as a client defaults to seeing
+nothing, or linking happens as part of inviting them rather than afterwards.
+*Load-bearing:* it is a confidentiality boundary between two clients who are
+already real, and the exposure lasts exactly as long as somebody forgets.
+*Discharged 2026-09-11 by `0022_admission_and_authorship.sql`.* `is_facility_user()` now
+requires an active `app_user` row and refuses any login linked to a client party whether
+that party is active or not. An authenticated identity that has never claimed an account
+is no longer a facility user, so the window this entry describes is closed at the
+database rather than in the walk. The intern case it was protecting survives untouched:
+no party row at all is still staff.
+
 
 **S-26. `vessel_state` did not obey row level security.** *Found and closed
 2026-09-10, in `0017_vessel_state_rls.sql`.* A view runs with its owner's rights

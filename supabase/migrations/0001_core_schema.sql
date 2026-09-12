@@ -16,7 +16,8 @@
 --                 supabase/migrations/0013_close_on_empty.sql,
 --                 supabase/migrations/0014_rack.sql,
 --                 supabase/migrations/0015_fork_and_history.sql,
---                 supabase/migrations/0019_procedures.sql]
+--                 supabase/migrations/0019_procedures.sql,
+--                 supabase/migrations/0022_admission_and_authorship.sql]
 -- Axioms enforced: T0-1 (one node type), T0-3 (provenance on every event),
 --                  T0-5 (append-only history)
 -- Open sorries: S-3 (partial parent consumption), S-4 (subject_id not a FK),

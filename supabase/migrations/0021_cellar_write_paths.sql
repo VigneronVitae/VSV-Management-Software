@@ -13,7 +13,7 @@
 --              supabase/migrations/0018_lot_privacy.sql,
 --              supabase/migrations/0020_pin_search_path.sql,
 --              docs/findings-ledger.md]
--- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql]
+-- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql, supabase/migrations/0022_admission_and_authorship.sql]
 -- Axioms enforced: T0-4, in that nothing here lets a producer widen its own
 --                  standing: the columns a cellar user may write are the
 --                  operational ones, and owner_id and hidden are not among them.

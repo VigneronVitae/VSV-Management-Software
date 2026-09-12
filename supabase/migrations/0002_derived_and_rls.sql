@@ -11,7 +11,8 @@
 --                 tests/schema_assertions.sql,
 --                 supabase/migrations/0015_fork_and_history.sql,
 --                 supabase/migrations/0017_vessel_state_rls.sql,
---                 supabase/migrations/0021_cellar_write_paths.sql]
+--                 supabase/migrations/0021_cellar_write_paths.sql,
+--                 supabase/migrations/0022_admission_and_authorship.sql]
 -- Axioms enforced: T0-2 (derived over stored), T0-4 (a producer cannot grant
 --                  itself standing), T1-1 (pickers, not text fields)
 -- Open sorries: S-7 (RLS untested against a real cellar user)
