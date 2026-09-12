@@ -28,7 +28,8 @@
 --              supabase/migrations/0023_subject_resolver.sql,
 --              supabase/migrations/0024_task_board_via_registry.sql,
 --              supabase/migrations/0025_bind_an_unbound_code.sql,
---              supabase/migrations/0026_subject_type_registry.sql]
+--              supabase/migrations/0026_subject_type_registry.sql,
+--              supabase/migrations/0027_term_kind_registry.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
 -- Open sorries: S-7 (what this exercises is Postgres policy evaluation, not
@@ -2345,7 +2346,9 @@ begin
   -- catching that addition is the assertion working, not the assertion being in
   -- the way: it cost thirty seconds and it is the same thirty seconds a schema
   -- move would cost when it loses one.
-  want := '57';
+  -- 57 before 0027, which added a read and an admin-write policy to the new
+  -- term_kind registry.
+  want := '59';
   if have <> want then
     raise exception
       'FAIL: there are % policies in public and this suite was written against %. If that is deliberate, update this number and the list below in the same commit', have, want;
@@ -2369,14 +2372,15 @@ begin
        || 'node.node_insert, party.party_read, placement.placement_insert, '
        || 'placement.placement_read, subject_resolver.subject_resolver_read, '
        || 'task.task_read, task_claim_log.task_claim_log_read, template.template_read, '
-       || 'template_step.template_step_read, term.term_read, vessel.vessel_read, '
+       || 'template_step.template_step_read, term.term_read, term_kind.term_kind_read, '
+       || 'vessel.vessel_read, '
        || 'vessel_code.vessel_code_read, vessel_type_note.vessel_type_note_read';
 
   if have <> want then
     raise exception
       E'FAIL: the set of wide-open policies changed.\nnow:  %\nwas:  %', have, want;
   end if;
-  perform test_ok('the nineteen wide-open policies are exactly the ones ledger A5 and A23 describe');
+  perform test_ok('the twenty wide-open policies are exactly the ones ledger A5 and A23 describe, plus the term_kind registry which is vocabulary about vocabulary');
 end $$;
 
 -- ---------------------------------------------------------------------------
@@ -2504,7 +2508,9 @@ begin
 
   -- c=18 f=40 before 0026, which removed the subject_type enum and replaced it
   -- with three foreign keys into the resolver registry plus a bare-name check.
-  want := 'c=19 f=43 p=22 u=14';
+  -- c=19 f=43 p=22 before 0027, which added the term_kind registry: two bare-name
+  -- checks, its primary key, and the foreign key from term.kind into it.
+  want := 'c=21 f=44 p=23 u=14';
   if have <> want then
     raise exception
       E'FAIL: the constraint inventory changed.\nnow:  %\nwas:  %\nIf that is deliberate, update this line in the same commit that changed the schema.', have, want;
@@ -2555,21 +2561,25 @@ begin
     from information_schema.columns
    where table_schema = 'public' and is_generated = 'ALWAYS';
 
-  want := 'event.operation_kind=''operation''::term_kind '
-       || 'location.kind_kind=''location_kind''::term_kind '
-       || 'node.product_kind=''product_type''::term_kind '
-       || 'node.variety_kind=''variety''::term_kind '
-       || 'procedure_step.material_kind=''material_kind''::term_kind '
-       || 'task.operation_kind=''operation''::term_kind '
-       || 'template.variety_kind=''variety''::term_kind '
-       || 'template_step.operation_kind=''operation''::term_kind '
-       || 'vessel.type_kind=''vessel_type''::term_kind';
+  -- Each was ::term_kind before 0027 and is ::text after it. The nine columns and
+  -- their positions are unchanged, which matters: they were altered in place
+  -- rather than dropped and re-added, because vessel_state reads visible_node
+  -- through a positional alias list and reordering node silently rebinds it.
+  want := 'event.operation_kind=''operation''::text '
+       || 'location.kind_kind=''location_kind''::text '
+       || 'node.product_kind=''product_type''::text '
+       || 'node.variety_kind=''variety''::text '
+       || 'procedure_step.material_kind=''material_kind''::text '
+       || 'task.operation_kind=''operation''::text '
+       || 'template.variety_kind=''variety''::text '
+       || 'template_step.operation_kind=''operation''::text '
+       || 'vessel.type_kind=''vessel_type''::text';
 
   if have is distinct from want then
     raise exception
       E'FAIL: the generated kind columns changed.\nnow:  %\nwas:  %', have, want;
   end if;
-  perform test_ok('the nine generated kind columns are constants, so a kind cannot be lied about');
+  perform test_ok('the nine generated kind columns are constants and still in place, so a kind cannot be lied about');
 end $$;
 
 -- Behaviour, not just shape. Every one of the nine refuses a term of the wrong
@@ -2641,7 +2651,9 @@ begin
   -- r=4 before 0026. The three new restrict keys are the subject-type
   -- registrations: uninstalling a module while tasks still point at its subjects
   -- is refused rather than silently taking the tasks with it.
-  want := 'a=27 c=8 n=1 r=7';
+  -- r=7 before 0027, which added term.term_kind_is_registered: deregistering a
+  -- kind of vocabulary while terms still use it is refused, not cascaded.
+  want := 'a=27 c=8 n=1 r=8';
   if have <> want then
     raise exception
       E'FAIL: foreign key delete behaviour changed.\nnow:  %\nwas:  %\na is no action, c is cascade, n is set null, r is restrict.', have, want;
@@ -2666,12 +2678,12 @@ begin
        || 'lineage.lineage_child_id_fkey, lineage.lineage_parent_id_fkey, '
        || 'placement.placement_node_id_fkey, placement.placement_vessel_id_fkey, '
        || 'procedure.procedure_subject_type_is_registered, '
-       || 'task.task_subject_type_is_registered';
+       || 'task.task_subject_type_is_registered, term.term_kind_is_registered';
 
   if have <> want then
     raise exception E'FAIL: the restrict keys changed.\nnow:  %\nwas:  %', have, want;
   end if;
-  perform test_ok('the seven ON DELETE RESTRICT keys are the lineage and placement ones ledger A20 names, plus the three subject-type registrations');
+  perform test_ok('the eight ON DELETE RESTRICT keys are the lineage and placement ones ledger A20 names, plus the four registry ones');
 end $$;
 
 -- ---------------------------------------------------------------------------
@@ -3448,6 +3460,68 @@ begin
     perform test_ok('deregistering a subject type with live tasks is refused, not cascaded');
   end;
   delete from task where id = '00000000-0000-0000-0000-00000000aa02';
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- a term kind is a row, not a type'; end $$;
+
+-- AR-E7, the half `0027` did. The enum listed variety, cooper, wood, vessel_type,
+-- product_type, material_kind, operation and location_kind, and six of those
+-- eight belong to winemaking or inventory rather than to core.
+do $$
+begin
+  if exists (select 1 from pg_type where typname = 'term_kind' and typtype = 'e') then
+    raise exception 'FAIL: the term_kind enum is back, so core carries module vocabulary again';
+  end if;
+  if to_regclass('public.term_kind') is null then
+    raise exception 'FAIL: there is no term_kind registry';
+  end if;
+  perform test_ok('there is no term_kind enum, and there is a term_kind registry');
+
+  if (select count(*) from term_kind where module <> 'core') < 5 then
+    raise exception 'FAIL: the registry does not record which module owns each kind';
+  end if;
+  perform test_ok('the registry says which module owns each kind, and six of the eight are not core''s');
+end $$;
+
+-- A term cannot name a kind nobody registered, and adding a kind is a row.
+do $$
+begin
+  begin
+    insert into term (kind, value, label, sort_order)
+      values ('not_a_kind', 'x', 'X', 1);
+    raise exception 'FAIL: a term was created under an unregistered kind';
+  exception when foreign_key_violation then
+    perform test_ok('a term cannot name a kind nobody registered');
+  end;
+
+  insert into term_kind (kind, module, label) values ('hop_variety', 'brewing', 'Hop variety');
+  insert into term (kind, value, label, sort_order)
+    values ('hop_variety', 'cascade', 'Cascade', 10);
+  perform test_ok('adding a kind of vocabulary is one row, and a term can use it immediately');
+end $$;
+
+-- The one check this conversion could have silently disabled. The validator used
+-- to prove a picker's vocabulary exists by casting text to the enum and catching
+-- the failure. Rewritten as a cast to text it would always succeed and the
+-- validator would stop validating, which is exactly the shape W-4 warns this
+-- conversion produces. It is a registry lookup now, and this is the assertion
+-- that would have caught the silent version.
+do $$
+begin
+  begin
+    insert into term (kind, value, label, sort_order, attributes)
+      values ('vessel_type', 'amphora_two', 'Amphora II', 60,
+              '{"fields": [{"key": "maker", "kind": "term", "term_kind": "nonexistent_vocabulary"}]}'::jsonb);
+    raise exception 'FAIL: a vessel type named a vocabulary that does not exist and was accepted';
+  exception when raise_exception then
+    perform test_ok('a vessel type field naming a vocabulary that does not exist is still refused');
+  end;
+
+  insert into term (kind, value, label, sort_order, attributes)
+    values ('vessel_type', 'amphora_three', 'Amphora III', 61,
+            '{"fields": [{"key": "maker", "kind": "term", "term_kind": "cooper"}]}'::jsonb);
+  perform test_ok('a vessel type field naming a vocabulary that does exist is still accepted');
 end $$;
 
 -- ---------------------------------------------------------------------------

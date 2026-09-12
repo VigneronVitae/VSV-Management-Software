@@ -9,7 +9,7 @@
 --              supabase/migrations/0023_subject_resolver.sql,
 --              supabase/migrations/0024_task_board_via_registry.sql,
 --              docs/architecture-rulings.md]
--- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql]
+-- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql, supabase/migrations/0027_term_kind_registry.sql]
 -- Axioms enforced: none new. This removes a wrong-way edge rather than adding a
 --                  rule: AR-A3 says dependency runs one way, and an enum in core
 --                  listing node, vessel, location and block runs the other.
