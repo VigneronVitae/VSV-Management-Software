@@ -30,22 +30,28 @@ The sha is the one thing here that cannot check itself, because it names the com
 writes it. A later commit is later work on the same tree, not a different tree. **The
 canaries below are the durable check and the sha is a convenience.**
 
-## The trap, which is the most important paragraph here
+## The trap that was open until this file was written
 
-**`main` is still at `c3eae3c7c262544e4b2e29526b513c964c6852fe`, which is the exact commit
-the thirteen-report corpus already reviewed.** Forty two files, five migrations.
+**`main` now carries this work.** It was fast-forwarded from
+`c3eae3c7c262544e4b2e29526b513c964c6852fe` to the head named above during the session that
+wrote this file, and that is worth recording rather than quietly fixing.
 
-So a reviewer who clones this repository, stays on the default branch, and runs the canary
-check printed in every archived prompt will find: the branch is `main` and not
-`claude/sql-files-to-markdown-i31rob`, the tracked file count is the forty two the prompt
-names, and all four named content canaries are present. **Every check passes, and the tree is the one that was
-already reviewed a month ago.** The canary block was written to catch exactly this mistake
-and it now points the wrong way.
+Until then, `main` was still at `c3eae3c`: forty two files, five migrations, the exact
+commit the thirteen-report corpus reviewed. Twenty six migrations of work sat on
+`claude/sql-files-to-markdown-i31rob` and nothing on the default branch said so.
 
-Twenty six migrations of work, three review-response sessions and two enum conversions live
-on the branch. If `main` has moved by the time you read this, good: check the canaries
-below rather than the branch name, since the point of them is that they do not depend on
-which branch you are standing on.
+The consequence is the reason this file exists. A reviewer who cloned the repository,
+stayed on the default branch, and ran the canary check printed in every archived prompt
+would have found that the branch is `main` and not the working branch, that the tracked
+file count is the one the prompt names, and that all four content canaries are present.
+**Every check would have passed, and the tree would have been the one already reviewed.**
+The canary block was written to catch exactly that mistake and had come to point the wrong
+way, because it identifies the right tree by a branch name and a file count that both
+moved.
+
+That is the general lesson for whoever writes the next set of prompts: **identify a tree by
+things that only exist in it, not by where it is parked or how large it is.** The
+replacement canaries below are chosen on that principle.
 
 ## Replacement canaries
 
