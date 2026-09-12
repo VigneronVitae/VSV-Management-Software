@@ -483,6 +483,20 @@ function call, which is the same shape `task_board` uses after phase 4. *Not
 load-bearing:* fifty tasks is the whole cellar.
 
 
+**S-43. Rebinding a sticker leaves no trace.**
+`0025` lets an admin move a code from one vessel to another, because a sticker does come
+off one barrel and go onto the next and somebody has to be able to say so. Nothing
+records that it happened. Every scan of that code after the rebind resolves to the new
+barrel and every scan before it resolved to the old one, and the record does not contain
+the moment the meaning changed. That is ledger A17's class, where one button press put a
+lot under the wrong owner and the screen reported success. The refusal path is loud and
+names the vessel; the permitted path is silent. *Resolves when:* there is an operation
+term for it and the rebind writes an event against both vessels, which is a vocabulary row
+and three lines, and was left out here only because W-3's scope is assertions rather than
+the event model. *Load-bearing:* a sticker that moves without a record is the one way a
+barrel's history can be reattributed with nothing to read afterwards.
+
+
 ## Discharged
 
 **S-25. An account belonging to no party is staff, so a client who signs up

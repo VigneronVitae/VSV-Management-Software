@@ -24,11 +24,13 @@
 # does. Five classes:
 #
 #   check        every check constraint, dropped
+#   loosen       every check constraint replaced with check (true)
 #   unique       every unique constraint and unique index, dropped
 #   trigger      every user trigger, disabled
 #   policy       every row level security policy, dropped
 #   weaken       every policy recreated with a predicate of true
 #   rls          row level security itself, disabled per table
+#   logic        a function body, changed one substitution at a time
 #
 # policy and weaken are not the same test and the difference matters. A pinned
 # list of policy names catches every drop and nothing else; only weaken catches a
@@ -89,6 +91,20 @@ trap 'rm -f "$muts"' EXIT
 q "$BASE" "
 select 'check' || chr(9) || t.relname || '.' || c.conname || chr(9) ||
        format('alter table public.%I drop constraint %I', t.relname, c.conname)
+  from pg_constraint c
+  join pg_class t on t.oid = c.conrelid
+  join pg_namespace n on n.oid = t.relnamespace
+ where n.nspname = 'public' and c.contype = 'c'
+ order by t.relname, c.conname;" >> "$muts"
+
+# Loosening rather than dropping, for check constraints only. A pinned inventory
+# counts constraints by type and so cannot tell a constraint that still exists
+# and refuses nothing; only this can. There is no equivalent for a unique
+# constraint, which either is unique or is not.
+q "$BASE" "
+select 'loosen' || chr(9) || t.relname || '.' || c.conname || chr(9) ||
+       format('alter table public.%I drop constraint %I; alter table public.%I add constraint %I check (true)',
+              t.relname, c.conname, t.relname, c.conname)
   from pg_constraint c
   join pg_class t on t.oid = c.conrelid
   join pg_namespace n on n.oid = t.relnamespace
@@ -160,6 +176,37 @@ select 'rls' || chr(9) || t.relname || chr(9) ||
  where n.nspname = 'public' and t.relrowsecurity
  order by t.relname;" >> "$muts"
 
+# Function bodies. Nine of G-5's forty five mutations were of this kind and the
+# six classes above are all declarative, so without this a perfect score would
+# mean "nothing can be removed" and would be read as "the kernel is correct".
+# Each mutation is a substitution against pg_get_functiondef, so it carries the
+# function's real signature, volatility and search_path rather than a copy that
+# drifts. A substitution whose target string is gone reports as not applicable,
+# which is also how this list tells you a function has changed shape.
+q "$BASE" "
+with m(fn, find, repl, note) as (values
+  ('is_admin',                   'and active',                      '',                     'drops the active conjunct, which is ledger B10 in the client'),
+  ('is_facility_user',           'is_admin() or (',                 'true or (',            'everyone becomes staff'),
+  ('claim_account',              'when is_first then',              'when true then',       'every claimant becomes admin'),
+  ('generate_inferred_history',  'as provenance',                   'as provenance',        'no-op probe, kept to show a substitution that changes nothing is caught by nothing'),
+  ('close_node_when_empty',      'new.quantity <= 0',               'new.quantity < 0',     'a lot at exactly zero never closes'),
+  ('bind_vessel_code',           'existing.vessel_id = p_vessel_id','true',                 'the cross-vessel guard goes, so a rebind returns silently'),
+  ('cellar_writable_columns',    'if not (changed = any(tg_argv))', 'if false',             'the column allow-list stops refusing anything'),
+  ('rack',                       'nullif(contributed, 0)',          'nullif(total_in, 0)',  'lineage shares divided by arrival rather than contribution, the wire session bug'),
+  ('update_vessel',              'is distinct from',                'is not distinct from', 'a thermal change records only when nothing changed'),
+  ('resolve_subject_name',       'is null then',                    'is not null then',     'the deflation inverts, so a present module resolves to null and an absent one is queried'),
+  ('confirm_event',              'is_admin()',                      'true',                 'anyone may confirm, which is T0-4'),
+  ('topping_check',              'and false',                       'and false',            'no-op probe')
+)
+select 'logic' || chr(9) || m.fn || ': ' || m.note || chr(9) || 'b64:' ||
+       translate(encode(convert_to(replace(pg_get_functiondef(p.oid), m.find, m.repl), 'UTF8'), 'base64'), chr(10), '')
+  from m
+  join pg_proc p on p.proname = m.fn
+  join pg_namespace n on n.oid = p.pronamespace and n.nspname = 'public'
+ where position(m.find in pg_get_functiondef(p.oid)) > 0
+   and m.find <> m.repl
+ order by m.fn;" >> "$muts"
+
 [ -n "$ONLY" ] && { grep "^$ONLY	" "$muts" > "$muts.f"; mv "$muts.f" "$muts"; }
 
 total=$(grep -c . "$muts")
@@ -180,7 +227,17 @@ while IFS=$'\t' read -r class label sql; do
   adm "drop database if exists $WORK;"
   adm "create database $WORK template $BASE;"
 
-  if ! docker exec "$CONTAINER" psql -U postgres -q -v ON_ERROR_STOP=1 -d "$WORK" -c "$sql" >/dev/null 2>&1; then
+  # A mutation whose statement spans lines cannot travel in a line-based file,
+  # and `read` silently truncates it at the first newline, which reported all ten
+  # function-body mutations as inapplicable until this existed. Those arrive
+  # base64 encoded and are decoded here.
+  if [ "${sql#b64:}" != "$sql" ]; then
+    printf '%s' "${sql#b64:}" | base64 -d > /tmp/.mutation.sql
+    applied_ok=$(docker exec -i "$CONTAINER" psql -U postgres -q -v ON_ERROR_STOP=1 -d "$WORK" < /tmp/.mutation.sql >/dev/null 2>&1 && echo yes || echo no)
+  else
+    applied_ok=$(docker exec "$CONTAINER" psql -U postgres -q -v ON_ERROR_STOP=1 -d "$WORK" -c "$sql" >/dev/null 2>&1 && echo yes || echo no)
+  fi
+  if [ "$applied_ok" = "no" ]; then
     printf '%s\t%s\n' "$class" "$label" >> "$inapplicable"
     printf '  %3d/%d  %-8s %-46s not applicable\n' "$i" "$total" "$class" "$label"
     continue
@@ -204,7 +261,7 @@ echo
 echo "| Class | Mutations | Caught | Score |"
 echo "|---|---|---|---|"
 ts=0; tc=0
-for class in check unique trigger policy weaken rls; do
+for class in check loosen unique trigger policy weaken rls logic; do
   s=${seen[$class]:-0}; c=${caught[$class]:-0}
   [ "$s" -eq 0 ] && continue
   ts=$((ts + s)); tc=$((tc + c))

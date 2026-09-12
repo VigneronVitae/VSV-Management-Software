@@ -32,6 +32,23 @@ noticing. The session report for 2026-09-12 says the same thing at more length.
 
 Do not start a phase you cannot finish. Finishing means green and committed.
 
+## Standing rules
+
+**Commit before every break test, revert after.** A break test deliberately damages the
+tree to watch a check fail, and it restores with `git checkout --`, which discards
+uncommitted work as well. During W-2 phase 1 that reverted an entire uncommitted rename.
+It was done correctly in the session before and wrongly in that one, which makes it a rule
+rather than a mistake.
+
+**Do not write shell scripts through a bash heredoc.** It collapses a doubled backslash, so
+a Python `'\b'` becomes `''`, which Python reads as an escape and writes as a single
+backspace byte. The script parses, `grep -n` prints the line as though the backslash were
+there, and the check silently matches nothing. Build such strings with `chr(92)` or use an
+editor tool. Detect it by counting `0x08` bytes, not by reading the line.
+
+**A check nobody has watched fail is not a check.** Both of the above were found by break
+tests and neither would have been found by reading.
+
 ## The rules this work runs under
 
 **Green means all of:** `bun run verify`, `bun run typecheck`, `bun run lint`, every
@@ -53,9 +70,9 @@ build on top of it. Halting with a clear write-up is a good outcome.
 
 | | |
 |---|---|
-| Last green commit | `46fd253`, W-2 session one |
-| Current migration number | `0024`, so the next one is `0025` |
-| Assertions | 146 from empty, 148 against the cellar copy |
+| Last green commit | `2e55dc9`, W-3 phase A |
+| Current migration number | `0025`, so the next one is `0026` |
+| Assertions | 189 from empty, 191 against the cellar copy |
 | Module migration numbering | not yet designed, phase 6 designs it |
 
 ## Phases
@@ -67,19 +84,19 @@ build on top of it. Halting with a clear write-up is a good outcome.
 | 2 | Read the unreviewed range, `0006` to `0022`, plus the mutation score | done |
 | 3 | The resolver registry, `AR-E5` | done |
 | 4 | `task_board` against the registry, `AR-E6` | done |
-| 5 | Enums to registry rows, `AR-E7` | on hold, W-3 runs first |
-| 6 | The scheduling block to core, plus per-module migration numbering | on hold, W-3 runs first |
-| 7 | The schema split and the `public` facade, plus the `AR-B8` gate check | **blocked** |
-| 8 | The manifest and the register, plus the `AR-F5` falsifier | **blocked**, it depends on 7 |
+| 5 | Enums to registry rows, `AR-E7` | **unblocked**, next |
+| 6 | The scheduling block to core, plus per-module migration numbering | **unblocked** |
+| 7 | The schema split and the `public` facade, plus the `AR-B8` gate check | **unblocked** |
+| 8 | The manifest and the register, plus the `AR-F5` falsifier | **unblocked** |
 
-**Phase 7 is blocked and phase 8 with it.** W-2 makes the schema split conditional on
-phase 2's mutation score improving on the 42 percent `G-5` measured, and it has not. The
-numbers are below. A schema move is precisely the operation that can silently change
-which policies apply to which rows, and the policy class scores 13 to 20 percent, so the
-suite would not tell you if the move broke something. W-2's own instruction is to say so
-plainly and stop, and halting with a write-up is a good outcome.
+**Phase 7 was blocked and is now unblocked.** W-2 made the schema split conditional on
+the mutation score improving on the 42 percent `G-5` measured. In September it came back
+at 24 percent and the stop was correct. W-3 exists because of that, and after it the score
+is 188 of 188. The gate is met, so W-2 phases 5 through 8 resume as written.
 
-Phases 3 through 6 are not gated on the score and are the next work.
+The gate was not lowered and the number is not a trend. It is a threshold, and the
+threshold is cleared on a mutation set that is four times the size of the one that failed
+it.
 
 ## Phase 0: reach green at all
 
@@ -299,9 +316,9 @@ they are tracked here alongside W-2's.
 | Phase | What | State |
 |---|---|---|
 | A | RLS assertions | done |
-| B | Constraint assertions | not started |
-| C | Remeasure and decide whether phase 7's gate is met | not started |
-| D | A22, the `E-4` repoint, the standing rule | not started |
+| B | Constraint assertions | done |
+| C | Remeasure and decide whether phase 7's gate is met | done, **gate met** |
+| D | A22, the `E-4` repoint, the standing rule | done |
 
 ### Phase A: row level security is now asserted to be on
 
@@ -347,6 +364,111 @@ session exists to correct.
 **`bash scripts/mutate.sh weaken` reports 37 of 37 caught, 100 percent.** Behavioural
 policy coverage is strong, which the 20 percent drop score did not show and could not.
 
+### Phase B: the constraint surface
+
+The category phase 5 depends on, which phase A does not touch at all.
+
+Pinned first: the constraint inventory by type, the nine composite foreign keys into
+`term(id, kind)` by name, and the nine generated kind columns by their exact expressions.
+Those nine pairs are precisely what W-2 phase 5 has to move, and a migration that changes
+any of them now fails loudly. Delete behaviour is pinned too, by count and by naming the
+four `ON DELETE RESTRICT` keys, because a schema move that recreates a foreign key is
+exactly where a cascade becomes a no-action unnoticed.
+
+Then behaviour, one constraint at a time, each violating exactly one thing. That last part
+turned out to matter more than it sounds: the first attempt at the vessel thermal pair
+violated both constraints at once, so loosening either one still raised and neither was
+covered. `G-5-6` is the same observation about `vessel_code`.
+
+**Measured, with both numbers W-3 asked for:** the check-constraint class went from 13
+percent to 100, and the unique-constraint class from 12 percent to 100.
+
+### What writing the assertions found
+
+**A24, and it is the third of its kind.** `operation_has_an_effect` reads
+`kind <> 'operation' or attributes ->> 'effect' in (four values)`. For an operation with no
+effect at all the inner test is `null in (...)`, which is null, so the check is
+`false or null`, which is null, and **a check constraint passes on null**. An effectless
+operation lands. The four-effects invariant refuses a wrong answer and not a missing one.
+
+That is the same three-valued-logic shape as A1's `coalesce(..., true)` and
+`may_see_all_of` returning null. Three times now, in three different mechanisms, by three
+different routes.
+
+**It also corrects B2.** Two reports said adding an operation inline always raises because
+`addTerm` sends `{}`. It does not raise. It lands, and the operation is silently inert
+because the kernel reads no effect from it. A raise would have been visible. Filed, not
+fixed: section A beyond A22 is out of scope here.
+
+### Phase C: the numbers, each with its set named
+
+| Set | Mutations | Caught | Score |
+|---|---|---|---|
+| `G-5`, September, its own 45 | 45 | 19 | 42% |
+| This harness, September, at `0022` | 115 | 28 | 24% |
+| Same objects as the review saw, September | 71 | 15 | 21% |
+| **This harness, now, at `0025`** | **188** | **188** | **100%** |
+
+By class, now: check 18 of 18, loosen 18 of 18, unique 16 of 16, trigger 9 of 9, policy
+57 of 57, weaken 38 of 38, rls 22 of 22, logic 10 of 10.
+
+**The RLS-off count, which is the set-independent fact to watch across sessions:** 16 of 21
+tables in September, 0 of 22 now.
+
+**`G-5`'s original 45 could not be reconstructed, and that is a real limitation rather than
+a rounding note.** Its report names its caught and survived objects, but roughly nine of
+its forty five were function-body mutations of a kind this harness did not implement.
+Rather than quietly skip that, a `logic` class was added: ten substitutions against
+`pg_get_functiondef`, so each mutation carries the function's real signature and
+`search_path` rather than a copy that drifts, and a substitution whose target has gone
+reports as not applicable, which is also how the list tells you a function changed shape.
+
+### Three things the harness got wrong first, all corrected
+
+**Multi-line mutations were silently truncated.** The mutation file is line based and
+`read` stops at the first newline, so all ten function-body mutations reported as
+inapplicable. They now travel base64 encoded.
+
+**Nineteen `weaken` mutations were degenerate.** Recreating a policy with a predicate of
+`true` where the predicate is already `true` injects no defect, so counting them as
+survivors understated the suite by nineteen. Excluded, the way an undroppable constraint
+already was.
+
+**One mutation was equivalent and it took two attempts to establish that rather than assume
+it.** Removing `quote_ident` from `resolve_subject_name` survived. The first theory was an
+equivalent mutant, the second was that a reserved word like `order` would break it, and the
+probe settled it: `from public.order` parses unquoted, because schema qualification lets the
+parser accept a reserved word. The mutation really is equivalent for every name
+`relation_is_a_bare_name` permits. The assertion written for the wrong theory was deleted
+rather than kept, because an assertion that cannot fail for the reason it gives is the
+inflation this repository is against, and the mutation was replaced with one that
+discriminates.
+
+### Phase D
+
+**A22 is built,** `0025`. Ruled by the winemaker: bind an unbound code as anyone who works
+here, rebind one only as an admin, and the refusal names the barrel that already holds the
+sticker. Done the way `0021` did it, a narrow insert policy rather than a blanket definer,
+so update and delete stay admin and the table cannot be rebound directly either. Both halves
+asserted, including the wording of the refusal. S-43 records that the permitted path is
+silent, which is A17's class.
+
+**The `E-4` reference is repointed.** It was never a ruling reference, so the `AR-` rename
+exposed it rather than caused it. A12 now cites `CLAUDE.md`'s append-only statement and the
+`R-5` report.
+
+**The standing rules are at the top of this file**, where a fresh session reads them before
+starting anything.
+
+### A note on what 100 percent does not mean
+
+It means no constraint, index, trigger, policy or row level security setting can be removed
+or neutered without the suite noticing, and that ten specific pieces of kernel logic cannot
+be altered without it noticing either. It does not mean the kernel is correct. The `logic`
+class is ten hand-chosen substitutions, not a systematic mutation of every branch in every
+function, and a written list is the kind of thing that goes stale. The honest reading is
+that the declarative surface is now policed and the procedural surface is sampled.
+
 ## Decisions
 
 | Decision | Why |
@@ -366,6 +488,10 @@ policy coverage is strong, which the 20 percent drop score did not show and coul
 | Degenerate `weaken` mutations excluded | A policy already `true` cannot be weakened, and counting it as survived understates the suite |
 | `green.sh` derives the expected assertion gap | Adding another storage-guarded block should not require editing a number |
 | A22 filed rather than fixed | Whether a cellar hand may label a barrel is the winemaker's call, and phase 2 files rather than fixes |
+| A22 then built in `0025` | The winemaker ruled it in W-3 |
+| Multi-line mutations travel base64 | A line-based file truncates them at the first newline, silently |
+| Degenerate and equivalent mutants excluded | A mutation that injects no defect is not a coverage gap |
+| A24 filed rather than fixed | Section A beyond A22 is out of W-3 scope |
 
 ## A tooling trap that has now cost time twice
 

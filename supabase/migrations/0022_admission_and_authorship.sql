@@ -11,7 +11,7 @@
 --              supabase/migrations/0005_account_and_walk.sql,
 --              supabase/migrations/0021_cellar_write_paths.sql,
 --              docs/findings-ledger.md]
--- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql, supabase/migrations/0023_subject_resolver.sql]
+-- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql, supabase/migrations/0023_subject_resolver.sql, supabase/migrations/0025_bind_an_unbound_code.sql]
 -- Axioms enforced: T0-3, in that an event now always names the person who
 --                  observed it and can no longer name somebody else.
 --                  T0-4, in that nobody can widen their own standing by

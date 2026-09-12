@@ -1,9 +1,9 @@
 ---
 Type: ledger
-Version: 1.1
+Version: 1.2
 Purpose: "Deduplicates the thirteen review reports into one entry per defect, keyed by the database or code identifier rather than by line number, so entries survive the schema reorganization."
 Depends on: [docs/architecture-rulings.md, docs/sorry-ledger.md, docs/review/README.md]
-Depended on by: [docs/status-ledger.md, supabase/migrations/0021_cellar_write_paths.sql, supabase/migrations/0022_admission_and_authorship.sql, scripts/verify.sh, docs/session-reports/modularization-progress.md]
+Depended on by: [docs/status-ledger.md, supabase/migrations/0021_cellar_write_paths.sql, supabase/migrations/0022_admission_and_authorship.sql, scripts/verify.sh, docs/session-reports/modularization-progress.md, supabase/migrations/0025_bind_an_unbound_code.sql]
 ---
 
 # Findings Ledger
@@ -41,6 +41,7 @@ editing the tables, so that a reader can still see what the reviews found.
 | A6 | `0022_admission_and_authorship.sql` | Staff only in both directions, and an update policy that 0005 never had. S-40 |
 | A8 | `0022_admission_and_authorship.sql` | A definer function now decides who may call it, which is the check a definer function owes |
 | A14 | `0021_cellar_write_paths.sql` | Predicted racking would be refused silently the day it was built. It was, for four days |
+| A22 | `0025_bind_an_unbound_code.sql` | Ruled by the winemaker rather than decided here: a cellar hand may bind an unbound code, only an admin may rebind one, and the refusal names the barrel that already has the sticker. See S-43 |
 | B1 | `app.css`, doubled `[hidden]` selector | Every add form had been permanently open |
 | B14 | `vite.config.ts` | `allowedHosts` now names the tunnel, which is what unblocked camera testing on a phone |
 | C1 | `package.json` | `bun run test` is a script. S-38 says what it is standing in for |
@@ -87,7 +88,7 @@ Written once, after the schema split, against the new layout.
 | A9 | `lineage` constraints | Only `no_self_parent`. No acyclicity, and `node_bin_shares` has no visited set, so a two-edge cycle never terminates. Its sibling traversal does have a guard | 3 | EXPLOITABLE |
 | A10 | `block_composition` | Inner-joins `block`, dropping every bin with no block, and normalizes over the parents it found. Returns a short total and reports nothing. Structural for vermouth, where no origin has a block | 5 (p) | EXPLOITABLE |
 | A11 | `template`, `template_step` | No owner column exists and read is blanket true. A custom crush client's botanical formula is readable by every login. This is a migration, not a policy edit, and it blocks handing the system to a client | 1 | EXPLOITABLE |
-| A12 | `event.data` | No schema object reads it. The correction path does not exist: a correcting event changes no number anywhere. E-4's premise has no implementation | 1 (p) | EXPLOITABLE |
+| A12 | `event.data` | No schema object reads it. The correction path does not exist: a correcting event changes no number anywhere, so the commitment in `CLAUDE.md` that "events are append-only, corrections are new events" has no implementation behind its second clause. Confirmed by the `R-5` report, which is the one that reviewed append-only and derived. This entry used to cite `E-4`, which was never a ruling reference and dangled after the `AR-` rename; the target is the `CLAUDE.md` statement and `docs/review/reports/R-5-claude-code.md` | 1 (p) | EXPLOITABLE |
 | A13 | RLS denial surface | Every denial is a zero-row match, not an error. A refused correction is indistinguishable from an applied one. This is the class the whole sweep converges on | 4 (p) | EXPLOITABLE |
 | A14 | `placement` update policy | Admin-only close, so racking is refused the day it is built, silently | 2 (p) | EXPLOITABLE |
 | A15 | `name` columns declared `not null` | The database accepts `''` for every one. Non-empty and trim are client-only rules | 1 (p) | EXPLOITABLE |
@@ -100,6 +101,8 @@ Written once, after the schema split, against the new layout.
 
 | A22 | `bind_vessel_code` | Invoker, and it inserts into `vessel_code`, whose only write policy is `vessel_code_admin_write` at `is_admin()`. A cellar user cannot put a sticker on a barrel. Unlike A14 this fails loudly, because a refused INSERT violates a `with check` and raises, where a refused UPDATE matches zero rows. Whether it should be refused at all is a question for the winemaker: creating a vessel is admin work and asserted so on purpose, and labelling one during harvest may not be | 1 (p) | EXPLOITABLE |
 | A23 | `vessel_type_note` | Added by `0012` with `using (true)` on select, which is A5's default arriving on new surface seven migrations after A5 was filed. The five tables `0019` added do not repeat it, so the habit changed mid-session and `0012` is the one that predates the change. Low consequence, since a note says a vessel type asks for the wrong field, but it is the pattern recurring rather than a one-off | 1 | LATENT |
+
+| A24 | `operation_has_an_effect` | The predicate is `kind <> 'operation' or attributes ->> 'effect' in (four values)`. For an operation carrying no effect at all the inner test is `null in (...)`, which is null, so the whole check is `false or null`, which is null, and **a check constraint passes on null**. An effectless operation lands. The four-effects invariant refuses a wrong answer and not a missing one. Same three-valued-logic shape as A1's `coalesce(..., true)` and `may_see_all_of` returning null, which makes it the third time in this schema. Found by writing the assertion for it, probed, and it also corrects B2 | 1 (p) | EXPLOITABLE |
 
 **Ordering inside 0006.** A1 first, since it is one line and it currently inverts
 deactivation. Then A7, A5 and A11 together, since they are the admission surface and A11
@@ -114,7 +117,7 @@ admission.
 | Id | Identifier | Defect | Found | Verdict |
 |---|---|---|---|---|
 | B1 | `.add-inline` in `app.css` | `display: flex` with no `[hidden]` guard, so an author rule beats the UA `[hidden] { display: none }`. Every add form is permanently open. Probed: seven of seven visible, 1656px of 2737 | 1 (p) | MAJOR |
-| B2 | `addTerm` against `operation_has_an_effect` | Defaults `attributes` to `{}` and the picker sends none, so adding an operation inline always raises | 2 (p) | MAJOR |
+| B2 | `addTerm` against `operation_has_an_effect` | Two reports said defaulting `attributes` to `{}` makes adding an operation inline always raise. **The premise is wrong and the truth is worse.** The constraint passes on a missing effect, see A24, so an inline operation lands and is silently inert: the kernel reads no effect from it and does nothing about volume or lineage. A raise would have been visible. Confirmed by probe on 2026-09-12 | 2 (p) | MAJOR |
 | B3 | `sticky.ts` with `pickers.ts` restore | Dead twice over: no text-field key is ever pinned, and `selectId ?? select.value ?? sticky` never falls through because `select.value` is always a string. The walk's own copy promises carry-over | 3 | MAJOR |
 | B4 | `vesselScreen` empty-vessel path | Insert then loop `bindOne` with no transaction. One rejected code leaves a vessel that can be neither completed nor retried, and the camera keeps running | 4 (p) | MAJOR |
 | B5 | `newId()` inside submit handlers | Client ids are minted in the handler, so a retry has a different identity. This is the one property `CLAUDE.md` claims for offline writes | 2 | MAJOR |
@@ -289,3 +292,24 @@ Left as it stands rather than guessed at.
 
 Thirteen reports, three engines, roughly 200 findings deduplicated into 73 distinct
 defects against `c3eae3c`, keyed by identifier rather than by line number.
+
+### 1.2 (2026-09-12)
+
+*Cause: W-3, which set out to make the assertion suite police the schema and found two
+things by writing assertions rather than by reading.*
+
+**Added.** A24, `operation_has_an_effect` passing on a missing effect because a check
+constraint passes on null. It is the third appearance of the same three-valued-logic shape
+in this schema, after A1's `coalesce(..., true)` and `may_see_all_of` returning null.
+
+**Corrected.** B2's premise. Two reports said adding an operation inline always raises. It
+does not raise; it lands, and the operation is silently inert because the kernel reads no
+effect from it. A raise would have been visible, so the real defect is worse than the one
+that was filed.
+
+**Repointed.** A12 cited `E-4`, which was never a ruling reference and dangled after the
+`AR-` rename in `docs/architecture-rulings.md` v2.1. The commitment it meant lives in
+`CLAUDE.md` and in the `R-5` report, and it now says so. That was W-3's own correction of
+its author's error rather than a defect in the tree.
+
+**Closed.** A22, by `0025`.

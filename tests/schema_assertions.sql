@@ -26,7 +26,8 @@
 --              supabase/migrations/0021_cellar_write_paths.sql,
 --              supabase/migrations/0022_admission_and_authorship.sql,
 --              supabase/migrations/0023_subject_resolver.sql,
---              supabase/migrations/0024_task_board_via_registry.sql]
+--              supabase/migrations/0024_task_board_via_registry.sql,
+--              supabase/migrations/0025_bind_an_unbound_code.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
 -- Open sorries: S-7 (what this exercises is Postgres policy evaluation, not
@@ -305,12 +306,24 @@ end $$;
 
 insert into vessel (id, type_id, name) values
   ('00000000-0000-0000-0000-00000000c002', term_id('vessel_type','barrel'), 'Other barrel');
+-- Superseded by the A22 ruling in 0025 and rewritten rather than deleted, because
+-- what it asserted is still half true: a bound code does not move for a cellar
+-- hand. It moves for an admin, which is the other half and is asserted with the
+-- rest of A22 further down.
+--
+-- The claim has to be switched to a cellar user to see the refusal. Everything up
+-- to here has been acting as the admin, which is exactly why this assertion
+-- started failing when the ruling landed: it was asserting that nobody could
+-- rebind, and it was running as the one principal who now can.
 do $$ begin
+  perform test_act_as('00000000-0000-0000-0000-00000000a002');
   begin
     perform bind_vessel_code('00000000-0000-0000-0000-00000000c002','COOPER-7781','peeled');
-    raise exception 'FAIL: a bound code moved to another vessel';
-  exception when unique_violation then
-    perform test_ok('a code bound to one barrel refuses to move to another');
+    perform test_act_as('00000000-0000-0000-0000-00000000a001');
+    raise exception 'FAIL: a cellar hand moved a bound code to another barrel';
+  exception when insufficient_privilege then
+    perform test_act_as('00000000-0000-0000-0000-00000000a001');
+    perform test_ok('a code bound to one barrel refuses to move to another for a cellar hand');
   end;
 end $$;
 
@@ -1850,6 +1863,19 @@ begin
     perform test_ok('a cellar user may not resize a vessel, only operate it');
   end;
 
+  -- placement's allow-list had no assertion at all, which the trigger mutation
+  -- class found: disabling placement_cellar_columns changed nothing this suite
+  -- could see. vessel_id is the column that matters, because moving a placement
+  -- to a different vessel without closing and opening one is how the history
+  -- stops being a history.
+  begin
+    update placement set vessel_id = '00000000-0000-0000-0000-00000000c001'
+     where id = '00000000-0000-0000-0000-00000000d0a1';
+    raise exception 'FAIL: a cellar user moved a placement to another vessel';
+  exception when insufficient_privilege then
+    perform test_ok('a cellar user may not move a placement between vessels, only close it');
+  end;
+
   reset role;
 end $$;
 
@@ -2314,7 +2340,11 @@ do $$
 declare have text; want text;
 begin
   select count(*)::text into have from pg_policies where schemaname = 'public';
-  want := '56';
+  -- 56 before 0025, which added vessel_code_cellar_insert for A22. This number
+  -- catching that addition is the assertion working, not the assertion being in
+  -- the way: it cost thirty seconds and it is the same thirty seconds a schema
+  -- move would cost when it loses one.
+  want := '57';
   if have <> want then
     raise exception
       'FAIL: there are % policies in public and this suite was written against %. If that is deliberate, update this number and the list below in the same commit', have, want;
@@ -2443,6 +2473,675 @@ begin
     raise exception 'FAIL: a cellar user cannot see vessel photographs either, so the bucket is useless';
   end if;
   perform test_ok('a cellar user reads vessel photographs, so the fix did not close the bucket to everyone');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- the constraint surface, which is what phase 5 has to move through'; end $$;
+
+-- W-2 phase 5 converts term_kind across nine generated columns, nine composite
+-- foreign keys and most vocabulary function signatures. Its failure modes are
+-- exactly the two categories the mutation score was worst at: check constraints
+-- at 13 percent and unique constraints at 12. These assertions exist so that a
+-- migration which changes any of it fails loudly rather than quietly.
+--
+-- Pinned by name and by count. This catches a constraint that disappears, which
+-- is what a hand-written schema move does when it recreates a table and forgets
+-- one. It does not catch a constraint that is still there and no longer refuses
+-- anything; the behavioural assertions below that do, and the `loosen` class in
+-- scripts/mutate.sh measures which of the two you have.
+do $$
+declare have text; want text;
+begin
+  select string_agg(x.line, ' ' order by x.line) into have from (
+    select c.contype::text || '=' || count(*)::text as line
+      from pg_constraint c
+      join pg_class t on t.oid = c.conrelid
+      join pg_namespace n on n.oid = t.relnamespace
+     where n.nspname = 'public'
+     group by c.contype
+  ) x;
+
+  want := 'c=18 f=40 p=22 u=14';
+  if have <> want then
+    raise exception
+      E'FAIL: the constraint inventory changed.\nnow:  %\nwas:  %\nIf that is deliberate, update this line in the same commit that changed the schema.', have, want;
+  end if;
+  perform test_ok('the constraint inventory is what this suite was written against: 18 check, 40 foreign key, 22 primary key, 14 unique');
+end $$;
+
+-- The nine composite foreign keys into term(id, kind). These are the mechanism
+-- that makes a term of the wrong kind unusable, and they are the thing phase 5
+-- moves. Pinned as their exact definitions, so a migration that rewrites them
+-- has to say so here too.
+do $$
+declare have text; want text;
+begin
+  select string_agg(t.relname || '.' || c.conname, ', ' order by t.relname, c.conname)
+    into have
+    from pg_constraint c
+    join pg_class t on t.oid = c.conrelid
+    join pg_namespace n on n.oid = t.relnamespace
+   where n.nspname = 'public' and c.contype = 'f'
+     and pg_get_constraintdef(c.oid) like '%REFERENCES term(id, kind)%';
+
+  want := 'event.event_operation_is_an_operation, '
+       || 'location.location_kind_is_a_location_kind, '
+       || 'node.node_product_type_is_a_product_type, '
+       || 'node.node_variety_is_a_variety, '
+       || 'procedure_step.step_material_is_a_material, '
+       || 'task.task_operation_is_an_operation, '
+       || 'template.template_variety_is_a_variety, '
+       || 'template_step.template_step_operation_is_an_operation, '
+       || 'vessel.vessel_type_is_a_vessel_type';
+
+  if have is distinct from want then
+    raise exception
+      E'FAIL: the composite foreign keys into term(id, kind) changed.\nnow:  %\nwas:  %', have, want;
+  end if;
+  perform test_ok('nine composite foreign keys tie a typed id to its kind, which is what phase 5 moves');
+end $$;
+
+-- And the nine generated columns that supply the kind half of each of those
+-- keys. Each is a constant, which is what makes the pair work: the column cannot
+-- be written, so the foreign key cannot be satisfied by lying about the kind.
+do $$
+declare have text; want text;
+begin
+  select string_agg(table_name || '.' || column_name || '=' || generation_expression, ' ' order by table_name, column_name)
+    into have
+    from information_schema.columns
+   where table_schema = 'public' and is_generated = 'ALWAYS';
+
+  want := 'event.operation_kind=''operation''::term_kind '
+       || 'location.kind_kind=''location_kind''::term_kind '
+       || 'node.product_kind=''product_type''::term_kind '
+       || 'node.variety_kind=''variety''::term_kind '
+       || 'procedure_step.material_kind=''material_kind''::term_kind '
+       || 'task.operation_kind=''operation''::term_kind '
+       || 'template.variety_kind=''variety''::term_kind '
+       || 'template_step.operation_kind=''operation''::term_kind '
+       || 'vessel.type_kind=''vessel_type''::term_kind';
+
+  if have is distinct from want then
+    raise exception
+      E'FAIL: the generated kind columns changed.\nnow:  %\nwas:  %', have, want;
+  end if;
+  perform test_ok('the nine generated kind columns are constants, so a kind cannot be lied about');
+end $$;
+
+-- Behaviour, not just shape. Every one of the nine refuses a term of the wrong
+-- kind, probed rather than read, on the tables that have somewhere to write.
+do $$
+declare refused int := 0;
+begin
+  begin
+    insert into node (stage, name, variety_id)
+      values ('bin','wrong variety', term_id('cooper','francois_freres'));
+    raise exception 'FAIL: node.variety_id accepted a cooper';
+  exception when foreign_key_violation then refused := refused + 1;
+  end;
+
+  begin
+    insert into node (stage, name, product_type_id)
+      values ('bin','wrong product', term_id('variety','pinot_noir'));
+    raise exception 'FAIL: node.product_type_id accepted a variety';
+  exception when foreign_key_violation then refused := refused + 1;
+  end;
+
+  begin
+    insert into vessel (name, type_id) values ('wrong type', term_id('variety','pinot_noir'));
+    raise exception 'FAIL: vessel.type_id accepted a variety';
+  exception when foreign_key_violation then refused := refused + 1;
+  end;
+
+  begin
+    insert into event (operation_id, subject_type, subject_id, by_user)
+      values (term_id('variety','pinot_noir'), 'node',
+              '00000000-0000-0000-0000-00000000b001',
+              '00000000-0000-0000-0000-00000000a001');
+    raise exception 'FAIL: event.operation_id accepted a variety';
+  exception when foreign_key_violation then refused := refused + 1;
+  end;
+
+  begin
+    insert into task (operation_id, subject_type, subject_id)
+      values (term_id('variety','pinot_noir'), 'node', '00000000-0000-0000-0000-00000000b001');
+    raise exception 'FAIL: task.operation_id accepted a variety';
+  exception when foreign_key_violation then refused := refused + 1;
+  end;
+
+  if refused <> 5 then raise exception 'FAIL: only % of 5 wrong-kind writes were refused', refused; end if;
+  perform test_ok('five of the nine typed-id keys refuse a term of the wrong kind, probed on the tables that have a write path');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- delete behaviour is what the DDL says it is'; end $$;
+
+-- Ledger A20 found ON DELETE RESTRICT bypassable in two steps: delete the
+-- lineage edge, then the node, both permitted. The constraint is not wrong; the
+-- absence of a delete policy for cellar users is what made it reachable. What is
+-- asserted here is that the declared behaviour has not drifted, since a schema
+-- move that recreates a foreign key is exactly where a cascade turns into a
+-- no-action without anybody noticing.
+do $$
+declare have text; want text;
+begin
+  select string_agg(x.line, ' ' order by x.line) into have from (
+    select c.confdeltype::text || '=' || count(*)::text as line
+      from pg_constraint c
+      join pg_class t on t.oid = c.conrelid
+      join pg_namespace n on n.oid = t.relnamespace
+     where n.nspname = 'public' and c.contype = 'f'
+     group by c.confdeltype
+  ) x;
+
+  want := 'a=27 c=8 n=1 r=4';
+  if have <> want then
+    raise exception
+      E'FAIL: foreign key delete behaviour changed.\nnow:  %\nwas:  %\na is no action, c is cascade, n is set null, r is restrict.', have, want;
+  end if;
+  perform test_ok('foreign key delete behaviour is unchanged: 27 no action, 8 cascade, 1 set null, 4 restrict');
+end $$;
+
+-- The restrict ones by name, because those four are the ones A20 is about and a
+-- count would not notice one of them becoming a cascade while another became a
+-- restrict.
+do $$
+declare have text; want text;
+begin
+  select coalesce(string_agg(t.relname || '.' || c.conname, ', ' order by t.relname, c.conname), '')
+    into have
+    from pg_constraint c
+    join pg_class t on t.oid = c.conrelid
+    join pg_namespace n on n.oid = t.relnamespace
+   where n.nspname = 'public' and c.contype = 'f' and c.confdeltype = 'r';
+
+  want := 'lineage.lineage_child_id_fkey, lineage.lineage_parent_id_fkey, '
+       || 'placement.placement_node_id_fkey, placement.placement_vessel_id_fkey';
+
+  if have <> want then
+    raise exception E'FAIL: the restrict keys changed.\nnow:  %\nwas:  %', have, want;
+  end if;
+  perform test_ok('the four ON DELETE RESTRICT keys are the lineage and placement ones ledger A20 names');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- check constraints refuse what they say they refuse'; end $$;
+
+-- operation_has_an_effect is named by W-3 as needing care because it is what
+-- makes ledger B2 fail: addTerm sends no effect and adding an operation inline
+-- always raises. The constraint is asserted here and the client is not, because
+-- B2 is section B and out of scope.
+-- What it actually does, which is not what it was written to do. The predicate
+-- is `kind <> 'operation' or attributes ->> 'effect' in (four values)`. For an
+-- operation with no effect at all that inner test is `null in (...)`, which is
+-- null, so the whole check is `false or null`, which is null, and a check
+-- constraint passes on null. An effectless operation lands.
+--
+-- That is ledger A24, filed by this assertion rather than fixed by it, because
+-- section A is out of scope here. It also corrects B2: two reports said adding an
+-- operation inline always raises because addTerm sends `{}`. It does not raise.
+-- It silently creates an operation the kernel will read no effect from, which is
+-- worse than raising, because a raise is visible.
+--
+-- Written so that fixing A24 fails this assertion on purpose.
+do $$
+declare landed boolean := false;
+begin
+  begin
+    insert into term (kind, value, label, attributes)
+      values ('operation','effectless','Effectless','{}'::jsonb);
+    landed := true;
+  exception when check_violation then
+    landed := false;
+  end;
+
+  if not landed then
+    raise exception
+      'FAIL: an effectless operation is now refused, which means A24 was fixed. That is good; update this assertion and B2 to say so.';
+  end if;
+  perform test_ok('an operation with no effect is accepted, which is A24: null in a check constraint is not false');
+
+  begin
+    insert into term (kind, value, label, attributes)
+      values ('operation','wrong_effect_here','Wrong','{"effect":"magic"}'::jsonb);
+    raise exception 'FAIL: an operation with an effect outside the four was accepted';
+  exception when check_violation then
+    perform test_ok('an operation with an effect outside the four is refused, which is the half that works');
+  end;
+
+  begin
+    insert into term (kind, value, label, attributes)
+      values ('variety','effectless_variety','Effectless Variety','{}'::jsonb);
+    perform test_ok('a non-operation term needs no effect, so the constraint is scoped to operations');
+  exception when check_violation then
+    raise exception 'FAIL: operation_has_an_effect fired on a variety';
+  end;
+end $$;
+
+-- The thermal pair from 0006, which is the only check constraint in the tree
+-- that encodes a physical fact about a vessel.
+do $$
+begin
+  begin
+    insert into vessel (name, type_id, mode)
+      values ('jacketless cooler', term_id('vessel_type','tank'), 'cooling');
+    raise exception 'FAIL: cooling was accepted on a vessel with no jacket';
+  exception when check_violation then
+    perform test_ok('a thermal mode without a jacket is refused');
+  end;
+
+  begin
+    insert into vessel (name, type_id, has_glycol, mode)
+      values ('setpointless cooler', term_id('vessel_type','tank'), true, 'cooling');
+    raise exception 'FAIL: cooling was accepted with no setpoint';
+  exception when check_violation then
+    perform test_ok('a thermal mode without a setpoint is refused');
+  end;
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- unique constraints refuse duplicates, and partial ones only inside their predicate'; end $$;
+
+do $$
+begin
+  begin
+    insert into term (kind, value, label, sort_order, attributes)
+      values ('variety','pinot_noir','Duplicate Pinot',999,'{}'::jsonb);
+    raise exception 'FAIL: a duplicate term kind and value was accepted';
+  exception when unique_violation then
+    perform test_ok('a term is unique on kind and value');
+  end;
+
+  begin
+    insert into location (name) values ('Assertion Barn Duplicate');
+    insert into location (name) values ('Assertion Barn Duplicate');
+    raise exception 'FAIL: a duplicate location name was accepted';
+  exception when unique_violation then
+    perform test_ok('a location name is unique');
+  end;
+end $$;
+
+-- The partial ones, which are the interesting half: they must refuse inside the
+-- predicate and accept outside it. party_one_facility is the load-bearing case,
+-- and it is what lets the suite stand the winery down at the top of this file.
+do $$
+begin
+  begin
+    insert into party (name, kind) values ('Second Active Facility', 'facility');
+    raise exception 'FAIL: a second active facility party was accepted';
+  exception when unique_violation then
+    perform test_ok('only one facility party may be active at a time');
+  end;
+
+  insert into party (id, name, kind, active)
+    values ('00000000-0000-0000-0000-0000000000e9','Retired Facility','facility', false);
+  perform test_ok('an inactive facility party is accepted, so the uniqueness is partial and not absolute');
+
+  begin
+    insert into placement (node_id, vessel_id, volume_l)
+      values ('00000000-0000-0000-0000-00000000b001',
+              '00000000-0000-0000-0000-0000000000c2', 1);
+    insert into placement (node_id, vessel_id, volume_l)
+      values ('00000000-0000-0000-0000-00000000b010',
+              '00000000-0000-0000-0000-0000000000c2', 1);
+    raise exception 'FAIL: two open placements in one vessel were accepted';
+  exception when unique_violation then
+    perform test_ok('a vessel holds one open placement, which is what makes occupancy derivable');
+  end;
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- every check constraint refuses one specific thing, on its own'; end $$;
+
+-- The pinned inventory above catches a constraint that disappears. It cannot
+-- catch one that is still listed and refuses nothing, and measuring that is what
+-- the `loosen` class in scripts/mutate.sh exists for: it replaces each check with
+-- `check (true)` and leaves the name in place. Before this block it scored 2 of
+-- 18.
+--
+-- Each assertion below violates exactly one constraint and satisfies every other
+-- constraint on the same row. That matters more than it sounds: the first attempt
+-- at the vessel pair violated both thermal constraints at once, so loosening
+-- either one still raised and neither was really covered. Ledger G-5-6 is the
+-- same observation about vessel_code.
+
+do $$
+begin
+  -- event.has_an_author. Not reachable through the policy, which now also
+  -- requires by_user = auth.uid(), so this runs as the owner to reach the
+  -- constraint itself rather than the policy in front of it.
+  begin
+    insert into event (operation_id, subject_type, subject_id, by_user, by_sensor)
+      values (term_id('operation','punchdown'), 'node',
+              '00000000-0000-0000-0000-00000000b001', null, null);
+    raise exception 'FAIL: an event with neither a user nor a sensor was accepted';
+  exception when check_violation then
+    perform test_ok('an event names a user or a sensor, never neither');
+  end;
+end $$;
+
+do $$
+begin
+  -- lineage.no_self_parent, with a valid fraction so only this one can fire.
+  begin
+    insert into lineage (parent_id, child_id, fraction)
+      values ('00000000-0000-0000-0000-00000000b001',
+              '00000000-0000-0000-0000-00000000b001', 0.5);
+    raise exception 'FAIL: a lot was made its own parent';
+  exception when check_violation then
+    perform test_ok('a lot cannot be its own parent');
+  end;
+
+  -- lineage_fraction_check, twice, because the constraint has two sides and a
+  -- one-sided test leaves half of it unexercised.
+  begin
+    insert into lineage (parent_id, child_id, fraction)
+      values ('00000000-0000-0000-0000-00000000b001',
+              '00000000-0000-0000-0000-00000000b010', 0);
+    raise exception 'FAIL: a lineage fraction of zero was accepted';
+  exception when check_violation then
+    perform test_ok('a lineage fraction must be greater than zero');
+  end;
+
+  begin
+    insert into lineage (parent_id, child_id, fraction)
+      values ('00000000-0000-0000-0000-00000000b001',
+              '00000000-0000-0000-0000-00000000b010', 1.5);
+    raise exception 'FAIL: a lineage fraction above one was accepted';
+  exception when check_violation then
+    perform test_ok('a lineage fraction cannot exceed one');
+  end;
+end $$;
+
+do $$
+begin
+  -- node.block_only_on_bins. A block on anything that is not a bin is a claim
+  -- that fruit arrived as a ferment, which is F-1's whole point arriving as a
+  -- constraint.
+  -- A real block, so the foreign key is satisfied and only block_only_on_bins
+  -- can fire. The first version of this used an id that did not exist, so it
+  -- passed on a foreign key violation and proved nothing about the check.
+  insert into block (id, vineyard, name, variety)
+    values ('00000000-0000-0000-0000-00000000a0b1', 'Eola Springs', 'Assertion Block', 'Pinot Noir')
+    on conflict do nothing;
+
+  begin
+    insert into node (stage, name, block_id)
+      values ('ferment', 'ferment with a block', '00000000-0000-0000-0000-00000000a0b1');
+    raise exception 'FAIL: a non-bin node carried a block';
+  exception when check_violation then
+    perform test_ok('only a bin may name a block, so a ferment cannot claim to have arrived from one');
+  end;
+
+  insert into node (stage, name, block_id)
+    values ('bin', 'bin with a block', '00000000-0000-0000-0000-00000000a0b1');
+  perform test_ok('a bin may name a block, so the constraint is about the stage and not about blocks');
+
+  -- node_hidden_known and party_default_hidden_known, the two that keep the
+  -- privacy vocabulary from drifting into free text.
+  begin
+    insert into node (stage, name, hidden) values ('bin', 'hidden nonsense', array['not_a_field']);
+    raise exception 'FAIL: a node hid a field that does not exist';
+  exception when check_violation then
+    perform test_ok('a lot can only hide a field the schema agrees is hideable');
+  end;
+
+  begin
+    insert into party (name, kind, default_hidden)
+      values ('Nonsense Defaults', 'client', array['not_a_field']);
+    raise exception 'FAIL: a party defaulted to hiding a field that does not exist';
+  exception when check_violation then
+    perform test_ok('a party can only default to hiding a field the schema agrees is hideable');
+  end;
+end $$;
+
+do $$
+declare v uuid; p uuid; sess uuid; run uuid; st uuid;
+begin
+  -- The vessel thermal pair, each violated alone. The jacket case supplies a
+  -- setpoint so that vessel_mode_needs_setpoint is satisfied and only
+  -- vessel_mode_needs_jacket can fire; the setpoint case supplies a jacket for
+  -- the same reason. Written the other way round, loosening either one still
+  -- raised and neither was covered.
+  begin
+    insert into vessel (name, type_id, has_glycol, setpoint_c, mode)
+      values ('jacketless but set', term_id('vessel_type','tank'), false, 12, 'cooling');
+    raise exception 'FAIL: cooling was accepted on a vessel with a setpoint and no jacket';
+  exception when check_violation then
+    perform test_ok('a thermal mode needs a jacket, asserted without the setpoint rule masking it');
+  end;
+
+  begin
+    insert into vessel (name, type_id, has_glycol, setpoint_c, mode)
+      values ('jacketed but unset', term_id('vessel_type','tank'), true, null, 'cooling');
+    raise exception 'FAIL: cooling was accepted on a jacketed vessel with no setpoint';
+  exception when check_violation then
+    perform test_ok('a thermal mode needs a setpoint, asserted without the jacket rule masking it');
+  end;
+end $$;
+
+do $$
+declare proc uuid;
+begin
+  -- The three procedure_step constraints from 0019, none of which had ever been
+  -- exercised.
+  insert into procedure (id, name, subject_type) values (gen_random_uuid(), 'Assertion Procedure', 'vessel')
+    returning id into proc;
+
+  begin
+    insert into procedure_step (procedure_id, step_order, label, kind)
+      values (proc, 1, 'nonsense kind', 'interpretive_dance');
+    raise exception 'FAIL: a procedure step of an unknown kind was accepted';
+  exception when check_violation then
+    perform test_ok('a procedure step is a timer, a solution, a check or a note, and nothing else');
+  end;
+
+  begin
+    insert into procedure_step (procedure_id, step_order, label, kind, target_seconds)
+      values (proc, 2, 'zero timer', 'check', 0);
+    raise exception 'FAIL: a target of zero seconds was accepted';
+  exception when check_violation then
+    perform test_ok('a target duration must be positive, so zero seconds is not a target');
+  end;
+
+  begin
+    insert into procedure_step (procedure_id, step_order, label, kind, target_seconds)
+      values (proc, 3, 'untimed timer', 'timer', null);
+    raise exception 'FAIL: a timer step with no target was accepted';
+  exception when check_violation then
+    perform test_ok('a timer step carries a target, or it is not timing anything');
+  end;
+end $$;
+
+do $$
+declare sess uuid; run uuid; stp uuid; proc uuid;
+begin
+  -- procedure_run_step.ends_after_it_starts. A step that ended before it began
+  -- is a clock problem or a typo, and either way the duration derived from it
+  -- would be negative.
+  insert into procedure (id, name, subject_type) values (gen_random_uuid(), 'Timing Procedure', 'vessel')
+    returning id into proc;
+  insert into procedure_step (id, procedure_id, step_order, label, kind)
+    values (gen_random_uuid(), proc, 1, 'a step', 'note') returning id into stp;
+  insert into procedure_session (id, procedure_id, started_by)
+    values (gen_random_uuid(), proc, '00000000-0000-0000-0000-00000000a001') returning id into sess;
+  insert into procedure_run (id, session_id, vessel_id, position)
+    values (gen_random_uuid(), sess, '00000000-0000-0000-0000-0000000000c2', 1) returning id into run;
+
+  begin
+    insert into procedure_run_step (run_id, step_id, started_at, ended_at)
+      values (run, stp, now(), now() - interval '1 hour');
+    raise exception 'FAIL: a step ended before it started';
+  exception when check_violation then
+    perform test_ok('a procedure step cannot end before it starts, so a derived duration is never negative');
+  end;
+end $$;
+
+do $$
+begin
+  -- The three subject_resolver checks from 0023. The earlier attempt at these
+  -- collided with the primary key instead of reaching the check, so it proved
+  -- nothing; these use a subject type that is not already registered by using
+  -- update rather than insert.
+  begin
+    update subject_resolver set relation = 'node; drop table node' where subject_type = 'node';
+    raise exception 'FAIL: a resolver relation carrying a statement was accepted';
+  exception when check_violation then
+    perform test_ok('a resolver relation must be a bare name, so it cannot carry a statement');
+  end;
+
+  begin
+    update subject_resolver set module = 'not a module' where subject_type = 'node';
+    raise exception 'FAIL: a resolver module with a space in it was accepted';
+  exception when check_violation then
+    perform test_ok('a resolver module must be a bare name');
+  end;
+
+  begin
+    update subject_resolver set name_expression = '   ' where subject_type = 'node';
+    raise exception 'FAIL: a blank name expression was accepted';
+  exception when check_violation then
+    perform test_ok('a resolver name expression cannot be blank');
+  end;
+end $$;
+
+
+do $$
+declare vt uuid;
+begin
+  -- The two vessel_type_note constraints from 0012, neither of which had been
+  -- exercised. A note with no body is a row nobody can act on, and a note marked
+  -- resolved by nobody, or by somebody at no time, is half a record.
+  vt := term_id('vessel_type','barrel');
+
+  begin
+    insert into vessel_type_note (vessel_type_id, body, created_by)
+      values (vt, '   ', '00000000-0000-0000-0000-00000000a002');
+    raise exception 'FAIL: a blank vessel type note was accepted';
+  exception when check_violation then
+    perform test_ok('a note about a vessel type has to say something');
+  end;
+
+  begin
+    insert into vessel_type_note (vessel_type_id, body, created_by, resolved_at, resolved_by)
+      values (vt, 'resolved by nobody', '00000000-0000-0000-0000-00000000a002', now(), null);
+    raise exception 'FAIL: a note was resolved at a time by nobody';
+  exception when check_violation then
+    perform test_ok('a resolved note names who resolved it, and an unresolved one names nobody');
+  end;
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- a cellar hand may label a barrel, and may not relabel one'; end $$;
+
+-- Ledger A22, ruled by the winemaker: a cellar hand may bind an unbound code;
+-- only an admin may rebind one already bound. The split sits where the risk is,
+-- and both halves are asserted because only asserting the permitted half would
+-- leave the refusal free to rot.
+do $$
+declare c vessel_code; msg text;
+begin
+  perform test_act_as('00000000-0000-0000-0000-00000000a002');   -- the cellar user
+  set local role authenticated;
+
+  c := bind_vessel_code('00000000-0000-0000-0000-0000000000c2', 'STICKER-NEW', 'our sticker');
+  if c.vessel_id <> '00000000-0000-0000-0000-0000000000c2' then
+    raise exception 'FAIL: binding an unbound code did not land on the vessel asked for';
+  end if;
+  perform test_ok('a cellar hand may put a new sticker on a barrel, which is A22');
+
+  -- Idempotence survives the change.
+  c := bind_vessel_code('00000000-0000-0000-0000-0000000000c2', 'STICKER-NEW');
+  perform test_ok('binding a code the vessel already carries returns it rather than complaining');
+
+  -- And the half that is refused, with the message checked rather than just the
+  -- refusal, because the whole point of the ruling is that a person in a barrel
+  -- room learns which barrel already has that sticker.
+  begin
+    c := bind_vessel_code('00000000-0000-0000-0000-00000000c001', 'STICKER-NEW');
+    raise exception 'FAIL: a cellar hand moved a sticker to another barrel';
+  exception when insufficient_privilege then
+    get stacked diagnostics msg = message_text;
+    if msg not like '%RESOLVE-1%' then
+      raise exception 'FAIL: the refusal did not name the vessel currently holding the code: %', msg;
+    end if;
+    perform test_ok('a cellar hand may not move a sticker, and the refusal names the barrel that has it');
+  end;
+
+  -- Writing the table directly must be refused too, or the function is a
+  -- suggestion rather than a boundary.
+  begin
+    update vessel_code set vessel_id = '00000000-0000-0000-0000-00000000c001'
+     where code = 'STICKER-NEW';
+    if found then
+      raise exception 'FAIL: a cellar hand rebound a code by writing the table';
+    end if;
+  exception when insufficient_privilege then null;
+  end;
+  if exists (select 1 from vessel_code
+              where code = 'STICKER-NEW'
+                and vessel_id = '00000000-0000-0000-0000-00000000c001') then
+    raise exception 'FAIL: a direct update moved the sticker';
+  end if;
+  perform test_ok('a cellar hand cannot rebind by writing vessel_code directly either');
+
+  reset role;
+end $$;
+
+do $$
+declare c vessel_code;
+begin
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');   -- the admin
+  set local role authenticated;
+  c := bind_vessel_code('00000000-0000-0000-0000-00000000c001', 'STICKER-NEW');
+  reset role;
+  if c.vessel_id <> '00000000-0000-0000-0000-00000000c001' then
+    raise exception 'FAIL: an admin could not move a sticker to another barrel';
+  end if;
+  perform test_ok('an admin may move a sticker, which is the other half of the ruling');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- deactivating an account takes the account away'; end $$;
+
+-- Found by the logic mutation class: removing the `active` conjunct from
+-- is_admin() changed nothing this suite could see. An admin who has been
+-- switched off stayed an admin, and nothing said so. That is ledger B10's shape,
+-- where the client reimplements is_admin and drops the same conjunct, arriving
+-- in the kernel instead.
+do $$
+declare was boolean; now_ boolean;
+begin
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+  select is_admin() into was;
+
+  update app_user set active = false where id = '00000000-0000-0000-0000-00000000a001';
+  select is_admin() into now_;
+  update app_user set active = true where id = '00000000-0000-0000-0000-00000000a001';
+
+  if not was then raise exception 'FAIL: the admin fixture is not an admin to begin with'; end if;
+  if now_ then
+    raise exception 'FAIL: an admin who has been deactivated is still an admin';
+  end if;
+  perform test_ok('deactivating an admin takes their admin rights with it');
+end $$;
+
+-- And the same question for a cellar hand, since is_facility_user() reads the
+-- same flag through a different route.
+do $$
+declare still boolean;
+begin
+  update app_user set active = false where id = '00000000-0000-0000-0000-00000000a002';
+  perform test_act_as('00000000-0000-0000-0000-00000000a002');
+  select is_facility_user() into still;
+  update app_user set active = true where id = '00000000-0000-0000-0000-00000000a002';
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+
+  if still then
+    raise exception 'FAIL: a deactivated cellar account is still a facility user';
+  end if;
+  perform test_ok('deactivating a cellar account takes the cellar with it');
 end $$;
 
 -- ---------------------------------------------------------------------------
