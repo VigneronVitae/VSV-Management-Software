@@ -102,9 +102,9 @@ build on top of it. Halting with a clear write-up is a good outcome.
 
 | | |
 |---|---|
-| Last green commit | `3a94d94`, W-4 phase 3b |
+| Last green commit | `f9c9f79`, W-5 handoff, pushed to `main` and to the branch |
 | Current migration number | `0027`, so the next one is `0028` |
-| Assertions | 204 from empty, 206 against the cellar copy |
+| Assertions | 204 from empty, 206 against the cellar copy, reproduced from a clean clone |
 | Module migration numbering | not yet designed, phase 6 designs it |
 
 ## Phases
@@ -599,12 +599,34 @@ pinned them for.
 | W-3 end, at `0025` | 188 | 188 | 100% | 20, unreported |
 | W-4 phase 1, at `0025` | 188 | 188 | 100% | 20, named |
 | After `0027`, before closing the gap | 198 | 195 | 98% | 20, named |
-| After closing it | 198 | 198 | 100% | 20, named |
+| After closing it | 198 | 198 | 100% | 21, named |
 
 **The fall to 98 percent was real and was mine.** `0026` and `0027` added three bare-name
 check constraints and nothing asserted them, which the `loosen` class found the moment they
 existed. Three assertions closed it. That is the harness doing its job on new surface
 within the same session that created the surface.
+
+## W-5: the handoff, and one number corrected
+
+`main` was still at `c3eae3c`, the commit the thirteen-report corpus reviewed, while twenty
+six migrations of work sat on the branch. A reviewer cloning the default branch would have
+passed every canary in every archived prompt and reviewed the already-reviewed tree.
+`main` is now fast-forwarded to the current head and pushed, and
+`docs/review/CURRENT-BASELINE.md` records what the trap was and why the canaries were
+chosen the way they were: identify a tree by things that only exist in it, not by where it
+is parked or how large it is.
+
+**Reproduced from a clean clone of the pushed remote rather than from the working tree:**
+27 of 27 migrations from empty, 204 assertions there, 206 against a copy of the cellar, and
+198 of 198 scored mutations caught.
+
+**One correction to W-4's numbers.** The exclusion count in the last row of the table above
+was 20 and is 21: 20 degenerate plus 1 inapplicable, from 219 enumerated. W-4 ran only the
+`loosen` class after adding the three bare-name assertions and carried the exclusion count
+forward from the full run before `0027`, which had one policy fewer. The score itself, 198
+of 198, is unchanged and was verified. The 2026-09-12 session report still says 20; reports
+are append-only by their own convention, so the correction lives here and in this session's
+commit rather than as an edit to it.
 
 ## Decisions
 
