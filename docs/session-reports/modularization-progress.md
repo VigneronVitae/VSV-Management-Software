@@ -20,7 +20,15 @@ otherwise have to derive again.
    migration number.
 3. Run `bun run green`. If it is not green, the tree does not match this file and
    that is the first thing to resolve.
-4. Continue at the first phase marked not-started.
+4. Continue at the first phase marked not-started, which is phase 5.
+
+**Before starting phase 5, read this.** `term_kind` appears in nine generated columns, in
+a composite foreign key, and in the signature of most functions that touch vocabulary.
+Converting it to rows is a large migration whose failure modes are exactly the classes the
+mutation score is worst at: check constraints at 13 percent, unique constraints at 12. W-2
+gates only phase 7 on that number and phase 5 is not blocked, but the same argument applies
+to it in weaker form, and somebody should decide that deliberately rather than by not
+noticing. The session report for 2026-09-12 says the same thing at more length.
 
 Do not start a phase you cannot finish. Finishing means green and committed.
 
@@ -45,7 +53,7 @@ build on top of it. Halting with a clear write-up is a good outcome.
 
 | | |
 |---|---|
-| Last green commit | `36258e4`, phase 3 |
+| Last green commit | `7c6faa6`, phase 4 |
 | Current migration number | `0024`, so the next one is `0025` |
 | Assertions | 138 from empty, 139 against the cellar copy |
 | Module migration numbering | not yet designed, phase 6 designs it |
