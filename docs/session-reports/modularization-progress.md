@@ -45,9 +45,9 @@ build on top of it. Halting with a clear write-up is a good outcome.
 
 | | |
 |---|---|
-| Last green commit | `c091fd1`, phase 2 |
-| Current migration number | `0023`, so the next one is `0024` |
-| Assertions | 137 from empty, 138 against the cellar copy |
+| Last green commit | `36258e4`, phase 3 |
+| Current migration number | `0024`, so the next one is `0025` |
+| Assertions | 138 from empty, 139 against the cellar copy |
 | Module migration numbering | not yet designed, phase 6 designs it |
 
 ## Phases
@@ -58,7 +58,7 @@ build on top of it. Halting with a clear write-up is a good outcome.
 | 1 | Namespace collision, rulings ids to `AR-` | done |
 | 2 | Read the unreviewed range, `0006` to `0022`, plus the mutation score | done |
 | 3 | The resolver registry, `AR-E5` | done |
-| 4 | `task_board` against the registry, `AR-E6` | not started |
+| 4 | `task_board` against the registry, `AR-E6` | done |
 | 5 | Enums to registry rows, `AR-E7` | not started |
 | 6 | The scheduling block to core, plus per-module migration numbering | not started |
 | 7 | The schema split and the `public` facade, plus the `AR-B8` gate check | **blocked** |
@@ -251,6 +251,38 @@ New sorries: S-41, the registry stores an expression it later executes, which is
 escalation today because the function is invoker and only admins may write the row; and
 S-42, resolution is one query per row, which is `AR-I3`'s trade taken deliberately.
 
+## Phase 4: `task_board` stops naming module tables
+
+`0024_task_board_via_registry.sql`. `AR-E6` named this one view as the single declarative
+reason core cannot install alone, and the A-1 survey probed it: `drop table block cascade`
+reported the cascade to `task_board`.
+
+Proven twice, both ways round.
+
+**Identical output.** A scratch database with tasks of all four subject types, plus one
+whose subject does not exist, captured before and after. Five rows, byte-identical,
+including the null name for the task pointing at nothing.
+
+**The cascade is gone.** `drop table block cascade` on that same database reported the
+cascade to `task_board` before and reports only `node_block_id_fkey` after. That remaining
+edge is `node.block_id`, which is `AR-F5` and belongs to phase 7.
+
+Two assertions hold it. The one written in phase 3 to report which of two states it was in
+now asserts the first, without anybody editing its text. A second reads `pg_depend`
+directly, so it fails on the change rather than on the consequence.
+
+**Deviation from the prompt, recorded in the migration as well as here.** W-2 says rewrite
+it as a lateral join and `AR-E5` uses the same phrase. A lateral join needs the relation
+known at plan time, and the whole point is that it is not known until a row is read, so a
+view cannot have one. A scalar call to `resolve_subject_name` is the achievable form of
+the same idea and buys the same property. The cost is S-42, one dynamic query per row,
+which 0023 filed as a trade and this takes. If the board is ever slow enough to measure,
+the answer is a per-type contract view and a real lateral join over the union, which is
+`AR-B4`'s shape and belongs with phase 8.
+
+`create or replace view` rather than drop and create, so the column list is unchanged, no
+grant is lost, and the client keeps working untouched.
+
 ## Decisions
 
 | Decision | Why |
@@ -265,6 +297,7 @@ S-42, resolution is one query per row, which is `AR-I3`'s trade taken deliberate
 | Ruling ids bumped the document to 2.1, not 2.0.1 | Ids are how other documents refer to it, so a consumer re-reads |
 | `scripts/mutate.sh` is committed | `G-5` measured and did not commit, so its number could not be reproduced |
 | Mutations enumerated from the catalog, not listed | A written list goes stale; this set grows with the schema |
+| `task_board` uses a scalar call, not a lateral join | A lateral join needs the relation at plan time and a view cannot have it |
 | A22 filed rather than fixed | Whether a cellar hand may label a barrel is the winemaker's call, and phase 2 files rather than fixes |
 
 ## A tooling trap that has now cost time twice

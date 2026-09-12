@@ -25,7 +25,8 @@
 --              supabase/migrations/0020_pin_search_path.sql,
 --              supabase/migrations/0021_cellar_write_paths.sql,
 --              supabase/migrations/0022_admission_and_authorship.sql,
---              supabase/migrations/0023_subject_resolver.sql]
+--              supabase/migrations/0023_subject_resolver.sql,
+--              supabase/migrations/0024_task_board_via_registry.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
 -- Open sorries: S-7 (what this exercises is Postgres policy evaluation, not
@@ -2188,12 +2189,13 @@ begin
   end if;
   perform test_ok('dropping a module''s table makes its subject type unresolvable, silently and without error');
 
+  -- Written in phase 3 to report which of two states it was in. Phase 4 made it
+  -- the first one, and it now asserts rather than reports.
   select to_regclass('public.task_board') is not null into board_exists;
-  if board_exists then
-    perform test_ok('task_board survived dropping block, so core no longer names a module table');
-  else
-    perform test_ok('task_board still cascades from block, which is the declarative edge phase 4 removes');
+  if not board_exists then
+    raise exception 'FAIL: dropping block took task_board with it, so core names a module table again';
   end if;
+  perform test_ok('task_board survives dropping a module, so core no longer names a module table');
 end $$;
 
 rollback to savepoint before_dropping_block;
@@ -2207,6 +2209,30 @@ begin
     raise exception 'FAIL: the savepoint did not restore task_board';
   end if;
   perform test_ok('the drop rolled back, so the suite stays hermetic');
+end $$;
+
+
+-- The same property asserted against the catalog rather than by dropping things,
+-- so it fails on the change rather than on the consequence. task_board used to
+-- carry a CASE naming four relations, which Postgres records in pg_rewrite; the
+-- registry is what replaced it.
+do $$
+declare named text;
+begin
+  select string_agg(distinct c.relname, ', ') into named
+    from pg_depend d
+    join pg_rewrite r on r.oid = d.objid
+    join pg_class v on v.oid = r.ev_class
+    join pg_class c on c.oid = d.refobjid
+    join pg_namespace n on n.oid = c.relnamespace
+   where v.relname = 'task_board'
+     and n.nspname = 'public'
+     and c.relname in ('node','vessel','location','block');
+
+  if named is not null then
+    raise exception 'FAIL: task_board declares a dependency on module relations: %', named;
+  end if;
+  perform test_ok('task_board declares no dependency on node, vessel, location or block');
 end $$;
 
 -- ---------------------------------------------------------------------------

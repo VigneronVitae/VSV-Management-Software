@@ -16,7 +16,8 @@
 --                 supabase/migrations/0014_rack.sql,
 --                 supabase/migrations/0016_lot_owner_name.sql,
 --                 supabase/migrations/0019_procedures.sql,
---                 supabase/migrations/0023_subject_resolver.sql]
+--                 supabase/migrations/0023_subject_resolver.sql,
+--                 supabase/migrations/0024_task_board_via_registry.sql]
 -- Axioms enforced: T1-1 (pickers, not text fields), T0-2 (derived over stored)
 -- Open sorries: S-7 (RLS untested), S-15 (an unknown operation records and
 --               drives nothing beyond its effect), S-16 (bottle is not really
