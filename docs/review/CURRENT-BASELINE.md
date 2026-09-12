@@ -16,7 +16,7 @@ are corpus and are not edited; this file is the correction.
 
 | | |
 |---|---|
-| Current head | `45eaed57a43f77b327674475b2b4c1c990d8bb1b` |
+| Head when this was written | `3698997`, the commit that added this file |
 | Branch holding it | `claude/sql-files-to-markdown-i31rob` |
 | Tracked files | 112 tracked files |
 | Migrations | 27 migrations, `0001_core_schema.sql` through `0027_term_kind_registry.sql` |
@@ -25,6 +25,10 @@ are corpus and are not edited; this file is the correction.
 The file and migration counts above are derived rather than typed, and `scripts/verify.sh`
 checks them against the tree on every run. If they are wrong here, `bun run verify` fails.
 To confirm by hand: `git ls-files | wc -l` and `ls supabase/migrations/*.sql | wc -l`.
+
+The sha is the one thing here that cannot check itself, because it names the commit that
+writes it. A later commit is later work on the same tree, not a different tree. **The
+canaries below are the durable check and the sha is a convenience.**
 
 ## The trap, which is the most important paragraph here
 
@@ -39,8 +43,9 @@ already reviewed a month ago.** The canary block was written to catch exactly th
 and it now points the wrong way.
 
 Twenty six migrations of work, three review-response sessions and two enum conversions live
-on the branch. If `main` has moved by the time you read this, the head sha above is the
-thing to check, not the branch name.
+on the branch. If `main` has moved by the time you read this, good: check the canaries
+below rather than the branch name, since the point of them is that they do not depend on
+which branch you are standing on.
 
 ## Replacement canaries
 
