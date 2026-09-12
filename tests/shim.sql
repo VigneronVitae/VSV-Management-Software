@@ -6,7 +6,7 @@
 --           artifact like this for eight sessions and it was never in the tree."
 -- Depends on: [supabase/migrations/0001_core_schema.sql,
 --              supabase/migrations/0002_derived_and_rls.sql]
--- Depended on by: [scripts/green.sh, docs/status-ledger.md]
+-- Depended on by: [scripts/green.sh, docs/status-ledger.md, scripts/mutate.sh]
 -- Axioms enforced: none. This is scaffolding, and it is deliberately less than
 --                  Supabase rather than a reimplementation of it.
 -- Open sorries: S-7, which this narrows and does not close.

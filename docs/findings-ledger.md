@@ -1,6 +1,6 @@
 ---
 Type: ledger
-Version: 1.0
+Version: 1.1
 Purpose: "Deduplicates the thirteen review reports into one entry per defect, keyed by the database or code identifier rather than by line number, so entries survive the schema reorganization."
 Depends on: [docs/architecture-rulings.md, docs/sorry-ledger.md, docs/review/README.md]
 Depended on by: [docs/status-ledger.md, supabase/migrations/0021_cellar_write_paths.sql, supabase/migrations/0022_admission_and_authorship.sql, scripts/verify.sh, docs/session-reports/modularization-progress.md]
@@ -8,8 +8,9 @@ Depended on by: [docs/status-ledger.md, supabase/migrations/0021_cellar_write_pa
 
 # Findings Ledger
 
-Thirteen reports, three engines, roughly 200 findings, 73 distinct defects. All against
-`c3eae3c7c262544e4b2e29526b513c964c6852fe`.
+Thirteen reports, three engines, roughly 200 findings, 73 distinct defects, all against
+`c3eae3c7c262544e4b2e29526b513c964c6852fe`. Five more were added by the phase 2 read of
+migrations `0006` to `0022`, which no review had seen, bringing it to 78.
 
 ## Why this is keyed by identifier
 
@@ -61,10 +62,10 @@ cellar user actions RLS refuses, now offers more of them, because the menu grew.
 
 | Lands in | Count |
 |---|---|
-| `0006`, the admission and integrity migration | 21 |
+| `0006`, the admission and integrity migration | 23 |
 | Client, independent of the migration | 19 |
 | Documents and ledgers | 12 |
-| Infrastructure: verify, doctor, CI, backup, deploy | 9 |
+| Infrastructure: verify, doctor, CI, backup, deploy | 12 |
 | Deferred with a condition | 12 |
 
 ---
@@ -96,6 +97,9 @@ Written once, after the schema split, against the new layout.
 | A19 | `node.status`, `node.closed_at` | Stored derivations of lineage with no recompute and no staleness detection | 1 | EXPLOITABLE |
 | A20 | `task_claim_log`, `ON DELETE RESTRICT` on lineage | Cascade-deletable from `task` although no delete policy exists. Restrict is a speed bump: delete the edge, then the node, both permitted | 1 (p) | EXPLOITABLE |
 | A21 | `subject_type`, `term_kind` | Core enums naming higher-module tables and carrying module vocabulary. Wrong-way edges that never fail to install. `0004` already performed this migration once | 1 (p) | AR-E7 |
+
+| A22 | `bind_vessel_code` | Invoker, and it inserts into `vessel_code`, whose only write policy is `vessel_code_admin_write` at `is_admin()`. A cellar user cannot put a sticker on a barrel. Unlike A14 this fails loudly, because a refused INSERT violates a `with check` and raises, where a refused UPDATE matches zero rows. Whether it should be refused at all is a question for the winemaker: creating a vessel is admin work and asserted so on purpose, and labelling one during harvest may not be | 1 (p) | EXPLOITABLE |
+| A23 | `vessel_type_note` | Added by `0012` with `using (true)` on select, which is A5's default arriving on new surface seven migrations after A5 was filed. The five tables `0019` added do not repeat it, so the habit changed mid-session and `0012` is the one that predates the change. Low consequence, since a note says a vessel type asks for the wrong field, but it is the pattern recurring rather than a one-off | 1 | LATENT |
 
 **Ordering inside 0006.** A1 first, since it is one line and it currently inverts
 deactivation. Then A7, A5 and A11 together, since they are the admission surface and A11
@@ -167,6 +171,9 @@ The survey's conclusion. Thirty-seven of 123 dependency edges are enforceable by
 | D7 | backup, restore, deploy | No backup, no rehearsed restore, no deployment path, no rollback, nothing written for the hours Supabase is unreachable. With C4 there is no local stack to restore into either | 1 |
 | D8 | migrations | Neither transactional nor re-runnable, and applicable only to an empty database, against `0005`'s stated intent. `0002` needs the shim and does not guard; `0005` guards | 4 |
 | D9 | the em-dash and import rules | Both stated absolutely, both enforced by nothing. Biome can enforce the import rule with no new dependency | 3 |
+| D10 | the assertion suite's mutation score | 28 of 115 injected schema defects caught, 24 percent, measured by `scripts/mutate.sh`. On the subset of objects that existed at the reviewed baseline it is 15 of 71, 21 percent, against the 42 percent `G-5` measured on its own 45. Absolute catches rose from 19 to 28 while the schema roughly doubled, so the suite grew and its coverage of the schema fell. **This is the stop condition W-2 sets for the schema split** | 1 (p) |
+| D11 | row level security itself | Disabling RLS outright on 16 of 21 tables is not noticed by any assertion. `app_user`, `party`, `lineage`, `placement`, `task`, `task_claim_log`, `template`, `template_step`, `vessel_code`, `block`, `vessel_type_note` and all five procedure tables can have RLS turned off and the suite still passes. The five that are caught are the ones an assertion reads through a second principal. This is the most actionable half of D10 and the cheapest to close | 1 (p) |
+| D12 | the mutation harness | `G-5` measured 42 percent and did not commit the harness, so the number could not be reproduced or improved against. That is D1's shape applied to a measurement rather than to a shim. `scripts/mutate.sh` now exists and enumerates its mutations from the catalog rather than from a written list, so the set grows with the schema | 1 |
 
 ---
 
@@ -203,6 +210,41 @@ up.
 
 ---
 
+## Read but not found: what phase 2 checked in 0006 to 0022 and came back clean
+
+Recorded because a review that reports only what it found cannot be distinguished from a
+review that stopped early. Fifteen migrations and every function, policy, table and column
+they added were read against the five patterns known to recur.
+
+**A10, a derived function inner-joining something optional and returning a short total.**
+No new instance. `vessel_history` left-joins `app_user` on the nullable `by_user`, which is
+the correct shape and the opposite of A10's mistake. `node_history` and `rack_plan` inner-join
+only on columns that are `not null` with a foreign key, where an inner join cannot drop a row.
+A10 itself is unchanged: `block_composition` still inner-joins `block`.
+
+**A18 and A19, a stored value that is a derivation nothing recomputes.** No new instance.
+Two columns were added in the whole range, `node.hidden` and `party.default_hidden`, and both
+are stored choices rather than derivations. `procedure_run_state` looked like the exception,
+carrying `actual_seconds` and `over_by_seconds`, and it is a view. The nine generated columns
+are recomputed by definition.
+
+**A13, a refused write returning zero rows rather than an error.** Recurs, mildly. The five
+tables `0019` added all carry `for all ... using (is_facility_user())`, so a client's refused
+UPDATE is a silent no-op there as everywhere else. The consequence is small, since a client
+has no reason to write a procedure run, but the pattern was inherited rather than fixed.
+
+**A14's generalization, a write path running as the caller against a policy that refuses it.**
+One more found, A22, and the search was exhaustive rather than a spot check: every function in
+`public` was matched against every table it writes, and every such table's insert and update
+policies were read. Six were fixed by `0021`; `bind_vessel_code` is the seventh and it predates
+the range, having been written in `0003`.
+
+**A risk `0022` introduced and did not realise.** Tightening `event_insert` to
+`by_user = auth.uid() and by_sensor is null` would break any function that writes an event in
+another name. All six that insert into `event` were checked: `generate_inferred_history`,
+`record_event`, `record_vessel_note`, `finish_run`, `update_vessel` and `rack`. Every one
+writes `auth.uid()` and none sets `by_sensor`. No path breaks.
+
 ## Falsified predictions
 
 Reports that expected a defect, probed, and found otherwise. Recorded because they are the
@@ -216,3 +258,34 @@ cached column anywhere, so C-3 stayed dead at the level C-3 was about. Every unt
 composition function is correct, diamond lineage included. The assertion suite is hermetic
 and rolls back cleanly, including on abort. The header graph, the em-dash rule and the
 import rule all currently hold, they are simply enforced by nothing.
+
+---
+
+## Changelog
+
+### 1.1 (2026-09-12)
+
+*Cause: W-2 phase 2, a read of migrations `0006` through `0022`, which no review had
+ever seen. The thirteen-report corpus was run against five migrations and 42 files.*
+
+**Added.** A22, `bind_vessel_code` refused to cellar users. A23, `vessel_type_note`
+repeating A5's blanket read on new surface. D10, the mutation score. D11, row level
+security disable surviving on 16 of 21 tables. D12, the harness itself now existing.
+
+**Added a section**, "Read but not found", recording the four patterns checked across
+the unreviewed range that came back clean, because a review that reports only its
+finds cannot be told apart from one that stopped early.
+
+**Amended.** Four references that named rulings rather than compost entries now use the
+`AR-` prefix introduced by `docs/architecture-rulings.md` v2.1: AR-B2, AR-E7, AR-F2 and
+AR-J1. A progress section records what has been closed since the review.
+
+**Known dangling reference, not resolved.** Entry A12 cites "E-4's premise". `E-4`
+resolves to nothing in this repository under any reading: not a ruling, not a compost
+entry, not a finding, not a spec section, and it appears nowhere in the review corpus.
+Left as it stands rather than guessed at.
+
+### 1.0 (2026-09-11)
+
+Thirteen reports, three engines, roughly 200 findings deduplicated into 73 distinct
+defects against `c3eae3c`, keyed by identifier rather than by line number.

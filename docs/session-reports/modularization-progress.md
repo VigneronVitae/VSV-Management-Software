@@ -1,7 +1,7 @@
 ---
 Type: record
 Purpose: "The file a fresh session with no memory reads first before continuing the W-2 modularization. Holds the phase list and its state, the last green commit, the current migration number, every decision made and why, and everything discovered that changes a later phase."
-Depends on: [docs/architecture-rulings.md, docs/findings-ledger.md, docs/session-reports/2026-09-11-verification-surface.md, scripts/green.sh]
+Depends on: [docs/architecture-rulings.md, docs/findings-ledger.md, docs/session-reports/2026-09-11-verification-surface.md, scripts/green.sh, scripts/mutate.sh]
 Depended on by: [docs/session-reports/index.md]
 ---
 
@@ -45,7 +45,7 @@ build on top of it. Halting with a clear write-up is a good outcome.
 
 | | |
 |---|---|
-| Last green commit | `df3ac3d`, phase 0 |
+| Last green commit | `c33dbb4`, phase 1 plus its repair |
 | Current migration number | `0022`, so the next one is `0023` |
 | Assertions | 128 from empty, 129 against the cellar copy |
 | Module migration numbering | not yet designed, phase 6 designs it |
@@ -56,18 +56,22 @@ build on top of it. Halting with a clear write-up is a good outcome.
 |---|---|---|
 | 0 | Reach green at all | done |
 | 1 | Namespace collision, rulings ids to `AR-` | done |
-| 2 | Read the unreviewed range, `0006` to `0022`, plus the mutation score | not started |
+| 2 | Read the unreviewed range, `0006` to `0022`, plus the mutation score | done |
 | 3 | The resolver registry, `AR-E5` | not started |
 | 4 | `task_board` against the registry, `AR-E6` | not started |
 | 5 | Enums to registry rows, `AR-E7` | not started |
 | 6 | The scheduling block to core, plus per-module migration numbering | not started |
-| 7 | The schema split and the `public` facade, plus the `AR-B8` gate check | not started |
-| 8 | The manifest and the register, plus the `AR-F5` falsifier | not started |
+| 7 | The schema split and the `public` facade, plus the `AR-B8` gate check | **blocked** |
+| 8 | The manifest and the register, plus the `AR-F5` falsifier | **blocked**, it depends on 7 |
 
-Phase 7 is conditional on phase 2's mutation score. If it has not improved on the 42
-percent the `G-5` run measured against 28 assertions, that is a stop condition for
-phase 7 specifically, because a schema move policed by a suite that misses more than
-half of injected defects is not policed.
+**Phase 7 is blocked and phase 8 with it.** W-2 makes the schema split conditional on
+phase 2's mutation score improving on the 42 percent `G-5` measured, and it has not. The
+numbers are below. A schema move is precisely the operation that can silently change
+which policies apply to which rows, and the policy class scores 13 to 20 percent, so the
+suite would not tell you if the move broke something. W-2's own instruction is to say so
+plainly and stop, and halting with a write-up is a good outcome.
+
+Phases 3 through 6 are not gated on the score and are the next work.
 
 ## Phase 0: reach green at all
 
@@ -112,6 +116,107 @@ schema, so the two vessel-photos policy assertions report that they were not ass
 instead of asserting two things. `green.sh` checks that the difference is exactly one
 and fails if it is anything else, so this cannot quietly become a real gap.
 
+## Phase 2: the unreviewed range, and the number that stops phase 7
+
+Fifteen migrations, `0006` through `0022`, which the thirteen-report corpus never saw
+because it was run against a tree of five. Read against the five patterns W-2 names,
+using `R-5`, `R-6`, `G-1` and `G-4` as lenses. Output is ledger entries, not fixes:
+`docs/findings-ledger.md` is now 1.1.
+
+### The mutation score
+
+Measured with `scripts/mutate.sh`, which is committed, because `G-5` measured 42 percent
+and did not commit its harness, so the number could not be reproduced or improved
+against. That is D1's shape applied to a measurement. The method is `G-5`'s: build one
+base database, clone it per mutation, apply one mutation, run the suite, caught means the
+suite exits non-zero. The mutations are enumerated from the catalog rather than written
+down, so the set grows with the schema.
+
+| Set | Mutations | Caught | Score |
+|---|---|---|---|
+| Everything, 22 migrations | 115 | 28 | **24%** |
+| Only objects that existed at the reviewed baseline | 71 | 15 | **21%** |
+| Only objects added since `0006` | 44 | 13 | 30% |
+| `G-5`, for comparison, on its own 45 | 45 | 19 | 42% |
+
+By class, over everything: check constraints 13 percent, unique constraints and indexes
+12 percent, triggers 89 percent, policies 20 percent, row level security disable 24
+percent.
+
+**The comparison is not exact and does not need to be.** `G-5` chose 45 mutations; this
+harness enumerates 115 from the catalog, so the denominators differ and the second row of
+that table is the fairest read: on the same objects, using a larger and more systematic
+mutation set, the suite catches 21 percent. Absolute catches rose from 19 to 28 while the
+schema roughly doubled. The suite grew and its coverage of the schema fell.
+
+**The single most quotable result.** Row level security can be turned off outright on 16
+of 21 tables and the suite still passes: `app_user`, `party`, `lineage`, `placement`,
+`task`, `task_claim_log`, `template`, `template_step`, `vessel_code`, `block`,
+`vessel_type_note` and all five procedure tables. The five that are caught are the ones
+an assertion happens to read through a second principal. That is D11 and it is the
+cheapest thing in the ledger to close.
+
+### What the read found
+
+Two new entries, A22 and A23, plus three infrastructure entries D10 to D12.
+
+**A22 confirms the prediction this file made before phase 2 started.** There is a seventh
+write path running as the caller against a policy that refuses it: `bind_vessel_code`,
+invoker, inserting into `vessel_code`, whose only write policy is `is_admin()`. A cellar
+user cannot put a sticker on a barrel. It differs from A14's class in failing loudly,
+because a refused INSERT violates a `with check` and raises where a refused UPDATE
+matches zero rows and says nothing. Whether it should be refused at all is a question for
+the winemaker rather than a defect to fix unsupervised: creating a vessel is admin work
+and the suite asserts that on purpose, and labelling one during harvest may not be.
+
+The search was exhaustive rather than a spot check. Every function in `public` was matched
+against every table it writes, and every such table's insert and update policies were
+read.
+
+**A23** is `vessel_type_note`, added by `0012` with `using (true)` on select, which is
+A5's blanket default arriving on new surface. The five tables `0019` added do not repeat
+it, so the habit changed mid-session and `0012` predates the change.
+
+### What the read checked and did not find
+
+Written into the ledger as its own section, because a review that reports only its finds
+cannot be told apart from one that stopped early. No new instance of A10, the derived
+function that inner-joins something optional: `vessel_history` left-joins the nullable
+author, which is the correct shape. No new instance of A18 or A19, the stored derivation:
+two columns were added in the whole range and both are stored choices, and
+`procedure_run_state`, which carries `actual_seconds` and `over_by_seconds`, is a view.
+
+And one risk that `0022` introduced without noticing: tightening `event_insert` to
+`by_user = auth.uid() and by_sensor is null` would break any function writing an event in
+another name. All six that insert into `event` were checked and every one writes
+`auth.uid()`. No path breaks. That could have gone the other way.
+
+### Scoring the predictions this file made
+
+1. **Correct.** A seventh write path exists: A22.
+2. **Wrong, and wrong in the optimistic direction.** The prediction was 55 to 75 percent.
+   It is 24 percent, and 21 on the comparable subset, which is not a smaller improvement
+   than expected but a decline. The reasoning behind the prediction, that the new
+   assertions were written against known defects rather than against the schema generally,
+   was right; what it missed is that the schema grew faster than the suite, so writing
+   good assertions about the defects you fixed still loses ground.
+3. Not yet testable. It belongs to phase 8, which is blocked.
+
+## What should happen about the score
+
+Not a decision to take unsupervised, so it is written down rather than acted on.
+
+The cheapest single improvement is D11: an assertion per table that row level security is
+enabled, derived from the catalog rather than listed, in the shape of the existing checks
+that every view is `security_invoker` and every function pins `search_path`. That is one
+loop and it converts 16 surviving mutations into caught ones, which on its own would take
+the overall score from 24 to roughly 38 percent.
+
+The second is the policy class, which is the one that actually gates the schema split.
+Thirty eight of 54 policies survive being dropped. Closing that means a probe per policy
+per principal, which is real work and is the thing W-2 declined to authorise by making
+the score a stop condition rather than a task.
+
 ## Decisions
 
 | Decision | Why |
@@ -124,6 +229,9 @@ and fails if it is anything else, so this cannot quietly become a real gap.
 | Two `A-1` references in the rulings are not renamed | They name the review prompt, not ruling `AR-A1` |
 | `verify.sh` gained an `AR-` cross-reference check | Separating namespaces stops ambiguity; checking them stops a reference pointing at nothing |
 | Ruling ids bumped the document to 2.1, not 2.0.1 | Ids are how other documents refer to it, so a consumer re-reads |
+| `scripts/mutate.sh` is committed | `G-5` measured and did not commit, so its number could not be reproduced |
+| Mutations enumerated from the catalog, not listed | A written list goes stale; this set grows with the schema |
+| A22 filed rather than fixed | Whether a cellar hand may label a barrel is the winemaker's call, and phase 2 files rather than fixes |
 
 ## A tooling trap that has now cost time twice
 

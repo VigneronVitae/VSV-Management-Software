@@ -1,0 +1,194 @@
+#!/usr/bin/env bash
+# ---------------------------------------------------------------------------
+# Type: tool
+# Purpose: "Measures what fraction of deliberately injected schema defects the
+#           assertion suite catches. A suite that passes tells you it ran; a
+#           mutation score tells you whether it would have noticed."
+# Depends on: [tests/shim.sql, tests/schema_assertions.sql]
+# Depended on by: [docs/session-reports/modularization-progress.md]
+# ---------------------------------------------------------------------------
+#
+# The G-5 review run measured 42 percent against 28 assertions and did not commit
+# the harness, so the number could not be reproduced or improved against. That is
+# the same defect as D1 and this file is the answer to it.
+#
+# Method, which is G-5's so the numbers are comparable: build one base database
+# from the shim and every migration, then for each mutation copy it, apply that
+# one mutation, run the assertion suite, and record whether the suite exited
+# non-zero. Caught means non-zero. The copy is a template clone rather than a
+# rebuild, which is what makes a hundred-odd mutations take minutes instead of an
+# hour.
+#
+# The mutations are enumerated from the catalog rather than listed by hand, so
+# the set grows with the schema instead of going stale the way a written list
+# does. Five classes:
+#
+#   check        every check constraint, dropped
+#   unique       every unique constraint and unique index, dropped
+#   trigger      every user trigger, disabled
+#   policy       every row level security policy, dropped
+#   rls          row level security itself, disabled per table
+#
+# A mutation that cannot be applied at all, usually because something depends on
+# it, is reported separately and counted in neither column, because it is not a
+# defect the suite failed to catch.
+#
+# Nothing here touches the cellar database.
+
+set -uo pipefail
+cd "$(dirname "$0")/.." || exit 2
+
+CONTAINER="${VSV_DB_CONTAINER:-supabase_db_vsv-management-software}"
+BASE=vsv_mut_base
+WORK=vsv_mut_work
+ONLY="${1:-}"
+
+q()  { docker exec "$CONTAINER" psql -U postgres -At -d "$1" -c "$2" 2>/dev/null; }
+adm(){ docker exec "$CONTAINER" psql -U postgres -q -d postgres -c "$1" >/dev/null 2>&1; }
+
+if ! docker exec "$CONTAINER" true 2>/dev/null; then
+  echo "cannot reach $CONTAINER"; exit 2
+fi
+
+# ---------------------------------------------------------------------------
+echo "building the base database from the shim and every migration"
+# ---------------------------------------------------------------------------
+adm "drop database if exists $BASE;"
+adm "create database $BASE;"
+docker exec -i "$CONTAINER" psql -U postgres -q -v ON_ERROR_STOP=1 -d "$BASE" < tests/shim.sql >/dev/null 2>&1 \
+  || { echo "the shim did not apply"; exit 2; }
+for f in supabase/migrations/0*.sql; do
+  docker exec -i "$CONTAINER" psql -U postgres -q -v ON_ERROR_STOP=1 -d "$BASE" < "$f" >/dev/null 2>&1 \
+    || { echo "$f did not apply"; exit 2; }
+done
+
+# A baseline run, because a mutation score computed against a suite that was
+# already failing would be meaningless.
+adm "drop database if exists $WORK;"
+adm "create database $WORK template $BASE;"
+if ! docker exec -i "$CONTAINER" psql -U postgres -v ON_ERROR_STOP=1 -d "$WORK" < tests/schema_assertions.sql >/dev/null 2>&1; then
+  echo "the suite does not pass on an unmutated database; fix that first"; exit 2
+fi
+baseline=$(docker exec -i "$CONTAINER" psql -U postgres -d "$WORK" < tests/schema_assertions.sql 2>&1 | grep -c '^NOTICE:  ok')
+adm "drop database if exists $WORK;"
+echo "baseline: the suite passes, $baseline assertions"
+echo
+
+# ---------------------------------------------------------------------------
+# Enumerate the mutations. Each line is: class<TAB>label<TAB>sql
+# ---------------------------------------------------------------------------
+muts=$(mktemp)
+trap 'rm -f "$muts"' EXIT
+
+q "$BASE" "
+select 'check' || chr(9) || t.relname || '.' || c.conname || chr(9) ||
+       format('alter table public.%I drop constraint %I', t.relname, c.conname)
+  from pg_constraint c
+  join pg_class t on t.oid = c.conrelid
+  join pg_namespace n on n.oid = t.relnamespace
+ where n.nspname = 'public' and c.contype = 'c'
+ order by t.relname, c.conname;" >> "$muts"
+
+q "$BASE" "
+select 'unique' || chr(9) || t.relname || '.' || c.conname || chr(9) ||
+       format('alter table public.%I drop constraint %I', t.relname, c.conname)
+  from pg_constraint c
+  join pg_class t on t.oid = c.conrelid
+  join pg_namespace n on n.oid = t.relnamespace
+ where n.nspname = 'public' and c.contype = 'u'
+ order by t.relname, c.conname;" >> "$muts"
+
+q "$BASE" "
+select 'unique' || chr(9) || ix.relname || chr(9) || format('drop index public.%I', ix.relname)
+  from pg_index i
+  join pg_class t on t.oid = i.indrelid
+  join pg_class ix on ix.oid = i.indexrelid
+  join pg_namespace n on n.oid = t.relnamespace
+ where n.nspname = 'public' and i.indisunique and not i.indisprimary
+   and not exists (select 1 from pg_constraint c where c.conindid = i.indexrelid)
+ order by ix.relname;" >> "$muts"
+
+q "$BASE" "
+select 'trigger' || chr(9) || t.relname || '.' || g.tgname || chr(9) ||
+       format('alter table public.%I disable trigger %I', t.relname, g.tgname)
+  from pg_trigger g
+  join pg_class t on t.oid = g.tgrelid
+  join pg_namespace n on n.oid = t.relnamespace
+ where n.nspname = 'public' and not g.tgisinternal
+ order by t.relname, g.tgname;" >> "$muts"
+
+q "$BASE" "
+select 'policy' || chr(9) || tablename || '.' || policyname || chr(9) ||
+       format('drop policy %I on public.%I', policyname, tablename)
+  from pg_policies where schemaname = 'public'
+ order by tablename, policyname;" >> "$muts"
+
+q "$BASE" "
+select 'rls' || chr(9) || t.relname || chr(9) ||
+       format('alter table public.%I disable row level security', t.relname)
+  from pg_class t
+  join pg_namespace n on n.oid = t.relnamespace
+ where n.nspname = 'public' and t.relrowsecurity
+ order by t.relname;" >> "$muts"
+
+[ -n "$ONLY" ] && { grep "^$ONLY	" "$muts" > "$muts.f"; mv "$muts.f" "$muts"; }
+
+total=$(grep -c . "$muts")
+echo "$total mutations enumerated"
+echo
+
+# ---------------------------------------------------------------------------
+# Run them.
+# ---------------------------------------------------------------------------
+survivors=$(mktemp); inapplicable=$(mktemp)
+trap 'rm -f "$muts" "$survivors" "$inapplicable"' EXIT
+
+declare -A seen caught
+i=0
+while IFS=$'\t' read -r class label sql; do
+  [ -z "$class" ] && continue
+  i=$((i + 1))
+  adm "drop database if exists $WORK;"
+  adm "create database $WORK template $BASE;"
+
+  if ! docker exec "$CONTAINER" psql -U postgres -q -v ON_ERROR_STOP=1 -d "$WORK" -c "$sql" >/dev/null 2>&1; then
+    printf '%s\t%s\n' "$class" "$label" >> "$inapplicable"
+    printf '  %3d/%d  %-8s %-46s not applicable\n' "$i" "$total" "$class" "$label"
+    continue
+  fi
+
+  seen[$class]=$(( ${seen[$class]:-0} + 1 ))
+  if docker exec -i "$CONTAINER" psql -U postgres -v ON_ERROR_STOP=1 -d "$WORK" \
+       < tests/schema_assertions.sql >/dev/null 2>&1; then
+    printf '%s\t%s\n' "$class" "$label" >> "$survivors"
+    printf '  %3d/%d  %-8s %-46s SURVIVED\n' "$i" "$total" "$class" "$label"
+  else
+    caught[$class]=$(( ${caught[$class]:-0} + 1 ))
+    printf '  %3d/%d  %-8s %-46s caught\n' "$i" "$total" "$class" "$label"
+  fi
+done < "$muts"
+
+adm "drop database if exists $WORK;"
+
+# ---------------------------------------------------------------------------
+echo
+echo "| Class | Mutations | Caught | Score |"
+echo "|---|---|---|---|"
+ts=0; tc=0
+for class in check unique trigger policy rls; do
+  s=${seen[$class]:-0}; c=${caught[$class]:-0}
+  [ "$s" -eq 0 ] && continue
+  ts=$((ts + s)); tc=$((tc + c))
+  printf '| %s | %d | %d | %d%% |\n' "$class" "$s" "$c" "$(( c * 100 / s ))"
+done
+[ "$ts" -gt 0 ] && printf '| **Total** | **%d** | **%d** | **%d%%** |\n' "$ts" "$tc" "$(( tc * 100 / ts ))"
+
+echo
+echo "survivors, which are the defects this suite would not notice:"
+sort "$survivors" | awk -F'\t' '{printf "  %-8s %s\n", $1, $2}'
+n_inap=$(grep -c . "$inapplicable" 2>/dev/null || echo 0)
+if [ "$n_inap" -gt 0 ]; then
+  echo
+  echo "$n_inap mutation(s) could not be applied and are counted in neither column:"
+  awk -F'\t' '{printf "  %-8s %s\n", $1, $2}' "$inapplicable"
+fi
