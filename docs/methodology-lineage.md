@@ -2,7 +2,7 @@
 Type: reference
 Purpose: "Records what each methodological element in this repository is for, what failure it prevents, what it costs, and when dropping it would be correct."
 Depends on: [packages/cellar/docs/spec.md]
-Depended on by: [CLAUDE.md, docs/status-ledger.md, docs/sorry-ledger.md, docs/compost-ledger.md, docs/session-reports/index.md]
+Depended on by: [CLAUDE.md, docs/architecture-rulings.md, docs/status-ledger.md, docs/sorry-ledger.md, docs/compost-ledger.md, docs/session-reports/index.md]
 ---
 
 # Methodology Lineage
