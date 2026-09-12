@@ -552,6 +552,10 @@ do $$ begin
       100);
     raise exception 'FAIL: a second lot was accepted into an occupied vessel';
   exception when raise_exception then
+    -- X-1-6: raise exception 'FAIL: ...' is P0001, which is raise_exception, so
+    -- this handler can catch the suite's own alarm. Re-raised here. Twelve of the
+    -- thirteen handlers of this shape were fatal only by luck; one was not.
+    if sqlerrm like 'FAIL:%' then raise; end if;
     if sqlerrm like 'FAIL:%' then raise; end if;
     perform test_ok('filling an occupied vessel is refused in words, not by an index');
   end;
@@ -563,6 +567,10 @@ do $$ begin
       jsonb_build_object('name','Nowhere lot'), 10);
     raise exception 'FAIL: wine was placed into a vessel that does not exist';
   exception when raise_exception then
+    -- X-1-6: raise exception 'FAIL: ...' is P0001, which is raise_exception, so
+    -- this handler can catch the suite's own alarm. Re-raised here. Twelve of the
+    -- thirteen handlers of this shape were fatal only by luck; one was not.
+    if sqlerrm like 'FAIL:%' then raise; end if;
     if sqlerrm like 'FAIL:%' then raise; end if;
     perform test_ok('filling a vessel that does not exist is refused');
   end;
@@ -843,6 +851,10 @@ do $$ begin
      where kind = 'vessel_type' and value = 'tank';
     raise exception 'FAIL: a field with no key was accepted';
   exception when raise_exception then
+    -- X-1-6: raise exception 'FAIL: ...' is P0001, which is raise_exception, so
+    -- this handler can catch the suite's own alarm. Re-raised here. Twelve of the
+    -- thirteen handlers of this shape were fatal only by luck; one was not.
+    if sqlerrm like 'FAIL:%' then raise; end if;
     if sqlerrm like 'FAIL:%' then raise; end if;
     perform test_ok('a field with no key is refused');
   end;
@@ -855,6 +867,10 @@ do $$ begin
      where kind = 'vessel_type' and value = 'tank';
     raise exception 'FAIL: a picker naming no real vocabulary was accepted';
   exception when raise_exception then
+    -- X-1-6: raise exception 'FAIL: ...' is P0001, which is raise_exception, so
+    -- this handler can catch the suite's own alarm. Re-raised here. Twelve of the
+    -- thirteen handlers of this shape were fatal only by luck; one was not.
+    if sqlerrm like 'FAIL:%' then raise; end if;
     if sqlerrm like 'FAIL:%' then raise; end if;
     perform test_ok('a picker naming a vocabulary that does not exist is refused');
   end;
@@ -867,6 +883,10 @@ do $$ begin
      where kind = 'vessel_type' and value = 'tank';
     raise exception 'FAIL: a minimum above a maximum was accepted';
   exception when raise_exception then
+    -- X-1-6: raise exception 'FAIL: ...' is P0001, which is raise_exception, so
+    -- this handler can catch the suite's own alarm. Re-raised here. Twelve of the
+    -- thirteen handlers of this shape were fatal only by luck; one was not.
+    if sqlerrm like 'FAIL:%' then raise; end if;
     if sqlerrm like 'FAIL:%' then raise; end if;
     perform test_ok('a minimum above a maximum is refused');
   end;
@@ -880,6 +900,10 @@ do $$ begin
               '{"fill_count": -3}'::jsonb);
     raise exception 'FAIL: a value below its declared minimum was accepted';
   exception when raise_exception then
+    -- X-1-6: raise exception 'FAIL: ...' is P0001, which is raise_exception, so
+    -- this handler can catch the suite's own alarm. Re-raised here. Twelve of the
+    -- thirteen handlers of this shape were fatal only by luck; one was not.
+    if sqlerrm like 'FAIL:%' then raise; end if;
     if sqlerrm like 'FAIL:%' then raise; end if;
     perform test_ok('a value below its declared minimum is refused');
   end;
@@ -901,6 +925,10 @@ begin
               jsonb_build_object('maker', maker_id));
     raise exception 'FAIL: a cooper was accepted as a tank manufacturer';
   exception when raise_exception then
+    -- X-1-6: raise exception 'FAIL: ...' is P0001, which is raise_exception, so
+    -- this handler can catch the suite's own alarm. Re-raised here. Twelve of the
+    -- thirteen handlers of this shape were fatal only by luck; one was not.
+    if sqlerrm like 'FAIL:%' then raise; end if;
     if sqlerrm like 'FAIL:%' then raise; end if;
     perform test_ok('a cooper is refused where the type asks for a manufacturer');
   end;
@@ -961,6 +989,10 @@ do $$ begin
     update node set quantity = 500 where id = '00000000-0000-0000-0000-00000000b050';
     raise exception 'FAIL: a closed lot was refilled';
   exception when raise_exception then
+    -- X-1-6: raise exception 'FAIL: ...' is P0001, which is raise_exception, so
+    -- this handler can catch the suite's own alarm. Re-raised here. Twelve of the
+    -- thirteen handlers of this shape were fatal only by luck; one was not.
+    if sqlerrm like 'FAIL:%' then raise; end if;
     if sqlerrm like 'FAIL:%' then raise; end if;
     perform test_ok('refilling a closed lot is refused, the correction is a new lot');
   end;
@@ -1148,6 +1180,10 @@ do $$ begin
       jsonb_build_array(jsonb_build_object('vessel_id','00000000-0000-0000-0000-00000000c035','volume_l',110)));
     raise exception 'FAIL: a barrel was filled past its capacity';
   exception when raise_exception then
+    -- X-1-6: raise exception 'FAIL: ...' is P0001, which is raise_exception, so
+    -- this handler can catch the suite's own alarm. Re-raised here. Twelve of the
+    -- thirteen handlers of this shape were fatal only by luck; one was not.
+    if sqlerrm like 'FAIL:%' then raise; end if;
     if sqlerrm like 'FAIL:%' then raise; end if;
     perform test_ok('filling a vessel past its capacity is refused');
   end;
@@ -1173,6 +1209,10 @@ do $$ begin
       jsonb_build_array(jsonb_build_object('vessel_id','00000000-0000-0000-0000-00000000c033','volume_l',10)));
     raise exception 'FAIL: wine was racked out of an empty vessel';
   exception when raise_exception then
+    -- X-1-6: raise exception 'FAIL: ...' is P0001, which is raise_exception, so
+    -- this handler can catch the suite's own alarm. Re-raised here. Twelve of the
+    -- thirteen handlers of this shape were fatal only by luck; one was not.
+    if sqlerrm like 'FAIL:%' then raise; end if;
     if sqlerrm like 'FAIL:%' then raise; end if;
     perform test_ok('racking out of a vessel the app believes is empty is refused');
   end;
@@ -1371,6 +1411,10 @@ do $$ begin
             '00000000-0000-0000-0000-00000000c044'::uuid]);
     raise exception 'FAIL: a lot was forked off every vessel it is in';
   exception when raise_exception then
+    -- X-1-6: raise exception 'FAIL: ...' is P0001, which is raise_exception, so
+    -- this handler can catch the suite's own alarm. Re-raised here. Twelve of the
+    -- thirteen handlers of this shape were fatal only by luck; one was not.
+    if sqlerrm like 'FAIL:%' then raise; end if;
     if sqlerrm like 'FAIL:%' then raise; end if;
     perform test_ok('forking a lot off all of its own vessels is refused');
   end;
@@ -1675,6 +1719,10 @@ do $$ begin
     reset role;
     raise exception 'FAIL: a field the kernel cannot hide was accepted';
   exception when raise_exception then
+    -- X-1-6: raise exception 'FAIL: ...' is P0001, which is raise_exception, so
+    -- this handler can catch the suite's own alarm. Re-raised here. Twelve of the
+    -- thirteen handlers of this shape were fatal only by luck; one was not.
+    if sqlerrm like 'FAIL:%' then raise; end if;
     if sqlerrm like 'FAIL:%' then raise; end if;
     perform test_ok('a field the kernel does not know how to hide is refused');
   end;
@@ -3542,6 +3590,10 @@ begin
               '{"fields": [{"key": "maker", "kind": "term", "term_kind": "nonexistent_vocabulary"}]}'::jsonb);
     raise exception 'FAIL: a vessel type named a vocabulary that does not exist and was accepted';
   exception when raise_exception then
+    -- X-1-6: raise exception 'FAIL: ...' is P0001, which is raise_exception, so
+    -- this handler can catch the suite's own alarm. Re-raised here. Twelve of the
+    -- thirteen handlers of this shape were fatal only by luck; one was not.
+    if sqlerrm like 'FAIL:%' then raise; end if;
     perform test_ok('a vessel type field naming a vocabulary that does not exist is still refused');
   end;
 
