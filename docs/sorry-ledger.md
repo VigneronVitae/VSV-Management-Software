@@ -390,6 +390,35 @@ half of the same idea is in the spec and covers what a barrel buyer actually ask
 is whether the barrel is sound rather than whose wine made it unsound. A buyer reading a
 complete list of event kinds against opaque tokens derives that without a key.
 
+**S-36. The column allow-list guards the direct table surface and trusts every
+security definer function to guard itself.**
+`0021` lets cellar staff update `node`, `placement` and the thermal triple on
+`vessel`, and a trigger refuses any other column in words. The trigger exempts a
+caller whose `current_user` is not `authenticated` or `anon`, because a security
+definer kernel function runs as its owner and has already decided who may call
+it, and because `set_lot_hidden` legitimately writes `node.hidden` on behalf of a
+client who is not staff. The exemption is correct for the two definer functions
+that exist and is unchecked for every one written after it: a new definer function
+that updates a protected column inherits a bypass nobody granted it deliberately.
+*Resolves when:* either `verify.sh` lists every security definer function and what
+it writes, so adding one is a visible decision, or the allow-list moves into the
+functions and the trigger is dropped. *Load-bearing:* it is the boundary that keeps
+`owner_id` and `hidden` out of a cellar hand's reach, and those are the contract
+and confidentiality fields.
+
+**S-37. A refusal on these tables is a message for staff and silence for everyone
+else.**
+The trigger raises, so a cellar user who touches a protected column is told which
+column and why. A client login fails the policy's `using` clause instead, the row
+never reaches the trigger, and the update is a zero-row no-op reported as success.
+That is the general defect the review corpus converges on, filed there as A13, and
+`0021` improves it for one principal on three tables rather than answering it.
+*Resolves when:* the class is answered, which means deciding how PostgREST should
+report an RLS denial to a phone and making every write path agree. *Load-bearing:*
+a client correcting their own record and being told it worked is the same failure
+as a cellar user racking into a silent no-op, one principal further out.
+
+
 ## Discharged
 
 **S-26. `vessel_state` did not obey row level security.** *Found and closed

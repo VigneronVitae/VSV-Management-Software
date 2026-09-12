@@ -22,7 +22,8 @@
 --              supabase/migrations/0017_vessel_state_rls.sql,
 --              supabase/migrations/0018_lot_privacy.sql,
 --              supabase/migrations/0019_procedures.sql,
---              supabase/migrations/0020_pin_search_path.sql]
+--              supabase/migrations/0020_pin_search_path.sql,
+--              supabase/migrations/0021_cellar_write_paths.sql]
 -- Depended on by: [docs/status-ledger.md]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
 -- Open sorries: S-7 (what this exercises is Postgres policy evaluation, not
@@ -60,6 +61,34 @@ create or replace function test_ok(p_msg text)
 returns void language plpgsql set search_path = public, pg_temp as $$
 begin
   raise notice 'ok   %', p_msg;
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- standing the winery down for the duration'; end $$;
+
+-- This suite asserts things about a winery that does not exist yet: that no node
+-- can be created before the facility party, that exactly one facility party may
+-- be active, that the first claimant becomes admin. All of those are true only of
+-- an empty database, so until now the suite could be run only straight after
+-- `supabase db reset`, which destroys the cellar. That put the definition of done
+-- in CLAUDE.md at war with itself: it says run the assertions, and it says use
+-- `db:up` because reset takes the inventory with it.
+--
+-- The condition is created here instead of assumed. Any existing facility party
+-- is deactivated for the duration, which is enough because party_one_facility is
+-- a partial unique index on `active` and facility_party_id() reads the same flag.
+-- Everything in this file runs inside one transaction and the final `rollback`
+-- puts the winery back. Nothing here commits.
+do $$
+declare n int;
+begin
+  update party set active = false where kind = 'facility' and active;
+  get diagnostics n = row_count;
+  if n > 0 then
+    raise notice 'ok   stood % existing facility party down for the run; rollback restores it', n;
+  else
+    raise notice 'ok   no existing facility party, so this is an empty database';
+  end if;
 end $$;
 
 -- ---------------------------------------------------------------------------
@@ -128,13 +157,31 @@ insert into auth.users (id) values
   ('00000000-0000-0000-0000-00000000a002'),
   ('00000000-0000-0000-0000-00000000a003');
 
+-- Whether the first account becomes admin depends on whether there is a first
+-- account, so this asserts the rule rather than one side of it. On an empty
+-- database the claimant is admin. On a database somebody has already signed into
+-- the claimant is a cellar user, which is the half that protects a live winery
+-- from the next person who signs up, and it is the half that was never asserted.
 do $$
-declare u app_user;
+declare u app_user; was_empty boolean;
 begin
+  select count(*) = 0 into was_empty from app_user;
   perform test_act_as('00000000-0000-0000-0000-00000000a001');
   u := claim_account('First Account');
-  if u.role <> 'admin' then raise exception 'FAIL: the first account is not admin'; end if;
-  perform test_ok('the first account becomes admin');
+
+  if was_empty then
+    if u.role <> 'admin' then raise exception 'FAIL: the first account is not admin'; end if;
+    perform test_ok('the first account becomes admin');
+  else
+    if u.role <> 'cellar' then
+      raise exception 'FAIL: an account claimed against a populated app_user came out %', u.role;
+    end if;
+    perform test_ok('an account claimed after the first is cellar, not admin');
+    -- The rest of this file needs an admin fixture, and on a populated database
+    -- claim_account correctly refuses to provide one. Promote it directly. This
+    -- is fixture setup inside a transaction that rolls back, not a claim.
+    update app_user set role = 'admin' where id = '00000000-0000-0000-0000-00000000a001';
+  end if;
 
   u := claim_account('Called Again');
   if u.name <> 'First Account' then raise exception 'FAIL: claim_account is not idempotent'; end if;
@@ -1709,6 +1756,144 @@ begin
     raise exception 'FAIL: a new lot did not inherit its party default, it has %', h;
   end if;
   perform test_ok('a new lot inherits what its owner hides by default');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- a cellar user can do the job, and only the job'; end $$;
+
+-- 0002 gave node, placement and vessel an admin-only update policy, and every
+-- write path built since 0007 runs as the caller. A cellar user racking a barrel
+-- therefore got the destination placement and kept the source one, because
+-- inserts were open and updates matched zero rows in silence. These assertions
+-- are the ones that would have failed the day 0014 landed.
+
+insert into vessel (id, type_id, name, capacity_l, has_glycol)
+  values ('00000000-0000-0000-0000-00000000c0a1', term_id('vessel_type','tank'),
+          'Allow-list tank', 1000, true);
+
+insert into node (id, stage, name, quantity, unit)
+  values ('00000000-0000-0000-0000-00000000b0a1','ferment','Allow-list lot', 500, 'L');
+
+insert into placement (id, node_id, vessel_id, volume_l)
+  values ('00000000-0000-0000-0000-00000000d0a1',
+          '00000000-0000-0000-0000-00000000b0a1',
+          '00000000-0000-0000-0000-00000000c0a1', 500);
+
+do $$
+declare n int; st node_status; m thermal_mode;
+begin
+  perform test_act_as('00000000-0000-0000-0000-00000000a002');   -- the cellar user
+  set local role authenticated;
+
+  update placement set to_at = now()
+   where id = '00000000-0000-0000-0000-00000000d0a1';
+  get diagnostics n = row_count;
+  if n <> 1 then
+    raise exception 'FAIL: a cellar user could not close a placement, which is what racking is';
+  end if;
+  perform test_ok('a cellar user may close a placement, so racking is not a silent no-op');
+
+  update node set quantity = 0 where id = '00000000-0000-0000-0000-00000000b0a1';
+  get diagnostics n = row_count;
+  if n <> 1 then raise exception 'FAIL: a cellar user could not empty a lot'; end if;
+  perform test_ok('a cellar user may write down what is left in a lot');
+
+  update vessel set setpoint_c = 12, mode = 'cooling'
+   where id = '00000000-0000-0000-0000-00000000c0a1';
+  get diagnostics n = row_count;
+  if n <> 1 then raise exception 'FAIL: a cellar user could not turn on a jacket'; end if;
+  perform test_ok('a cellar user may set a jacket, which is an operation and not a rename');
+
+  reset role;
+
+  select status into st from node where id = '00000000-0000-0000-0000-00000000b0a1';
+  if st <> 'closed' then
+    raise exception 'FAIL: emptying a lot left it %, so close_node_when_empty never fired', st;
+  end if;
+  perform test_ok('emptying a lot closes it, which needed the update to land first');
+
+  select mode into m from vessel where id = '00000000-0000-0000-0000-00000000c0a1';
+  if m <> 'cooling' then raise exception 'FAIL: the jacket did not come on'; end if;
+end $$;
+
+-- The other half. Widening the rows without narrowing the columns would have
+-- handed a cellar hand the fields that say whose wine it is and who may see it.
+do $$
+begin
+  perform test_act_as('00000000-0000-0000-0000-00000000a002');
+  set local role authenticated;
+
+  begin
+    update node set owner_id = '00000000-0000-0000-0000-00000000f002'
+     where id = '00000000-0000-0000-0000-00000000b0a1';
+    raise exception 'FAIL: a cellar user changed who owns a lot';
+  exception when insufficient_privilege then
+    perform test_ok('a cellar user may not change who owns a lot');
+  end;
+
+  begin
+    update node set hidden = array['variety']
+     where id = '00000000-0000-0000-0000-00000000b0a1';
+    raise exception 'FAIL: a cellar user changed the privacy edge';
+  exception when insufficient_privilege then
+    perform test_ok('a cellar user may not change what an owner hides');
+  end;
+
+  begin
+    update vessel set capacity_l = 900
+     where id = '00000000-0000-0000-0000-00000000c0a1';
+    raise exception 'FAIL: a cellar user resized a vessel';
+  exception when insufficient_privilege then
+    perform test_ok('a cellar user may not resize a vessel, only operate it');
+  end;
+
+  reset role;
+end $$;
+
+-- An admin is not subject to the allow-list, because correcting a mistake is
+-- what an admin is for and that is the case 0002 was right about.
+do $$
+declare n int;
+begin
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');   -- the admin
+  set local role authenticated;
+  update vessel set capacity_l = 900
+   where id = '00000000-0000-0000-0000-00000000c0a1';
+  get diagnostics n = row_count;
+  reset role;
+  if n <> 1 then raise exception 'FAIL: an admin could not correct a vessel'; end if;
+  perform test_ok('an admin may still change anything, so the allow-list is not a wall');
+end $$;
+
+-- is_cellar_staff() exists rather than reusing is_facility_user() for one
+-- reason, and this is it. is_facility_user() coalesces a missing party row to
+-- true, so deactivating a client's party answers true and widens their read to
+-- the whole cellar. That is a live defect with its own ledger entry and is not
+-- fixed here; what is asserted is that the predicate governing writes does not
+-- inherit it.
+do $$
+declare facility boolean; staff boolean;
+begin
+  update party set active = false
+   where id = '00000000-0000-0000-0000-00000000f002';
+
+  perform test_act_as('00000000-0000-0000-0000-00000000a003');   -- the client login
+  set local role authenticated;
+  select is_facility_user(), is_cellar_staff() into facility, staff;
+  reset role;
+
+  update party set active = true
+   where id = '00000000-0000-0000-0000-00000000f002';
+
+  if staff then
+    raise exception 'FAIL: a deactivated client party counts as cellar staff';
+  end if;
+  perform test_ok('a deactivated client party is not cellar staff, whatever is_facility_user says');
+
+  if not facility then
+    raise exception
+      'FAIL: is_facility_user no longer widens on a deactivated party, so this assertion is stale and the ledger entry it guards may be closed';
+  end if;
 end $$;
 
 -- ---------------------------------------------------------------------------
