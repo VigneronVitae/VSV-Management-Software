@@ -3145,6 +3145,232 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- nothing in the fixed layer permits on unknown'; end $$;
+
+-- Ledger A25, the null-permit class. Three instances found one at a time over
+-- three sessions, by three routes, none written deliberately:
+--
+--   is_facility_user() used coalesce(..., true), so a missing party row resolved
+--   to facility and deactivating a client promoted them.
+--
+--   may_see_all_of returned null where nothing matched, so `not null` was null
+--   and the `if` guarding a privacy check did not fire.
+--
+--   operation_has_an_effect reads `kind <> 'operation' or attributes ->> 'effect'
+--   in (four values)`. For an operation carrying `{}` that is `false or null`,
+--   which is null, and a check constraint permits on null.
+--
+-- The invariant, which is AR-B9 applied below the gate at the level of individual
+-- constraints and functions: **in the fixed layer, a predicate that cannot
+-- determine an answer must refuse, never permit.**
+--
+-- **Two wrong tests preceded this one and both are worth recording, because each
+-- failed in a different direction and a reader will otherwise reinvent them.**
+--
+-- Evaluating each predicate against a row of all nulls flagged twelve
+-- constraints, eleven of them wrongly: forcing a NOT NULL column to null asks
+-- about a row the table can never hold.
+--
+-- Evaluating against a row of empty values, '' and '{}' and false and zero,
+-- flagged none, including the one instance that is real. A24's witness needs
+-- `kind = 'operation'` and the empty row takes the first enum label, which is
+-- not that. It passed, and it would have passed forever, and it was caught only
+-- because the break test removed A24 from the allow-list and nothing failed.
+--
+-- What actually decides it is whether **any** row the table could hold makes the
+-- predicate null. So the test enumerates candidate values per column, every label
+-- for an enum, a small representative set otherwise, and null only where the
+-- column is actually nullable, and asks whether any combination answers null.
+-- That flags A24 and does not flag `mode = 'off' or has_glycol`, which is the
+-- distinction the first two tests could not draw.
+
+do $$
+declare
+  r            record;
+  found_null   boolean;
+  combos       bigint;
+  permits      text := '';
+  unevaluable  text := '';
+  allowed      text[] := array[
+    -- Each entry needs a reason, and knowing about it is not a reason.
+    -- A24: filed and not fixed, section A, out of scope since W-2. The assertion
+    -- for it is written so that fixing it fails that assertion, which puts the
+    -- fix and the assertion in one commit.
+    'term.operation_has_an_effect'
+  ];
+begin
+  for r in
+    select t.relname as tbl, c.conname as con,
+           pg_get_expr(c.conbin, c.conrelid) as expr,
+           (select string_agg(
+                     format('unnest(array[%s]::%s[]) c%s(v)',
+                       (select string_agg(lit, ', ') from (
+                          select case
+                            when tp.typtype = 'e' then format('%L', e.enumlabel)
+                            else null end as lit
+                            from pg_enum e where e.enumtypid = a.atttypid
+                           order by e.enumsortorder) q(lit) where lit is not null),
+                       format_type(a.atttypid, null), k.ord)
+                   , ', ')
+              from unnest(c.conkey) with ordinality k(attnum, ord)
+              join pg_attribute a on a.attrelid = c.conrelid and a.attnum = k.attnum
+              join pg_type tp on tp.oid = a.atttypid
+              where tp.typtype = 'e') as ignore_me,
+           (select count(*) from unnest(c.conkey)) as ncols,
+           c.conkey, c.conrelid
+      from pg_constraint c
+      join pg_class t on t.oid = c.conrelid
+      join pg_namespace n on n.oid = t.relnamespace
+     where n.nspname = 'public' and c.contype = 'c'
+     order by t.relname, c.conname
+  loop
+    declare
+      froms   text := '';
+      selects text := '';
+      i        int := 0;
+      col      record;
+      cands    text;
+      cand_arr text[];
+    begin
+      combos := 1;
+      for col in
+        select a.attname, a.atttypid, a.atttypmod, a.attnotnull, tp.typtype,
+               format_type(a.atttypid, a.atttypmod) as ftype,
+               format_type(a.atttypid, null) as btype
+          from unnest(r.conkey) k
+          join pg_attribute a on a.attrelid = r.conrelid and a.attnum = k
+          join pg_type tp on tp.oid = a.atttypid
+         order by a.attnum
+      loop
+        i := i + 1;
+
+        if col.typtype = 'e' then
+          select array_agg(format('%L', enumlabel) order by enumsortorder)
+            into cand_arr from pg_enum where enumtypid = col.atttypid;
+        elsif col.atttypid = 'boolean'::regtype then
+          cand_arr := array['true', 'false'];
+        elsif col.btype like '%[]' then
+          cand_arr := array[quote_literal('{}'), quote_literal('{x}')];
+        elsif col.atttypid in ('jsonb'::regtype, 'json'::regtype) then
+          cand_arr := array[quote_literal('{}'), quote_literal('{"effect": "treatment"}')];
+        elsif col.atttypid in ('text'::regtype, 'character varying'::regtype, 'name'::regtype) then
+          cand_arr := array[quote_literal(''), quote_literal('x')];
+        elsif col.atttypid in ('smallint'::regtype,'integer'::regtype,'bigint'::regtype,
+                               'numeric'::regtype,'real'::regtype,'double precision'::regtype) then
+          cand_arr := array['0', '1'];
+        elsif col.atttypid = 'uuid'::regtype then
+          cand_arr := array[quote_literal('00000000-0000-0000-0000-000000000000')];
+        elsif col.atttypid in ('timestamptz'::regtype,'timestamp'::regtype,'date'::regtype) then
+          cand_arr := array['now()'];
+        else
+          cand_arr := null;
+        end if;
+
+        if cand_arr is null then
+          unevaluable := unevaluable || format('%s.%s (no candidate values for %s of type %s); ',
+                                               r.tbl, r.con, col.attname, col.ftype);
+          froms := '';
+          exit;
+        end if;
+
+        -- null only where the column can actually be null. This is the whole
+        -- difference between this test and the first one that was written.
+        if not col.attnotnull then
+          -- The cast is load-bearing: text[] || 'null' resolves as array
+          -- concatenation and tries to parse the string as an array literal.
+          cand_arr := cand_arr || 'null'::text;
+        end if;
+
+        -- values rather than unnest, because unnest on an array-typed column's
+        -- candidates flattens them and the predicate then sees text where it
+        -- expects text[].
+        select string_agg(format('(%s::%s)', lit, col.btype), ', ')
+          into cands from unnest(cand_arr) lit;
+
+        froms := froms || case when froms = '' then '' else ', ' end
+              || format('(values %s) c%s(v)', cands, i);
+        selects := selects || case when selects = '' then '' else ', ' end
+                || format('c%s.v as %I', i, col.attname);
+      end loop;
+
+      if froms = '' then
+        continue;
+      end if;
+
+      begin
+        execute format('select bool_or((%s) is null) from (select %s from %s) s',
+                       r.expr, selects, froms)
+          into found_null;
+      exception when others then
+        unevaluable := unevaluable || format('%s.%s (%s); ', r.tbl, r.con, sqlerrm);
+        continue;
+      end;
+
+      if coalesce(found_null, false) and not ((r.tbl || '.' || r.con) = any(allowed)) then
+        permits := permits || r.tbl || '.' || r.con || ', ';
+      end if;
+    end;
+  end loop;
+
+  if unevaluable <> '' then
+    raise exception 'FAIL: these check constraints could not be exercised, so this assertion is blind to them: %', unevaluable;
+  end if;
+
+  if permits <> '' then
+    raise exception
+      'FAIL: these check constraints answer null for some row the table could hold, which is ledger A25: %. A predicate that cannot determine an answer must refuse. If one is deliberate, add it to the allow-list here with the reason.', permits;
+  end if;
+
+  perform test_ok('no check constraint permits on unknown, except the one instance on the allow-list');
+end $$;
+
+-- The other half of the population. A boolean function that can answer null is
+-- the same defect one layer up: `not null` is null, and an `if` on null does not
+-- run, which is exactly how may_see_all_of failed open. Called with nulls for
+-- every argument and with nobody signed in, because that is the state an
+-- unauthenticated or half-configured caller actually arrives in.
+do $$
+declare
+  r       record;
+  result  boolean;
+  nulls   text := '';
+begin
+  perform test_act_as(null);
+
+  for r in
+    select p.proname as fn,
+           pg_get_function_identity_arguments(p.oid) as sig,
+           coalesce((select string_agg('null::' || format_type(t, null), ', ')
+                       from unnest(p.proargtypes) as u(t)), '') as nullargs
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public'
+       and pg_get_function_result(p.oid) = 'boolean'
+       and p.prokind = 'f'
+     order by p.proname
+  loop
+    begin
+      execute format('select %I(%s)', r.fn, r.nullargs) into result;
+    exception when others then
+      nulls := nulls || r.fn || ' raised: ' || sqlerrm || '; ';
+      continue;
+    end;
+
+    if result is null then
+      nulls := nulls || r.fn || '(' || r.sig || ') returned null; ';
+    end if;
+  end loop;
+
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+
+  if nulls <> '' then
+    raise exception 'FAIL: these boolean functions answer null rather than false, which is ledger A25: %', nulls;
+  end if;
+
+  perform test_ok('every boolean function answers true or false and never null, with null arguments and nobody signed in');
+end $$;
+
+-- ---------------------------------------------------------------------------
 do $$ begin raise notice '--- functions survive a restore'; end $$;
 
 -- pg_dump sets search_path to empty at the top of every dump, on purpose, so a

@@ -161,11 +161,11 @@ select 'weaken' || chr(9) || tablename || '.' || policyname || chr(9) ||
               case when with_check is not null or cmd in ('INSERT','ALL','UPDATE')
                    then ' with check (true)' else '' end)
   from pg_policies where schemaname = 'public'
-   -- A policy that is already wide open cannot be weakened. Recreating
-   -- using (true) where the predicate is already true injects no defect, so
-   -- counting it as survived would understate the suite by nineteen. Excluded
-   -- here rather than explained in the results.
-   and not (coalesce(qual, 'true') = 'true' and coalesce(with_check, 'true') = 'true')
+   -- No exclusion here any more. A policy that is already wide open cannot be
+   -- weakened, and nineteen of these inject no defect at all, but they are now
+   -- detected by the fingerprint after applying and named as degenerate in the
+   -- output. Dropping them at enumeration was correct and invisible, and
+   -- invisible is half of what was wrong with it.
  order by tablename, policyname;" >> "$muts"
 
 q "$BASE" "
@@ -216,8 +216,53 @@ echo
 # ---------------------------------------------------------------------------
 # Run them.
 # ---------------------------------------------------------------------------
-survivors=$(mktemp); inapplicable=$(mktemp)
-trap 'rm -f "$muts" "$survivors" "$inapplicable"' EXIT
+#
+# Three outcomes are not a score. A mutation can fail to apply, or apply and
+# change nothing, and in both cases the suite's behaviour says nothing about the
+# suite. Both are named in the output and excluded from numerator and
+# denominator, because a harness that reports a number without reporting that the
+# number is unsound is the exact defect this whole line of work exists to correct,
+# arriving from inside the instrument.
+survivors=$(mktemp); inapplicable=$(mktemp); degenerate=$(mktemp)
+trap 'rm -f "$muts" "$survivors" "$inapplicable" "$degenerate"' EXIT
+
+# A fingerprint of everything any mutation class can touch. Taken before and
+# after a mutation is applied: if it does not move, the mutation changed nothing
+# and scoring it would be measuring the suite against a schema nobody altered.
+#
+# This replaces the enumeration-time exclusion of weaken mutations whose policy
+# was already `true`. That exclusion was correct and invisible, which is half of
+# what was wrong with it; these are named.
+fingerprint() {
+  docker exec "$CONTAINER" psql -U postgres -At -d "$1" -c "
+    select md5(string_agg(line, '|' order by line)) from (
+      select 'c:' || t.relname || '.' || c.conname || ':' || pg_get_constraintdef(c.oid) as line
+        from pg_constraint c join pg_class t on t.oid = c.conrelid
+        join pg_namespace n on n.oid = t.relnamespace where n.nspname = 'public'
+      union all
+      select 'i:' || ix.relname || ':' || pg_get_indexdef(i.indexrelid)
+        from pg_index i join pg_class t on t.oid = i.indrelid
+        join pg_class ix on ix.oid = i.indexrelid
+        join pg_namespace n on n.oid = t.relnamespace where n.nspname = 'public'
+      union all
+      select 'g:' || t.relname || '.' || g.tgname || ':' || g.tgenabled::text
+        from pg_trigger g join pg_class t on t.oid = g.tgrelid
+        join pg_namespace n on n.oid = t.relnamespace
+       where n.nspname = 'public' and not g.tgisinternal
+      union all
+      select 'p:' || tablename || '.' || policyname || ':' || cmd || ':' ||
+             array_to_string(roles, ',') || ':' || coalesce(qual, '-') || ':' || coalesce(with_check, '-')
+        from pg_policies where schemaname = 'public'
+      union all
+      select 'r:' || t.relname || ':' || t.relrowsecurity::text || t.relforcerowsecurity::text
+        from pg_class t join pg_namespace n on n.oid = t.relnamespace
+       where n.nspname = 'public' and t.relkind = 'r'
+      union all
+      select 'f:' || p.proname || ':' || md5(pg_get_functiondef(p.oid))
+        from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.prokind = 'f'
+    ) x;" 2>/dev/null
+}
 
 declare -A seen caught
 i=0
@@ -226,6 +271,17 @@ while IFS=$'\t' read -r class label sql; do
   i=$((i + 1))
   adm "drop database if exists $WORK;"
   adm "create database $WORK template $BASE;"
+
+  before=$(fingerprint "$WORK")
+  # An empty fingerprint means the query is broken, not that the schema is. The
+  # first version of this silently skipped degeneracy detection when that
+  # happened, because `tgenabled` is "char" and concatenating it raised, which
+  # is the same fail-open shape W-4 exists to correct occurring inside the fix
+  # for it. It aborts now.
+  if [ -z "$before" ]; then
+    echo "the fingerprint query returned nothing, so degeneracy cannot be detected; refusing to score" >&2
+    exit 2
+  fi
 
   # A mutation whose statement spans lines cannot travel in a line-based file,
   # and `read` silently truncates it at the first newline, which reported all ten
@@ -240,6 +296,13 @@ while IFS=$'\t' read -r class label sql; do
   if [ "$applied_ok" = "no" ]; then
     printf '%s\t%s\n' "$class" "$label" >> "$inapplicable"
     printf '  %3d/%d  %-8s %-46s not applicable\n' "$i" "$total" "$class" "$label"
+    continue
+  fi
+
+  after=$(fingerprint "$WORK")
+  if [ "$before" = "$after" ]; then
+    printf '%s\t%s\n' "$class" "$label" >> "$degenerate"
+    printf '  %3d/%d  %-8s %-46s degenerate, changed nothing\n' "$i" "$total" "$class" "$label"
     continue
   fi
 
@@ -258,7 +321,7 @@ adm "drop database if exists $WORK;"
 
 # ---------------------------------------------------------------------------
 echo
-echo "| Class | Mutations | Caught | Score |"
+echo "| Class | Scored | Caught | Score |"
 echo "|---|---|---|---|"
 ts=0; tc=0
 for class in check loosen unique trigger policy weaken rls logic; do
@@ -269,12 +332,44 @@ for class in check loosen unique trigger policy weaken rls logic; do
 done
 [ "$ts" -gt 0 ] && printf '| **Total** | **%d** | **%d** | **%d%%** |\n' "$ts" "$tc" "$(( tc * 100 / ts ))"
 
-echo
-echo "survivors, which are the defects this suite would not notice:"
-sort "$survivors" | awk -F'\t' '{printf "  %-8s %s\n", $1, $2}'
+n_surv=$(grep -c . "$survivors" 2>/dev/null); n_surv=${n_surv:-0}
 n_inap=$(grep -c . "$inapplicable" 2>/dev/null); n_inap=${n_inap:-0}
+n_degen=$(grep -c . "$degenerate" 2>/dev/null); n_degen=${n_degen:-0}
+
+echo
+if [ "$n_surv" -gt 0 ]; then
+  echo "survivors, which are the defects this suite would not notice:"
+  sort "$survivors" | awk -F'\t' '{printf "  %-8s %s\n", $1, $2}'
+else
+  echo "no survivors: every scored mutation was caught."
+fi
+
+if [ "$n_degen" -gt 0 ]; then
+  echo
+  echo "$n_degen mutation(s) applied and changed nothing, so they are excluded from both columns:"
+  sort "$degenerate" | awk -F'\t' '{printf "  %-8s %s\n", $1, $2}'
+fi
+
 if [ "$n_inap" -gt 0 ]; then
   echo
-  echo "$n_inap mutation(s) could not be applied and are counted in neither column:"
-  awk -F'\t' '{printf "  %-8s %s\n", $1, $2}' "$inapplicable"
+  echo "$n_inap mutation(s) could not be applied at all, so they are excluded from both columns:"
+  sort "$inapplicable" | awk -F'\t' '{printf "  %-8s %s\n", $1, $2}'
+fi
+
+# The score never appears on its own. A bare percentage from this tool is a
+# load-bearing number, it has been wrong in both directions inside one session,
+# and it should not be possible to quote one without what it excluded.
+echo
+excluded=$(( n_degen + n_inap ))
+if [ "$ts" -eq 0 ]; then
+  echo "NO SCORE: nothing was scored. $excluded mutation(s) were excluded."
+  exit 2
+fi
+printf '%d of %d scored mutations caught (%d%%), from %d enumerated.\n' \
+  "$tc" "$ts" "$(( tc * 100 / ts ))" "$total"
+if [ "$excluded" -gt 0 ]; then
+  printf 'NOT A BARE SCORE: %d excluded, %d degenerate and %d inapplicable, listed above.\n' \
+    "$excluded" "$n_degen" "$n_inap"
+else
+  echo 'Nothing was excluded: every enumerated mutation was applied and changed something.'
 fi

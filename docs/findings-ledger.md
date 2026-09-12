@@ -1,6 +1,6 @@
 ---
 Type: ledger
-Version: 1.2
+Version: 1.3
 Purpose: "Deduplicates the thirteen review reports into one entry per defect, keyed by the database or code identifier rather than by line number, so entries survive the schema reorganization."
 Depends on: [docs/architecture-rulings.md, docs/sorry-ledger.md, docs/review/README.md]
 Depended on by: [docs/status-ledger.md, supabase/migrations/0021_cellar_write_paths.sql, supabase/migrations/0022_admission_and_authorship.sql, scripts/verify.sh, docs/session-reports/modularization-progress.md, supabase/migrations/0025_bind_an_unbound_code.sql]
@@ -104,6 +104,8 @@ Written once, after the schema split, against the new layout.
 
 | A24 | `operation_has_an_effect` | The predicate is `kind <> 'operation' or attributes ->> 'effect' in (four values)`. For an operation carrying no effect at all the inner test is `null in (...)`, which is null, so the whole check is `false or null`, which is null, and **a check constraint passes on null**. An effectless operation lands. The four-effects invariant refuses a wrong answer and not a missing one. Same three-valued-logic shape as A1's `coalesce(..., true)` and `may_see_all_of` returning null, which makes it the third time in this schema. Found by writing the assertion for it, probed, and it also corrects B2 | 1 (p) | EXPLOITABLE |
 
+| A25 | the null-permit class | **A class, not an instance.** In the fixed layer, a predicate that cannot determine an answer permits instead of refusing. Three instances, found one at a time over three sessions by three routes, none written deliberately: `is_facility_user()` used `coalesce(..., true)`, so a missing party row resolved to facility and deactivating a client promoted them; `may_see_all_of` returned null where nothing matched, so `not null` was null and the `if` guarding a privacy check did not run; `operation_has_an_effect` is `false or null` for an operation carrying `{}`, and a check constraint permits on null, which is A24. The invariant, which is `AR-B9` applied below the gate at the level of individual constraints and functions: **a predicate that cannot determine an answer must refuse, never permit.** Two are fixed and A24 is filed. A derived assertion now enumerates the population from the catalog and searches it, and as of `0025` there is no fourth | 3 (p) | EXPLOITABLE |
+
 **Ordering inside 0006.** A1 first, since it is one line and it currently inverts
 deactivation. Then A7, A5 and A11 together, since they are the admission surface and A11
 gates the client handoff. Then A2, A4, A12 and A13, which are the integrity set. A21 last,
@@ -117,7 +119,7 @@ admission.
 | Id | Identifier | Defect | Found | Verdict |
 |---|---|---|---|---|
 | B1 | `.add-inline` in `app.css` | `display: flex` with no `[hidden]` guard, so an author rule beats the UA `[hidden] { display: none }`. Every add form is permanently open. Probed: seven of seven visible, 1656px of 2737 | 1 (p) | MAJOR |
-| B2 | `addTerm` against `operation_has_an_effect` | Two reports said defaulting `attributes` to `{}` makes adding an operation inline always raise. **The premise is wrong and the truth is worse.** The constraint passes on a missing effect, see A24, so an inline operation lands and is silently inert: the kernel reads no effect from it and does nothing about volume or lineage. A raise would have been visible. Confirmed by probe on 2026-09-12 | 2 (p) | MAJOR |
+| B2 | `addTerm` against `operation_has_an_effect` | Two reports said defaulting `attributes` to `{}` makes adding an operation inline always raise. **The premise is wrong and the class is broader than either.** The constraint permits on a missing effect, see A24 and A25, so an inline operation lands and is silently inert: the kernel reads no effect from it and does nothing to volume or lineage. A raise is visible and gets fixed in the moment. This is A13's class, a refusal that is indistinguishable from success, arriving through a constraint rather than through row level security, which means A13 is not only about RLS either. Probed 2026-09-12 | 2 (p) | MAJOR |
 | B3 | `sticky.ts` with `pickers.ts` restore | Dead twice over: no text-field key is ever pinned, and `selectId ?? select.value ?? sticky` never falls through because `select.value` is always a string. The walk's own copy promises carry-over | 3 | MAJOR |
 | B4 | `vesselScreen` empty-vessel path | Insert then loop `bindOne` with no transaction. One rejected code leaves a vessel that can be neither completed nor retried, and the camera keeps running | 4 (p) | MAJOR |
 | B5 | `newId()` inside submit handlers | Client ids are minted in the handler, so a retry has a different identity. This is the one property `CLAUDE.md` claims for offline writes | 2 | MAJOR |
@@ -313,3 +315,24 @@ that was filed.
 its author's error rather than a defect in the tree.
 
 **Closed.** A22, by `0025`.
+
+### 1.3 (2026-09-12)
+
+*Cause: W-4 phase 2, which was asked to file the null-permit shape as a class and to write
+the derived assertion that finds the fourth instance.*
+
+**Added.** A25, the null-permit class, with its three instances and its invariant. It is
+filed as a class rather than as a third unrelated defect because that is what it is: three
+mechanisms, three sessions, three routes, one cause, and nobody wrote any of them on
+purpose.
+
+**Amended.** B2, to say the class is broader than the entry had it. An effectless operation
+does not raise, it lands silently inert, which is A13's shape, a refusal indistinguishable
+from success, arriving through a check constraint rather than through row level security.
+A13 is therefore not only about RLS.
+
+**The search for a fourth instance found none, and that is the result.** A derived
+assertion now enumerates every check constraint and every boolean function from the
+catalog, exercises each against every row the table could actually hold, and fails on
+anything answering null that is not on an allow-list with a stated reason. At `0025` the
+allow-list has exactly one entry, A24, and nothing else in the schema permits on unknown.
