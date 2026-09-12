@@ -45,7 +45,7 @@ build on top of it. Halting with a clear write-up is a good outcome.
 
 | | |
 |---|---|
-| Last green commit | `1b1ad2f` |
+| Last green commit | `df3ac3d`, phase 0 |
 | Current migration number | `0022`, so the next one is `0023` |
 | Assertions | 128 from empty, 129 against the cellar copy |
 | Module migration numbering | not yet designed, phase 6 designs it |
@@ -55,7 +55,7 @@ build on top of it. Halting with a clear write-up is a good outcome.
 | Phase | What | State |
 |---|---|---|
 | 0 | Reach green at all | done |
-| 1 | Namespace collision, rulings ids to `AR-` | not started |
+| 1 | Namespace collision, rulings ids to `AR-` | done |
 | 2 | Read the unreviewed range, `0006` to `0022`, plus the mutation score | not started |
 | 3 | The resolver registry, `AR-E5` | not started |
 | 4 | `task_board` against the registry, `AR-E6` | not started |
@@ -121,6 +121,9 @@ and fails if it is anything else, so this cannot quietly become a real gap.
 | `green.sh` exists | Six commands run by hand is a gate that gets partially run |
 | `verify.sh` scans `.sh` | Otherwise the checker's own header is unchecked |
 | Scratch and copy counts may differ by exactly one | The storage skip, and only that |
+| Two `A-1` references in the rulings are not renamed | They name the review prompt, not ruling `AR-A1` |
+| `verify.sh` gained an `AR-` cross-reference check | Separating namespaces stops ambiguity; checking them stops a reference pointing at nothing |
+| Ruling ids bumped the document to 2.1, not 2.0.1 | Ids are how other documents refer to it, so a consumer re-reads |
 
 ## Discovered, and it changes a later phase
 
@@ -133,9 +136,12 @@ This matters for phase 7: moving tables into module schemas does not move functi
 unless somebody says so, and `0020`'s "every function in public" becomes "every
 function in which schema" the moment there is more than one.
 
-**`verify.sh` currently exempts `docs/architecture-rulings.md` from the compost
-cross-reference check by name.** Phase 1 removes that exemption, and phase 1 is not
-done until it is gone.
+**The findings ledger contains one dangling cross-reference.** Entry A12 cites "E-4's
+premise", and `E-4` resolves to nothing in this repository under any reading: not a
+ruling, not a compost entry, not a finding, not a spec section, and it appears nowhere
+in the review corpus. Left as it stands rather than guessed at. Phase 1's new `AR-` check
+would have caught it had it been written as a ruling reference, and cannot catch it as
+written.
 
 ## Predictions made, for later scoring
 

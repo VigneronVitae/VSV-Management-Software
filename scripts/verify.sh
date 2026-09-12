@@ -152,13 +152,25 @@ composts=$(grep -o '^\*\*C-[0-9]*' docs/compost-ledger.md | tr -d '*' | sort -u)
 for f in $(tracked); do
   corpus "$f" && continue
   [ -f "$f" ] || continue
-  # docs/architecture-rulings.md numbers its own rulings A-1, B-5, C-3 and so
-  # on, so its C- ids are rulings and not compost entries. Two documents in this
-  # tree use the same shape for different namespaces, which is worth fixing and
-  # is not this script's business to fix.
-  [ "$f" = "docs/architecture-rulings.md" ] && continue
   for id in $(grep -o '\bC-[0-9][0-9]*\b' "$f" 2>/dev/null | sort -u); do
     printf '%s\n' "$composts" | grep -qx "$id" || fail "$f: names $id, which is not in docs/compost-ledger.md"
+  done
+done
+
+# Architecture rulings. Their ids used to be A-1, B-5, C-3 and so on, which
+# collided with the compost ledger on C-1 through C-4 and forced an exemption
+# here naming that file. Version 2.1 prefixed them all, so the namespaces are
+# separate; this check is what makes them enforceable rather than merely
+# separate, and it catches a reference pointing at a ruling that does not exist.
+rulings=$(grep -o '^\*\*AR-[A-JQ][0-9]*' docs/architecture-rulings.md | tr -d '*' | sort -u)
+[ -z "$rulings" ] && fail "docs/architecture-rulings.md: no AR- ids found, so the id format changed and this check is blind"
+
+for f in $(tracked); do
+  corpus "$f" && continue
+  [ -f "$f" ] || continue
+  for id in $(grep -o 'AR-[A-JQ][0-9][0-9]*' "$f" 2>/dev/null | sort -u); do
+    printf '%s
+' "$rulings" | grep -qx "$id" || fail "$f: names $id, which is not a ruling in docs/architecture-rulings.md"
   done
 done
 
@@ -175,7 +187,7 @@ while IFS= read -r row; do
     || fail "docs/status-ledger.md: a row graded Deferred names no compost entry: $(printf '%s' "$row" | cut -c1-60)"
 done < <(grep '| Deferred |' docs/status-ledger.md)
 
-[ "$fails" -eq "$before" ] && pass "every S- and C- id referenced in the tree exists, every compost entry can be revived, every Deferred row says how"
+[ "$fails" -eq "$before" ] && pass "every S-, C- and AR- id referenced in the tree exists, every compost entry can be revived, every Deferred row says how"
 
 # ---------------------------------------------------------------------------
 head_ "4. counts stated in prose"

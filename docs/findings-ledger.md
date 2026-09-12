@@ -90,12 +90,12 @@ Written once, after the schema split, against the new layout.
 | A13 | RLS denial surface | Every denial is a zero-row match, not an error. A refused correction is indistinguishable from an applied one. This is the class the whole sweep converges on | 4 (p) | EXPLOITABLE |
 | A14 | `placement` update policy | Admin-only close, so racking is refused the day it is built, silently | 2 (p) | EXPLOITABLE |
 | A15 | `name` columns declared `not null` | The database accepts `''` for every one. Non-empty and trim are client-only rules | 1 (p) | EXPLOITABLE |
-| A16 | `term.value` | The join key the database resolves terms by, derived by eight chained string operations in one TypeScript file. `term_id()`, `next_cap_action` and `topping_check` all depend on it. B-2 violated inside the tree | 2 | EXPLOITABLE |
+| A16 | `term.value` | The join key the database resolves terms by, derived by eight chained string operations in one TypeScript file. `term_id()`, `next_cap_action` and `topping_check` all depend on it. AR-B2 violated inside the tree | 2 | EXPLOITABLE |
 | A17 | `vessel.owner_id` against `node.owner_id` | The walk's Owner select writes the vessel and the node payload omits `owner_id`, so the lot coalesces to the facility. TTB-relevant, and invisible from inside the walk | 1 | EXPLOITABLE |
 | A18 | `node.quantity` against `placement.volume_l` | Two stored volumes for the same wine, written from one input, with nothing linking or reconciling them | 2 | EXPLOITABLE |
 | A19 | `node.status`, `node.closed_at` | Stored derivations of lineage with no recompute and no staleness detection | 1 | EXPLOITABLE |
 | A20 | `task_claim_log`, `ON DELETE RESTRICT` on lineage | Cascade-deletable from `task` although no delete policy exists. Restrict is a speed bump: delete the edge, then the node, both permitted | 1 (p) | EXPLOITABLE |
-| A21 | `subject_type`, `term_kind` | Core enums naming higher-module tables and carrying module vocabulary. Wrong-way edges that never fail to install. `0004` already performed this migration once | 1 (p) | E-7 |
+| A21 | `subject_type`, `term_kind` | Core enums naming higher-module tables and carrying module vocabulary. Wrong-way edges that never fail to install. `0004` already performed this migration once | 1 (p) | AR-E7 |
 
 **Ordering inside 0006.** A1 first, since it is one line and it currently inverts
 deactivation. Then A7, A5 and A11 together, since they are the admission surface and A11
@@ -182,8 +182,8 @@ The survey's conclusion. Thirty-seven of 123 dependency edges are enforceable by
 | E6 | `placement.to_at` | Nothing writes it, so the first placement holds the vessel forever | Racking is built |
 | E7 | realtime publication | Broadcasts every event and placement to every login; whether RLS applies to the hosted replication stream is unverified | Before any second client subscribes |
 | E8 | `topping_check` | Approves everything when the operation carries no predicate, and raises if the `topping` term is renamed | Topping is recorded |
-| E9 | `block.variety` | Free text while every other variety is a term. F-2 violated in the existing tree | With the origin work |
-| E10 | this winery's facts in the client | The winery name is compiled in, six Willamette varieties are seeded with no UI to remove them | Second install. J-1 in miniature |
+| E9 | `block.variety` | Free text while every other variety is a term. AR-F2 violated in the existing tree | With the origin work |
+| E10 | this winery's facts in the client | The winery name is compiled in, six Willamette varieties are seeded with no UI to remove them | Second install. AR-J1 in miniature |
 | E11 | `event.task_id`, `event.subject_id` | Two unconstrained ids; S-4 names only one | D2 exists to check them |
 | E12 | account deletion | Fails for any user who ever created a node | Anyone leaves |
 
