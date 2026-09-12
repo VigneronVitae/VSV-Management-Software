@@ -51,8 +51,62 @@ BASE=vsv_mut_base
 WORK=vsv_mut_work
 ONLY="${1:-}"
 
-q()  { docker exec "$CONTAINER" psql -U postgres -At -d "$1" -c "$2" 2>/dev/null; }
+# X-1-2: q() used to end in 2>/dev/null and its output was appended straight to
+# the mutation file. A query that errored contributed zero lines, its class
+# vanished from the run, and the summary printed a clean score over a smaller
+# denominator. Sabotaging one enumeration produced "210 mutations enumerated",
+# no trigger row in the table, and "189 of 189 caught (100%)" with no warning.
+# That is the tgenabled shape in the place it does the most damage.
+q() {
+  local out rc
+  out=$(docker exec "$CONTAINER" psql -U postgres -At -d "$1" -c "$2" 2>/tmp/.mutate-q.err)
+  rc=$?
+  if [ "$rc" -ne 0 ] || [ -s /tmp/.mutate-q.err ]; then
+    echo "ENUMERATION FAILED, refusing to score. psql exited $rc:" >&2
+    sed 's/^/    /' /tmp/.mutate-q.err >&2
+    echo "    query: $(printf '%s' "$2" | tr '
+' ' ' | cut -c1-160)" >&2
+    exit 2
+  fi
+  # A newline, because command substitution strips the trailing one and these
+  # results are appended to a line-based file. Without it the first row of each
+  # class lands on the last row of the previous one, and the enumerated total
+  # quietly drops by one per class. It did, by seven, on the first run of this.
+  printf '%s
+' "$out"
+}
+
+# Every class asserts a non-zero row count, the way fingerprint() already asserts
+# a non-empty result. A class with no members is either a broken query or a
+# schema that lost every object of that kind, and both deserve an abort rather
+# than a missing row in the table.
+enumerate() {   # $1 class name, $2 database, $3 sql
+  local before after
+  before=$(grep -c . "$muts" 2>/dev/null); before=${before:-0}
+  q "$2" "$3" >> "$muts"
+  after=$(grep -c . "$muts" 2>/dev/null); after=${after:-0}
+  if [ "$after" -le "$before" ]; then
+    echo "ENUMERATION EMPTY for class '$1', refusing to score." >&2
+    echo "    A class with no members is a broken query or a schema that lost every" >&2
+    echo "    object of that kind. Either way the score would be over a denominator" >&2
+    echo "    nobody chose." >&2
+    exit 2
+  fi
+  printf '  %-8s %d mutations
+' "$1" "$(( after - before ))"
+}
+
+# X-1-14: adm() discarded its own status, so a failed drop meant a failed create
+# meant an iteration mutating a database that still carried the previous
+# mutation, scored against a schema with two defects in it.
 adm(){ docker exec "$CONTAINER" psql -U postgres -q -d postgres -c "$1" >/dev/null 2>&1; }
+
+adm_or_die() {
+  if ! adm "$1"; then
+    echo "database administration failed, refusing to score: $1" >&2
+    exit 2
+  fi
+}
 
 if ! docker exec "$CONTAINER" true 2>/dev/null; then
   echo "cannot reach $CONTAINER"; exit 2
@@ -88,20 +142,20 @@ echo
 muts=$(mktemp)
 trap 'rm -f "$muts"' EXIT
 
-q "$BASE" "
+enumerate check "$BASE" "
 select 'check' || chr(9) || t.relname || '.' || c.conname || chr(9) ||
        format('alter table public.%I drop constraint %I', t.relname, c.conname)
   from pg_constraint c
   join pg_class t on t.oid = c.conrelid
   join pg_namespace n on n.oid = t.relnamespace
  where n.nspname = 'public' and c.contype = 'c'
- order by t.relname, c.conname;" >> "$muts"
+ order by t.relname, c.conname;"
 
 # Loosening rather than dropping, for check constraints only. A pinned inventory
 # counts constraints by type and so cannot tell a constraint that still exists
 # and refuses nothing; only this can. There is no equivalent for a unique
 # constraint, which either is unique or is not.
-q "$BASE" "
+enumerate loosen "$BASE" "
 select 'loosen' || chr(9) || t.relname || '.' || c.conname || chr(9) ||
        format('alter table public.%I drop constraint %I; alter table public.%I add constraint %I check (true)',
               t.relname, c.conname, t.relname, c.conname)
@@ -109,18 +163,18 @@ select 'loosen' || chr(9) || t.relname || '.' || c.conname || chr(9) ||
   join pg_class t on t.oid = c.conrelid
   join pg_namespace n on n.oid = t.relnamespace
  where n.nspname = 'public' and c.contype = 'c'
- order by t.relname, c.conname;" >> "$muts"
+ order by t.relname, c.conname;"
 
-q "$BASE" "
+enumerate unique "$BASE" "
 select 'unique' || chr(9) || t.relname || '.' || c.conname || chr(9) ||
        format('alter table public.%I drop constraint %I', t.relname, c.conname)
   from pg_constraint c
   join pg_class t on t.oid = c.conrelid
   join pg_namespace n on n.oid = t.relnamespace
  where n.nspname = 'public' and c.contype = 'u'
- order by t.relname, c.conname;" >> "$muts"
+ order by t.relname, c.conname;"
 
-q "$BASE" "
+enumerate unique "$BASE" "
 select 'unique' || chr(9) || ix.relname || chr(9) || format('drop index public.%I', ix.relname)
   from pg_index i
   join pg_class t on t.oid = i.indrelid
@@ -128,28 +182,28 @@ select 'unique' || chr(9) || ix.relname || chr(9) || format('drop index public.%
   join pg_namespace n on n.oid = t.relnamespace
  where n.nspname = 'public' and i.indisunique and not i.indisprimary
    and not exists (select 1 from pg_constraint c where c.conindid = i.indexrelid)
- order by ix.relname;" >> "$muts"
+ order by ix.relname;"
 
-q "$BASE" "
+enumerate trigger "$BASE" "
 select 'trigger' || chr(9) || t.relname || '.' || g.tgname || chr(9) ||
        format('alter table public.%I disable trigger %I', t.relname, g.tgname)
   from pg_trigger g
   join pg_class t on t.oid = g.tgrelid
   join pg_namespace n on n.oid = t.relnamespace
  where n.nspname = 'public' and not g.tgisinternal
- order by t.relname, g.tgname;" >> "$muts"
+ order by t.relname, g.tgname;"
 
-q "$BASE" "
+enumerate policy "$BASE" "
 select 'policy' || chr(9) || tablename || '.' || policyname || chr(9) ||
        format('drop policy %I on public.%I', policyname, tablename)
   from pg_policies where schemaname = 'public'
- order by tablename, policyname;" >> "$muts"
+ order by tablename, policyname;"
 
 # Weakening rather than dropping. A pinned policy list catches a policy that
 # disappears; only this catches one that is still there and no longer refuses
 # anything, which is the failure mode a schema move actually produces. Recreated
 # with the same name, same command, same roles, and a predicate of true.
-q "$BASE" "
+enumerate weaken "$BASE" "
 select 'weaken' || chr(9) || tablename || '.' || policyname || chr(9) ||
        format('drop policy %I on public.%I; create policy %I on public.%I for %s to %s%s%s',
               policyname, tablename, policyname, tablename,
@@ -166,29 +220,34 @@ select 'weaken' || chr(9) || tablename || '.' || policyname || chr(9) ||
    -- detected by the fingerprint after applying and named as degenerate in the
    -- output. Dropping them at enumeration was correct and invisible, and
    -- invisible is half of what was wrong with it.
- order by tablename, policyname;" >> "$muts"
+ order by tablename, policyname;"
 
-q "$BASE" "
+enumerate rls "$BASE" "
 select 'rls' || chr(9) || t.relname || chr(9) ||
        format('alter table public.%I disable row level security', t.relname)
   from pg_class t
   join pg_namespace n on n.oid = t.relnamespace
  where n.nspname = 'public' and t.relrowsecurity
- order by t.relname;" >> "$muts"
+ order by t.relname;"
 
-# Function bodies. Nine of G-5's forty five mutations were of this kind and the
-# six classes above are all declarative, so without this a perfect score would
-# mean "nothing can be removed" and would be read as "the kernel is correct".
-# Each mutation is a substitution against pg_get_functiondef, so it carries the
-# function's real signature, volatility and search_path rather than a copy that
-# drifts. A substitution whose target string is gone reports as not applicable,
-# which is also how this list tells you a function has changed shape.
-q "$BASE" "
-with m(fn, find, repl, note) as (values
+# Function bodies. The six classes above are all declarative, so without this a
+# perfect score would mean "nothing can be removed" and would be read as "the
+# kernel is correct". Each mutation is a substitution against
+# pg_get_functiondef, so it carries the function's real signature, volatility and
+# search_path rather than a copy that drifts.
+#
+# The list is shared between two queries below rather than written twice, because
+# the first version of the vanished-target check duplicated it and a duplicated
+# list is a list that goes out of step.
+#
+# X-1-5 is the standing caveat on this class and it is not fixed here: ten
+# substitutions chosen by the author score 10 of 10, and nine chosen
+# independently score 6 of 9. The class samples the procedural surface; it does
+# not cover it.
+LOGIC_SUBS="
   ('is_admin',                   'and active',                      '',                     'drops the active conjunct, which is ledger B10 in the client'),
   ('is_facility_user',           'is_admin() or (',                 'true or (',            'everyone becomes staff'),
   ('claim_account',              'when is_first then',              'when true then',       'every claimant becomes admin'),
-  ('generate_inferred_history',  'as provenance',                   'as provenance',        'no-op probe, kept to show a substitution that changes nothing is caught by nothing'),
   ('close_node_when_empty',      'new.quantity <= 0',               'new.quantity < 0',     'a lot at exactly zero never closes'),
   ('bind_vessel_code',           'existing.vessel_id = p_vessel_id','true',                 'the cross-vessel guard goes, so a rebind returns silently'),
   ('cellar_writable_columns',    'if not (changed = any(tg_argv))', 'if false',             'the column allow-list stops refusing anything'),
@@ -196,21 +255,62 @@ with m(fn, find, repl, note) as (values
   ('update_vessel',              'is distinct from',                'is not distinct from', 'a thermal change records only when nothing changed'),
   ('resolve_subject_name',       'is null then',                    'is not null then',     'the deflation inverts, so a present module resolves to null and an absent one is queried'),
   ('confirm_event',              'is_admin()',                      'true',                 'anyone may confirm, which is T0-4'),
-  ('topping_check',              'and false',                       'and false',            'no-op probe')
-)
+  ('claim_task',                 'and status = ''open''',           'and status is not null','X-1-5: a task already claimed by somebody else can be taken from them'),
+  ('validate_vessel_attributes', 'if coalesce((f ->> ''required'')::boolean, false) then', 'if false then', 'X-1-5: a vessel type''s required fields stop being required'),
+  ('finish_run',                 'raise exception ''no such run''', 'null',                 'X-1-5: finishing a run that does not exist writes an event against a null vessel'),
+  ('visible_node',               'may_see_all_of',                  'true or may_see_all_of','a client sees every field of every lot'),
+  ('set_lot_hidden',             'if not may_set_privacy(p_node_id)','if false',            'anyone may set what is hidden about anyone else''s wine'),
+  ('validate_vessel_type_fields','not in (''term'', ''number'', ''text'')', 'is null and false', 'a field of any kind at all is accepted')
+"
+
+# X-1-7: this list is hand-maintained, and a substitution whose target string no
+# longer occurs used to be dropped by the where clause at enumeration. It was
+# absent from the total, absent from the inapplicable list, and absent from the
+# summary, against a comment claiming it reported as not applicable. Refactoring
+# any named function silently shrank the only class that tests procedural logic
+# while the percentage stayed at 100.
+#
+# It aborts now, and names the substitution, because a hand-maintained list that
+# has drifted from the code is not a smaller list, it is an unmaintained one.
+missing=$(q "$BASE" "
+with m(fn, find, repl, note) as (values $LOGIC_SUBS)
+select m.fn || ': ' || m.find
+  from m
+  left join pg_proc p
+    on p.proname = m.fn
+   and p.pronamespace = 'public'::regnamespace
+   and position(m.find in pg_get_functiondef(p.oid)) > 0
+ where p.oid is null
+ order by m.fn;")
+
+if [ -n "$missing" ]; then
+  echo "LOGIC SUBSTITUTION TARGETS HAVE GONE, refusing to score:" >&2
+  printf '%s\n' "$missing" | sed 's/^/    /' >&2
+  echo "    Either the function was refactored and the substitution needs rewriting," >&2
+  echo "    or the function is gone and the entry should be removed. Both are" >&2
+  echo "    deliberate acts. Silently dropping the entry is not." >&2
+  exit 2
+fi
+
+enumerate logic "$BASE" "
+with m(fn, find, repl, note) as (values $LOGIC_SUBS)
 select 'logic' || chr(9) || m.fn || ': ' || m.note || chr(9) || 'b64:' ||
        translate(encode(convert_to(replace(pg_get_functiondef(p.oid), m.find, m.repl), 'UTF8'), 'base64'), chr(10), '')
   from m
   join pg_proc p on p.proname = m.fn
   join pg_namespace n on n.oid = p.pronamespace and n.nspname = 'public'
  where position(m.find in pg_get_functiondef(p.oid)) > 0
-   and m.find <> m.repl
- order by m.fn;" >> "$muts"
+ order by m.fn;"
 
 [ -n "$ONLY" ] && { grep "^$ONLY	" "$muts" > "$muts.f"; mv "$muts.f" "$muts"; }
 
 total=$(grep -c . "$muts")
-echo "$total mutations enumerated"
+# X-1-10: a filtered run used to print output identical in shape to a full one,
+# which is exactly how a single-class number got quoted as a whole-run number and
+# produced the 20 against 21 exclusion error the progress file corrects. The
+# scope is now named at the top and repeated in the closing line.
+SCOPE=$( [ -n "$ONLY" ] && echo "class '$ONLY' only" || echo "all classes" )
+echo "$total mutations enumerated, $SCOPE"
 echo
 
 # ---------------------------------------------------------------------------
@@ -223,8 +323,8 @@ echo
 # denominator, because a harness that reports a number without reporting that the
 # number is unsound is the exact defect this whole line of work exists to correct,
 # arriving from inside the instrument.
-survivors=$(mktemp); inapplicable=$(mktemp); degenerate=$(mktemp)
-trap 'rm -f "$muts" "$survivors" "$inapplicable" "$degenerate"' EXIT
+survivors=$(mktemp); inapplicable=$(mktemp); degenerate=$(mktemp); fixtures=$(mktemp)
+trap 'rm -f "$muts" "$survivors" "$inapplicable" "$degenerate" "$fixtures"' EXIT
 
 # A fingerprint of everything any mutation class can touch. Taken before and
 # after a mutation is applied: if it does not move, the mutation changed nothing
@@ -264,13 +364,13 @@ fingerprint() {
     ) x;" 2>/dev/null
 }
 
-declare -A seen caught
+declare -A seen caught fixture
 i=0
 while IFS=$'\t' read -r class label sql; do
   [ -z "$class" ] && continue
   i=$((i + 1))
   adm "drop database if exists $WORK;"
-  adm "create database $WORK template $BASE;"
+  adm_or_die "create database $WORK template $BASE;"
 
   before=$(fingerprint "$WORK")
   # An empty fingerprint means the query is broken, not that the schema is. The
@@ -307,13 +407,39 @@ while IFS=$'\t' read -r class label sql; do
   fi
 
   seen[$class]=$(( ${seen[$class]:-0} + 1 ))
-  if docker exec -i "$CONTAINER" psql -U postgres -v ON_ERROR_STOP=1 -d "$WORK" \
-       < tests/schema_assertions.sql >/dev/null 2>&1; then
+
+  # X-1-8: caught used to mean "the suite exited non-zero", and psql exits
+  # non-zero when it cannot connect, when the role is missing, when the database
+  # was dropped and when the disk is full, exactly as it does when an assertion
+  # fails. A harness that lost Postgres halfway scored every remaining mutation
+  # as caught and finished at 100 percent. There are three outcomes now.
+  #
+  # X-1-15: a mutation can also break a fixture the suite needs before any
+  # assertion is reached, and the failure then names the fixture rather than the
+  # defect. Four of 198 were this. They are still the mutated schema failing and
+  # are still counted as caught, but in their own column, so the number is not
+  # read as behavioural detection when it is a not-null violation on a fixture.
+  docker exec -i "$CONTAINER" psql -U postgres -v ON_ERROR_STOP=1 -d "$WORK" \
+    < tests/schema_assertions.sql > /tmp/.mutate-run.log 2>&1
+  rc=$?
+  oks=$(grep -c '^NOTICE:  ok' /tmp/.mutate-run.log)
+
+  if [ "$rc" -eq 0 ]; then
     printf '%s\t%s\n' "$class" "$label" >> "$survivors"
     printf '  %3d/%d  %-8s %-46s SURVIVED\n' "$i" "$total" "$class" "$label"
-  else
+  elif [ "$oks" -eq 0 ]; then
+    echo "THE ASSERTION SUITE DID NOT RUN on mutation '$class $label', refusing to score." >&2
+    grep -iE 'error|fatal' /tmp/.mutate-run.log | head -3 | sed 's/^/    /' >&2
+    exit 2
+  elif grep -q 'FAIL:' /tmp/.mutate-run.log; then
     caught[$class]=$(( ${caught[$class]:-0} + 1 ))
     printf '  %3d/%d  %-8s %-46s caught\n' "$i" "$total" "$class" "$label"
+  else
+    caught[$class]=$(( ${caught[$class]:-0} + 1 ))
+    fixture[$class]=$(( ${fixture[$class]:-0} + 1 ))
+    printf '%s\t%s\t%s\n' "$class" "$label" \
+      "$(grep -m1 -iE '(ERROR|FATAL)' /tmp/.mutate-run.log | cut -c1-90)" >> "$fixtures"
+    printf '  %3d/%d  %-8s %-46s caught, by breaking a fixture\n' "$i" "$total" "$class" "$label"
   fi
 done < "$muts"
 

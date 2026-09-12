@@ -135,5 +135,13 @@ He is the domain expert and he is also the one who wrote the schema. When someth
 in the model looks wrong, it is roughly as likely to be a real modelling error as a
 piece of winery practice you do not know about. Ask which before changing it.
 
-During harvest he is unavailable for hours at a stretch. Prefer leaving a named gap
-in the sorry ledger over guessing at domain semantics.
+During harvest he is sometimes unavailable for hours at a stretch, and sometimes the
+opposite in a way worth knowing about: pressing is a long committed block where he has
+to be at the press and does not have much to do. A domain question asked then tends to
+get answered, and answered properly.
+
+So the rule is not "do not ask". It is: never guess at domain semantics. Ask, and if
+no answer comes, leave a named gap in the sorry ledger and carry on with everything
+that does not depend on the answer. A question that costs him thirty seconds at the
+press is cheaper than a sorry entry that costs a later session an hour, and much
+cheaper than a wrong guess written into a migration.
