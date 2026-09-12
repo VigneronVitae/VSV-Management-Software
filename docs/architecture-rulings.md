@@ -3,7 +3,7 @@ Type: ruling
 Version: 2.1
 Purpose: "Records every architectural decision governing the decomposition of this system into installable modules, with the reasoning, the falsifier, and the condition under which each ruling would be wrong."
 Depends on: [packages/cellar/docs/spec.md, docs/methodology-lineage.md]
-Depended on by: [docs/findings-ledger.md, docs/status-ledger.md, docs/session-reports/modularization-progress.md, supabase/migrations/0023_subject_resolver.sql, supabase/migrations/0024_task_board_via_registry.sql]
+Depended on by: [docs/findings-ledger.md, docs/status-ledger.md, docs/session-reports/modularization-progress.md, supabase/migrations/0023_subject_resolver.sql, supabase/migrations/0024_task_board_via_registry.sql, supabase/migrations/0026_subject_type_registry.sql]
 ---
 
 # Architecture Rulings

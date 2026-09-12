@@ -27,7 +27,8 @@
 --              supabase/migrations/0022_admission_and_authorship.sql,
 --              supabase/migrations/0023_subject_resolver.sql,
 --              supabase/migrations/0024_task_board_via_registry.sql,
---              supabase/migrations/0025_bind_an_unbound_code.sql]
+--              supabase/migrations/0025_bind_an_unbound_code.sql,
+--              supabase/migrations/0026_subject_type_registry.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
 -- Open sorries: S-7 (what this exercises is Postgres policy evaluation, not
@@ -2501,7 +2502,9 @@ begin
      group by c.contype
   ) x;
 
-  want := 'c=18 f=40 p=22 u=14';
+  -- c=18 f=40 before 0026, which removed the subject_type enum and replaced it
+  -- with three foreign keys into the resolver registry plus a bare-name check.
+  want := 'c=19 f=43 p=22 u=14';
   if have <> want then
     raise exception
       E'FAIL: the constraint inventory changed.\nnow:  %\nwas:  %\nIf that is deliberate, update this line in the same commit that changed the schema.', have, want;
@@ -2635,7 +2638,10 @@ begin
      group by c.confdeltype
   ) x;
 
-  want := 'a=27 c=8 n=1 r=4';
+  -- r=4 before 0026. The three new restrict keys are the subject-type
+  -- registrations: uninstalling a module while tasks still point at its subjects
+  -- is refused rather than silently taking the tasks with it.
+  want := 'a=27 c=8 n=1 r=7';
   if have <> want then
     raise exception
       E'FAIL: foreign key delete behaviour changed.\nnow:  %\nwas:  %\na is no action, c is cascade, n is set null, r is restrict.', have, want;
@@ -2656,13 +2662,16 @@ begin
     join pg_namespace n on n.oid = t.relnamespace
    where n.nspname = 'public' and c.contype = 'f' and c.confdeltype = 'r';
 
-  want := 'lineage.lineage_child_id_fkey, lineage.lineage_parent_id_fkey, '
-       || 'placement.placement_node_id_fkey, placement.placement_vessel_id_fkey';
+  want := 'event.event_subject_type_is_registered, '
+       || 'lineage.lineage_child_id_fkey, lineage.lineage_parent_id_fkey, '
+       || 'placement.placement_node_id_fkey, placement.placement_vessel_id_fkey, '
+       || 'procedure.procedure_subject_type_is_registered, '
+       || 'task.task_subject_type_is_registered';
 
   if have <> want then
     raise exception E'FAIL: the restrict keys changed.\nnow:  %\nwas:  %', have, want;
   end if;
-  perform test_ok('the four ON DELETE RESTRICT keys are the lineage and placement ones ledger A20 names');
+  perform test_ok('the seven ON DELETE RESTRICT keys are the lineage and placement ones ledger A20 names, plus the three subject-type registrations');
 end $$;
 
 -- ---------------------------------------------------------------------------
@@ -3368,6 +3377,77 @@ begin
   end if;
 
   perform test_ok('every boolean function answers true or false and never null, with null arguments and nobody signed in');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- a subject type is a row, not a type'; end $$;
+
+-- AR-E7, the half `0026` did. subject_type was an enum with four labels, three
+-- of which name tables belonging to modules an install may not have. It never
+-- failed to install and it was always a wrong-way edge.
+do $$
+begin
+  if exists (select 1 from pg_type where typname = 'subject_type') then
+    raise exception 'FAIL: the subject_type enum is back, so core carries a fixed list of module concepts again';
+  end if;
+  perform test_ok('there is no subject_type enum, so adding a subject type is a row');
+end $$;
+
+-- And the row is what makes it real: a task cannot point at a subject type
+-- nobody registered.
+do $$
+begin
+  begin
+    insert into task (operation_id, subject_type, subject_id)
+      values (term_id('operation','punchdown'), 'unregistered_thing',
+              '00000000-0000-0000-0000-00000000b001');
+    raise exception 'FAIL: a task was created against an unregistered subject type';
+  exception when foreign_key_violation then
+    perform test_ok('a task cannot name a subject type nobody registered');
+  end;
+end $$;
+
+-- Registering one is a row and nothing else, which is the whole claim.
+do $$
+declare r subject_resolver; got text;
+begin
+  create table if not exists widget (id uuid primary key, name text not null);
+  insert into widget (id, name) values ('00000000-0000-0000-0000-00000000aa01', 'A widget')
+    on conflict do nothing;
+
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+  set local role authenticated;
+  r := register_subject_resolver('widget', 'widget', 'name', 'inventory');
+  reset role;
+
+  insert into task (operation_id, subject_type, subject_id)
+    values (term_id('operation','punchdown'), 'widget', '00000000-0000-0000-0000-00000000aa01');
+
+  select subject_name into got from task_board where subject_type = 'widget';
+  if got is distinct from 'A widget' then
+    raise exception 'FAIL: a newly registered subject type did not render on the board, got %', got;
+  end if;
+  perform test_ok('registering a subject type is one row, and the board renders it immediately');
+
+  delete from task where subject_type = 'widget';
+  delete from subject_resolver where subject_type = 'widget';
+  drop table widget;
+end $$;
+
+-- Uninstalling a module out from under live tasks is refused rather than
+-- silently taking the tasks with it, which is AR-A4.
+do $$
+begin
+  insert into task (id, operation_id, subject_type, subject_id)
+    values ('00000000-0000-0000-0000-00000000aa02', term_id('operation','punchdown'),
+            'location', '00000000-0000-0000-0000-0000000000c1');
+  begin
+    delete from subject_resolver where subject_type = 'location';
+    raise exception 'FAIL: a subject type was deregistered while tasks still pointed at it';
+  exception when foreign_key_violation then
+    perform test_ok('deregistering a subject type with live tasks is refused, not cascaded');
+  end;
+  delete from task where id = '00000000-0000-0000-0000-00000000aa02';
 end $$;
 
 -- ---------------------------------------------------------------------------

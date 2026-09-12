@@ -9,7 +9,7 @@
 --              supabase/migrations/0004_terms_and_effects.sql,
 --              supabase/migrations/0022_admission_and_authorship.sql,
 --              docs/architecture-rulings.md]
--- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql, supabase/migrations/0024_task_board_via_registry.sql]
+-- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql, supabase/migrations/0024_task_board_via_registry.sql, supabase/migrations/0026_subject_type_registry.sql]
 -- Axioms enforced: T0-2, in that what a subject is called is derived on read
 --                  rather than copied onto the task.
 -- Open sorries: S-41, S-42

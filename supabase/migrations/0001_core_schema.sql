@@ -19,7 +19,8 @@
 --                 supabase/migrations/0019_procedures.sql,
 --                 supabase/migrations/0022_admission_and_authorship.sql,
 --                 tests/shim.sql,
---                 supabase/migrations/0023_subject_resolver.sql]
+--                 supabase/migrations/0023_subject_resolver.sql,
+--                 supabase/migrations/0026_subject_type_registry.sql]
 -- Axioms enforced: T0-1 (one node type), T0-3 (provenance on every event),
 --                  T0-5 (append-only history)
 -- Open sorries: S-3 (partial parent consumption), S-4 (subject_id not a FK),

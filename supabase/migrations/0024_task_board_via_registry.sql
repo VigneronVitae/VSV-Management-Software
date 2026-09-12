@@ -9,7 +9,7 @@
 --              supabase/migrations/0004_terms_and_effects.sql,
 --              supabase/migrations/0023_subject_resolver.sql,
 --              docs/architecture-rulings.md]
--- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql]
+-- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql, supabase/migrations/0026_subject_type_registry.sql]
 -- Axioms enforced: T0-2, in that the subject's name stays derived on read.
 -- Open sorries: S-42, which this makes load-bearing rather than theoretical.
 -- ---------------------------------------------------------------------------
