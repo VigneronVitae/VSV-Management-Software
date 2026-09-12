@@ -168,7 +168,7 @@ rulings=$(grep -o '^\*\*AR-[A-JQ][0-9]*' docs/architecture-rulings.md | tr -d '*
 for f in $(tracked); do
   corpus "$f" && continue
   [ -f "$f" ] || continue
-  for id in $(grep -o 'AR-[A-JQ][0-9][0-9]*' "$f" 2>/dev/null | sort -u); do
+  for id in $(grep -o '\bAR-[A-JQ][0-9][0-9]*\b' "$f" 2>/dev/null | sort -u); do
     printf '%s
 ' "$rulings" | grep -qx "$id" || fail "$f: names $id, which is not a ruling in docs/architecture-rulings.md"
   done

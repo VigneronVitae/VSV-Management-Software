@@ -125,6 +125,22 @@ and fails if it is anything else, so this cannot quietly become a real gap.
 | `verify.sh` gained an `AR-` cross-reference check | Separating namespaces stops ambiguity; checking them stops a reference pointing at nothing |
 | Ruling ids bumped the document to 2.1, not 2.0.1 | Ids are how other documents refer to it, so a consumer re-reads |
 
+## A tooling trap that has now cost time twice
+
+Writing a shell script through a bash heredoc collapses a doubled backslash. A Python
+source line reading `'\bAR-...'` arrives as `'AR-...'`, which Python then reads as
+an escape and writes a single backspace byte, 0x08. The script still parses, `grep -n`
+prints it as if the backslash were there, and the check silently matches nothing.
+
+It happened in the previous session to the `S-` and `C-` word boundaries, and again in
+this one to the `AR-` check, which was committed broken in phase 1 and caught by its own
+break test. `verify.sh` scans for stray control characters in no way at all, which is
+why it does not catch this itself.
+
+*How to avoid it:* build such strings with `chr(92)`, or write the file with an editor
+tool rather than through a heredoc. *How to detect it:* count `0x08` bytes, do not read
+the line. A break test catches it; assuming a check works does not.
+
 ## Discovered, and it changes a later phase
 
 **`0020` breaks on any install where pgcrypto lands in `public`.** It pins
