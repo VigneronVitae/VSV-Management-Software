@@ -63,6 +63,26 @@ begin
     case when p_user is null then '' else json_build_object('sub', p_user)::text end, true);
 end $$;
 
+-- Snapshot assertions can be switched off from outside, which is what lets the
+-- mutation harness report a behavioural score separately from a snapshot score.
+--
+-- W-6 phase 2, and the reason it exists: 86 of 198 caught mutations were caught
+-- only by a pinned catalog comparison whose failure message told the reader to
+-- update the pinned value. A snapshot detects that something changed. A
+-- behavioural assertion detects that something now does the wrong thing. Both
+-- are worth having and summing them into one number made the number mean
+-- nothing. The gate from here is the behavioural score.
+create or replace function snapshots_on()
+returns boolean language sql stable set search_path = public, pg_temp as $$
+  select coalesce(current_setting('vsv.snapshots', true), 'on') <> 'off';
+$$;
+
+create or replace function skip_snapshot(p_msg text)
+returns void language plpgsql set search_path = public, pg_temp as $$
+begin
+  raise notice 'skip %  (snapshot, off for the behavioural pass)', p_msg;
+end $$;
+
 create or replace function test_ok(p_msg text)
 returns void language plpgsql set search_path = public, pg_temp as $$
 begin
@@ -2341,6 +2361,7 @@ do $$ begin raise notice '--- the policy surface is what it was last agreed to b
 do $$
 declare have text; want text;
 begin
+  if not snapshots_on() then perform skip_snapshot('the policy census'); return; end if;
   select count(*)::text into have from pg_policies where schemaname = 'public';
   -- 56 before 0025, which added vessel_code_cellar_insert for A22. This number
   -- catching that addition is the assertion working, not the assertion being in
@@ -2362,6 +2383,7 @@ end $$;
 do $$
 declare have text; want text;
 begin
+  if not snapshots_on() then perform skip_snapshot('the wide-open policy list'); return; end if;
   select coalesce(string_agg(tablename || '.' || policyname, ', ' order by tablename, policyname), '')
     into have
     from pg_policies
@@ -2497,6 +2519,7 @@ do $$ begin raise notice '--- the constraint surface, which is what phase 5 has 
 do $$
 declare have text; want text;
 begin
+  if not snapshots_on() then perform skip_snapshot('the constraint inventory'); return; end if;
   select string_agg(x.line, ' ' order by x.line) into have from (
     select c.contype::text || '=' || count(*)::text as line
       from pg_constraint c
@@ -2525,6 +2548,7 @@ end $$;
 do $$
 declare have text; want text;
 begin
+  if not snapshots_on() then perform skip_snapshot('the composite foreign key list'); return; end if;
   select string_agg(t.relname || '.' || c.conname, ', ' order by t.relname, c.conname)
     into have
     from pg_constraint c
@@ -2556,6 +2580,7 @@ end $$;
 do $$
 declare have text; want text;
 begin
+  if not snapshots_on() then perform skip_snapshot('the generated kind columns'); return; end if;
   select string_agg(table_name || '.' || column_name || '=' || generation_expression, ' ' order by table_name, column_name)
     into have
     from information_schema.columns
@@ -2639,6 +2664,7 @@ do $$ begin raise notice '--- delete behaviour is what the DDL says it is'; end 
 do $$
 declare have text; want text;
 begin
+  if not snapshots_on() then perform skip_snapshot('foreign key delete behaviour'); return; end if;
   select string_agg(x.line, ' ' order by x.line) into have from (
     select c.confdeltype::text || '=' || count(*)::text as line
       from pg_constraint c
@@ -2667,6 +2693,7 @@ end $$;
 do $$
 declare have text; want text;
 begin
+  if not snapshots_on() then perform skip_snapshot('the restrict key list'); return; end if;
   select coalesce(string_agg(t.relname || '.' || c.conname, ', ' order by t.relname, c.conname), '')
     into have
     from pg_constraint c

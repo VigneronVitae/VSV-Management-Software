@@ -323,7 +323,7 @@ echo
 # denominator, because a harness that reports a number without reporting that the
 # number is unsound is the exact defect this whole line of work exists to correct,
 # arriving from inside the instrument.
-survivors=$(mktemp); inapplicable=$(mktemp); degenerate=$(mktemp); fixtures=$(mktemp)
+survivors=$(mktemp); inapplicable=$(mktemp); degenerate=$(mktemp); fixtures=$(mktemp); snaponly=$(mktemp); fixtures=$(mktemp)
 trap 'rm -f "$muts" "$survivors" "$inapplicable" "$degenerate" "$fixtures"' EXIT
 
 # A fingerprint of everything any mutation class can touch. Taken before and
@@ -364,7 +364,7 @@ fingerprint() {
     ) x;" 2>/dev/null
 }
 
-declare -A seen caught fixture
+declare -A seen caught_b caught_s fixture
 i=0
 while IFS=$'\t' read -r class label sql; do
   [ -z "$class" ] && continue
@@ -408,38 +408,78 @@ while IFS=$'\t' read -r class label sql; do
 
   seen[$class]=$(( ${seen[$class]:-0} + 1 ))
 
-  # X-1-8: caught used to mean "the suite exited non-zero", and psql exits
-  # non-zero when it cannot connect, when the role is missing, when the database
-  # was dropped and when the disk is full, exactly as it does when an assertion
-  # fails. A harness that lost Postgres halfway scored every remaining mutation
-  # as caught and finished at 100 percent. There are three outcomes now.
+  # Two passes, and they answer different questions. This is W-6 phase 2 and it
+  # is the most consequential change in the harness.
   #
-  # X-1-15: a mutation can also break a fixture the suite needs before any
-  # assertion is reached, and the failure then names the fixture rather than the
-  # defect. Four of 198 were this. They are still the mutated schema failing and
-  # are still counted as caught, but in their own column, so the number is not
-  # read as behavioural detection when it is a not-null violation on a fixture.
-  docker exec -i "$CONTAINER" psql -U postgres -v ON_ERROR_STOP=1 -d "$WORK" \
-    < tests/schema_assertions.sql > /tmp/.mutate-run.log 2>&1
-  rc=$?
-  oks=$(grep -c '^NOTICE:  ok' /tmp/.mutate-run.log)
+  # Pass one runs with the snapshot assertions switched off, so only an assertion
+  # that exercises the schema can catch anything. That is the behavioural score
+  # and it is the gate.
+  #
+  # Pass two runs only for what survived pass one, with the snapshots back on. A
+  # mutation caught only there was caught by a pinned catalog comparison noticing
+  # that the catalog moved. That is a change detector, it is worth having, and it
+  # is not evidence that anything was refused.
+  #
+  # X-1 measured 86 of 198 catches to be snapshot-only, so the combined figure
+  # this harness reported for two sessions was 198 of 198 and the behavioural
+  # figure was 112 of 198.
+  run_suite() {   # $1 = on|off ; sets RC and OKS
+    if [ "$1" = off ]; then
+      docker exec -i -e PGOPTIONS="-c vsv.snapshots=off" "$CONTAINER" \
+        psql -U postgres -v ON_ERROR_STOP=1 -d "$WORK" \
+        < tests/schema_assertions.sql > /tmp/.mutate-run.log 2>&1
+    else
+      docker exec -i "$CONTAINER" \
+        psql -U postgres -v ON_ERROR_STOP=1 -d "$WORK" \
+        < tests/schema_assertions.sql > /tmp/.mutate-run.log 2>&1
+    fi
+    RC=$?
+    OKS=$(grep -c '^NOTICE:  ok' /tmp/.mutate-run.log)
+  }
 
-  if [ "$rc" -eq 0 ]; then
-    printf '%s\t%s\n' "$class" "$label" >> "$survivors"
-    printf '  %3d/%d  %-8s %-46s SURVIVED\n' "$i" "$total" "$class" "$label"
-  elif [ "$oks" -eq 0 ]; then
+  run_suite off
+
+  # X-1-8: a suite that did not run is not evidence about the schema. psql exits
+  # non-zero when it cannot connect, when the role is missing and when the
+  # database was dropped, exactly as it does when an assertion fails, so a
+  # harness that lost Postgres used to score every remaining mutation as caught
+  # and finish at 100 percent.
+  if [ "$RC" -ne 0 ] && [ "$OKS" -eq 0 ]; then
     echo "THE ASSERTION SUITE DID NOT RUN on mutation '$class $label', refusing to score." >&2
     grep -iE 'error|fatal' /tmp/.mutate-run.log | head -3 | sed 's/^/    /' >&2
     exit 2
-  elif grep -q 'FAIL:' /tmp/.mutate-run.log; then
-    caught[$class]=$(( ${caught[$class]:-0} + 1 ))
-    printf '  %3d/%d  %-8s %-46s caught\n' "$i" "$total" "$class" "$label"
+  fi
+
+  if [ "$RC" -ne 0 ]; then
+    # X-1-15: a mutation can break a fixture the suite needs before any assertion
+    # is reached, and the message then names the fixture rather than the defect.
+    # Still the mutated schema failing, still counted, but in its own column so
+    # the number is not read as behavioural detection when it is a not-null
+    # violation on a fixture.
+    if grep -q 'FAIL:' /tmp/.mutate-run.log; then
+      caught_b[$class]=$(( ${caught_b[$class]:-0} + 1 ))
+      printf '  %3d/%d  %-8s %-44s caught, behavioural\n' "$i" "$total" "$class" "$label"
+    else
+      caught_b[$class]=$(( ${caught_b[$class]:-0} + 1 ))
+      fixture[$class]=$(( ${fixture[$class]:-0} + 1 ))
+      printf '%s\t%s\t%s\n' "$class" "$label" \
+        "$(grep -m1 -iE '(ERROR|FATAL)' /tmp/.mutate-run.log | cut -c1-90)" >> "$fixtures"
+      printf '  %3d/%d  %-8s %-44s caught, by breaking a fixture\n' "$i" "$total" "$class" "$label"
+    fi
   else
-    caught[$class]=$(( ${caught[$class]:-0} + 1 ))
-    fixture[$class]=$(( ${fixture[$class]:-0} + 1 ))
-    printf '%s\t%s\t%s\n' "$class" "$label" \
-      "$(grep -m1 -iE '(ERROR|FATAL)' /tmp/.mutate-run.log | cut -c1-90)" >> "$fixtures"
-    printf '  %3d/%d  %-8s %-46s caught, by breaking a fixture\n' "$i" "$total" "$class" "$label"
+    run_suite on
+    if [ "$RC" -ne 0 ] && [ "$OKS" -eq 0 ]; then
+      echo "THE ASSERTION SUITE DID NOT RUN on the snapshot pass for '$class $label'." >&2
+      exit 2
+    fi
+    if [ "$RC" -ne 0 ]; then
+      caught_s[$class]=$(( ${caught_s[$class]:-0} + 1 ))
+      printf '%s\t%s\n' "$class" "$label" >> "$snaponly"
+      printf '  %3d/%d  %-8s %-44s caught by a snapshot only\n' "$i" "$total" "$class" "$label"
+    else
+      printf '%s\t%s\n' "$class" "$label" >> "$survivors"
+      printf '  %3d/%d  %-8s %-44s SURVIVED BOTH\n' "$i" "$total" "$class" "$label"
+    fi
   fi
 done < "$muts"
 
@@ -447,55 +487,79 @@ adm "drop database if exists $WORK;"
 
 # ---------------------------------------------------------------------------
 echo
-echo "| Class | Scored | Caught | Score |"
-echo "|---|---|---|---|"
-ts=0; tc=0
+echo "| Class | Scored | Behavioural | of which fixture | Snapshot only | Behavioural score |"
+echo "|---|---|---|---|---|---|"
+ts=0; tb=0; tf=0; tsn=0
 for class in check loosen unique trigger policy weaken rls logic; do
-  s=${seen[$class]:-0}; c=${caught[$class]:-0}
-  [ "$s" -eq 0 ] && continue
-  ts=$((ts + s)); tc=$((tc + c))
-  printf '| %s | %d | %d | %d%% |\n' "$class" "$s" "$c" "$(( c * 100 / s ))"
+  n=${seen[$class]:-0}; b=${caught_b[$class]:-0}; f=${fixture[$class]:-0}; sn=${caught_s[$class]:-0}
+  [ "$n" -eq 0 ] && continue
+  ts=$((ts + n)); tb=$((tb + b)); tf=$((tf + f)); tsn=$((tsn + sn))
+  printf '| %s | %d | %d | %d | %d | %d%% |\n' "$class" "$n" "$b" "$f" "$sn" "$(( b * 100 / n ))"
 done
-[ "$ts" -gt 0 ] && printf '| **Total** | **%d** | **%d** | **%d%%** |\n' "$ts" "$tc" "$(( tc * 100 / ts ))"
+[ "$ts" -gt 0 ] && printf '| **Total** | **%d** | **%d** | **%d** | **%d** | **%d%%** |\n' \
+  "$ts" "$tb" "$tf" "$tsn" "$(( tb * 100 / ts ))"
 
 n_surv=$(grep -c . "$survivors" 2>/dev/null); n_surv=${n_surv:-0}
 n_inap=$(grep -c . "$inapplicable" 2>/dev/null); n_inap=${n_inap:-0}
 n_degen=$(grep -c . "$degenerate" 2>/dev/null); n_degen=${n_degen:-0}
+n_fix=$(grep -c . "$fixtures" 2>/dev/null); n_fix=${n_fix:-0}
+n_snap=$(grep -c . "$snaponly" 2>/dev/null); n_snap=${n_snap:-0}
 
 echo
 if [ "$n_surv" -gt 0 ]; then
-  echo "survivors, which are the defects this suite would not notice:"
+  echo "survived both passes, which are the defects nothing in this suite would notice:"
   sort "$survivors" | awk -F'\t' '{printf "  %-8s %s\n", $1, $2}'
 else
-  echo "no survivors: every scored mutation was caught."
+  echo "nothing survived both passes."
+fi
+
+if [ "$n_snap" -gt 0 ]; then
+  echo
+  echo "$n_snap caught only by a snapshot. A pinned catalog comparison noticed the catalog"
+  echo "moved. Nothing refused anything, and these are not evidence about behaviour:"
+  sort "$snaponly" | awk -F'\t' '{printf "  %-8s %s\n", $1, $2}'
+fi
+
+if [ "$n_fix" -gt 0 ]; then
+  echo
+  echo "$n_fix of the behavioural catches are the mutation breaking a fixture the suite needs,"
+  echo "so the message names the fixture rather than the defect:"
+  sort "$fixtures" | awk -F'\t' '{printf "  %-8s %-44s %s\n", $1, $2, $3}'
 fi
 
 if [ "$n_degen" -gt 0 ]; then
   echo
-  echo "$n_degen mutation(s) applied and changed nothing, so they are excluded from both columns:"
+  echo "$n_degen mutation(s) applied and changed nothing, so they are excluded from every column:"
   sort "$degenerate" | awk -F'\t' '{printf "  %-8s %s\n", $1, $2}'
 fi
 
 if [ "$n_inap" -gt 0 ]; then
   echo
-  echo "$n_inap mutation(s) could not be applied at all, so they are excluded from both columns:"
+  echo "$n_inap mutation(s) could not be applied at all, so they are excluded from every column:"
   sort "$inapplicable" | awk -F'\t' '{printf "  %-8s %s\n", $1, $2}'
 fi
 
-# The score never appears on its own. A bare percentage from this tool is a
-# load-bearing number, it has been wrong in both directions inside one session,
-# and it should not be possible to quote one without what it excluded.
+# Two numbers, never one, and never a bare percentage. A single figure from this
+# tool was read for two sessions as a statement about the kernel when 43 percent
+# of it was a string comparison noticing that a list of names had grown.
 echo
 excluded=$(( n_degen + n_inap ))
 if [ "$ts" -eq 0 ]; then
   echo "NO SCORE: nothing was scored. $excluded mutation(s) were excluded."
   exit 2
 fi
-printf '%d of %d scored mutations caught (%d%%), from %d enumerated.\n' \
-  "$tc" "$ts" "$(( tc * 100 / ts ))" "$total"
+echo "SCORES, $SCOPE, from $total enumerated:"
+printf '  behavioural  %d of %d (%d%%)   the gate. An assertion exercised the schema and refused.\n' \
+  "$tb" "$ts" "$(( tb * 100 / ts ))"
+printf '  snapshot     %d of %d (%d%%)   a change detector. A pinned list noticed the catalog moved.\n' \
+  "$tsn" "$ts" "$(( tsn * 100 / ts ))"
+printf '  neither      %d of %d\n' "$n_surv" "$ts"
+if [ "$tf" -gt 0 ]; then
+  printf '  of the behavioural figure, %d are fixture breakage rather than detection.\n' "$tf"
+fi
 if [ "$excluded" -gt 0 ]; then
-  printf 'NOT A BARE SCORE: %d excluded, %d degenerate and %d inapplicable, listed above.\n' \
+  printf '  %d excluded, %d degenerate and %d inapplicable, listed above.\n' \
     "$excluded" "$n_degen" "$n_inap"
 else
-  echo 'Nothing was excluded: every enumerated mutation was applied and changed something.'
+  echo '  nothing excluded: every enumerated mutation applied and changed something.'
 fi
