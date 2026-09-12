@@ -46,8 +46,40 @@ backspace byte. The script parses, `grep -n` prints the line as though the backs
 there, and the check silently matches nothing. Build such strings with `chr(92)` or use an
 editor tool. Detect it by counting `0x08` bytes, not by reading the line.
 
-**A check nobody has watched fail is not a check.** Both of the above were found by break
-tests and neither would have been found by reading.
+**Record predictions before measuring, then report them against the result.** W-2 predicted
+the mutation score at 55 to 75 percent and got 24, and disclosing that is what made the rest
+of that report worth reading. W-3 dropped the habit and said so, which is the next best
+thing and not as good.
+
+**An assertion written for a theory that turns out wrong gets deleted, not kept.** An
+assertion that passes for a reason other than the one it states adds one to a count and
+subtracts from what the count means. W-3 wrote one for a theory about reserved words,
+discovered by probe that the theory was wrong, and deleted it rather than keeping a green
+line.
+
+**A check nobody has watched fail is not a check.** The first two rules above were both
+found by break tests and neither would have been found by reading.
+
+## Predictions for W-4, recorded before measuring
+
+Per the rule above, written down before phase 1 ran.
+
+1. **Phase 1 will not move the percentage and will move the denominator.** The two specific
+   defects W-4 names were both already fixed in W-3, so what is left is generalising
+   degeneracy detection and making the output refuse to print a bare score. I expect the
+   score to stay at 100 percent with roughly 20 mutations newly named as excluded, being the
+   19 degenerate `weaken` ones that are currently dropped at enumeration time and the one
+   inapplicable unique constraint.
+2. **Phase 2 will find a fourth instance, and more than one.** I expect two to five check
+   constraints of the shape `X <> 'literal' or <expr that can be null>`, because that is the
+   shape `operation_has_an_effect` has and it is the natural way to write a conditional
+   constraint in SQL. I do not expect any `security definer` boolean function to have a
+   null-returning path, because `0022` rewrote the two that did.
+3. **Phase 3 will trip the pinned assertions from W-3 deliberately, and that is the
+   protection working rather than a problem.** I also expect the conversion to introduce at
+   least one new instance of the phase 2 class, because turning a closed enum into a lookup
+   is precisely the operation that makes a previously unrepresentable value representable as
+   a missing row.
 
 ## The rules this work runs under
 
