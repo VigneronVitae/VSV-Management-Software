@@ -198,12 +198,15 @@ if [ -n "$claim" ] && [ "$claim" != "$want" ]; then
   fail "CLAUDE.md: says '$claim entries' in the compost ledger; there are $n_compost ($want)"
 fi
 
-# docs/review is skipped entirely here rather than only its prompts and
-# reports, because the archive README states counts about c3eae3c and those
-# are history rather than claims about now.
+# docs/review and docs/session-reports are skipped entirely here. The archive
+# README states counts about c3eae3c, and a session report describes the tree as
+# it stood on a date and is append-only by the convention in its own index. Both
+# are history rather than claims about now, and a count check that cannot tell
+# the difference would force history to be rewritten to stay green.
+history() { case "$1" in docs/review/*|docs/session-reports/*) return 0 ;; *) return 1 ;; esac; }
 n_files=$(tracked | grep -c .)
 for f in $(tracked); do
-  case "$f" in docs/review/*) continue ;; esac
+  history "$f" && continue
   [ -f "$f" ] || continue
   for claimed in $(grep -o '[0-9][0-9]* tracked files' "$f" 2>/dev/null | awk '{print $1}' | sort -u); do
     [ "$claimed" = "$n_files" ] || fail "$f: says $claimed tracked files; there are $n_files"
@@ -212,7 +215,7 @@ done
 
 n_migrations=$(ls supabase/migrations/*.sql 2>/dev/null | grep -c .)
 for f in $(tracked); do
-  case "$f" in docs/review/*) continue ;; esac
+  history "$f" && continue
   [ -f "$f" ] || continue
   for claimed in $(grep -o '[0-9][0-9]* migrations' "$f" 2>/dev/null | awk '{print $1}' | sort -u); do
     [ "$claimed" = "$n_migrations" ] || fail "$f: says $claimed migrations; there are $n_migrations"

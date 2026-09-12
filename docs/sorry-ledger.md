@@ -16,12 +16,21 @@ worse outcome than producing none.
 
 ## Open
 
-**S-1. Topping lineage threshold undecided.**
+**S-1. The topping lineage threshold is one hundred percent, and nobody chose it.**
 Strictly, topping makes every barrel a two-parent node, which produces thousands of
 edges and is unusable. Below some percentage the volume and source are recorded
-without writing lineage. That percentage is not chosen. *Resolves when:* a threshold
-is set explicitly, with the reason recorded. *Load-bearing:* affects whether block
-composition on a topped barrel is honest.
+without writing lineage, and above it lineage is written. This entry used to say that
+percentage was not chosen. It was, silently: `0004` seeds the `topping` operation with
+`"effect": "treatment"`, a treatment writes no lineage by definition, and so no amount
+of topping wine ever becomes a parent. The effective threshold is one hundred percent
+and it is a consequence of the effect classification rather than a decision about wine.
+That is the correction; the gap is unchanged and is now stated accurately. *Resolves
+when:* a threshold is chosen deliberately, with the reason recorded, which probably
+means topping stops being a single effect and carries a volume fraction above which it
+is a transformation. *Load-bearing:* affects whether block composition on a topped
+barrel is honest, and the current answer is that it is silently optimistic: a barrel
+topped ten times from a different lot still reports as one hundred percent its original
+block.
 
 **S-2. Conditional intervals do not fit `offset_rule`.**
 Template steps carry an interval from the previous step. "Cold crash until clear" and
