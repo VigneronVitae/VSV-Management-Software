@@ -2236,6 +2236,216 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- row level security is on, and it is the thing being on that was untested'; end $$;
+
+-- W-3's finding, and the reason this block exists: row level security could be
+-- disabled outright on 16 of 21 tables and this suite still passed. Every fix in
+-- 0021 and 0022 is an RLS fix, so A1, A3, A5, A6, A7 and A8 were all repaired
+-- against a suite that could not tell whether RLS was on at all.
+--
+-- Derived rather than listed. Every base table in public carries row level
+-- security today, so the rule is "all of them" and a table added later is
+-- covered the moment it exists rather than the moment somebody remembers.
+do $$
+declare missing text;
+begin
+  select string_agg(t.relname, ', ' order by t.relname) into missing
+    from pg_class t
+    join pg_namespace n on n.oid = t.relnamespace
+   where n.nspname = 'public' and t.relkind = 'r'
+     and not t.relrowsecurity;
+
+  if missing is not null then
+    raise exception 'FAIL: row level security is off on: %', missing;
+  end if;
+  perform test_ok('every base table in public has row level security enabled');
+end $$;
+
+-- Not forced, and that is deliberate rather than an oversight. force row level
+-- security subjects the table owner to its own policies, and the migrations, the
+-- security definer kernel functions and pg_dump all run as the owner. Forcing it
+-- would break the restore that S-29 is already about. Asserted so the absence is
+-- a decision on the record rather than a thing nobody considered.
+do $$
+declare forced text;
+begin
+  select string_agg(t.relname, ', ' order by t.relname) into forced
+    from pg_class t
+    join pg_namespace n on n.oid = t.relnamespace
+   where n.nspname = 'public' and t.relkind = 'r' and t.relforcerowsecurity;
+
+  if forced is not null then
+    raise exception
+      'FAIL: row level security is forced on %, which subjects the owner to its own policies and breaks migrations and restores', forced;
+  end if;
+  perform test_ok('row level security is enabled and not forced, so the owner can still migrate and restore');
+end $$;
+
+-- A table with row level security and no policy denies everything to everyone
+-- except the owner, silently. That is an outage that looks like an empty cellar.
+do $$
+declare bare text;
+begin
+  select string_agg(t.relname, ', ' order by t.relname) into bare
+    from pg_class t
+    join pg_namespace n on n.oid = t.relnamespace
+   where n.nspname = 'public' and t.relkind = 'r' and t.relrowsecurity
+     and not exists (
+       select 1 from pg_policies p
+        where p.schemaname = 'public' and p.tablename = t.relname);
+
+  if bare is not null then
+    raise exception 'FAIL: row level security is on with no policy at all on: %', bare;
+  end if;
+  perform test_ok('no table has row level security on and no policy, which would deny everything silently');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- the policy surface is what it was last agreed to be'; end $$;
+
+-- Two pinned facts, one about existence and one about openness. Neither replaces
+-- a behavioural probe and both catch something a probe does not: a policy
+-- silently disappearing in a schema move, and a new blanket read appearing.
+--
+-- These are the assertions that need a deliberate edit when a migration adds a
+-- policy. That friction is the point. A schema split that loses a policy should
+-- cost somebody thirty seconds of noticing rather than nothing at all.
+do $$
+declare have text; want text;
+begin
+  select count(*)::text into have from pg_policies where schemaname = 'public';
+  want := '56';
+  if have <> want then
+    raise exception
+      'FAIL: there are % policies in public and this suite was written against %. If that is deliberate, update this number and the list below in the same commit', have, want;
+  end if;
+  perform test_ok('the number of policies in public is what this suite was written against');
+end $$;
+
+-- The blanket reads, named. This is ledger A5's surface written down: every
+-- policy whose predicate is literally true. Tightening one of these is good and
+-- should still fail here, because the fix and the assertion belong in one commit.
+do $$
+declare have text; want text;
+begin
+  select coalesce(string_agg(tablename || '.' || policyname, ', ' order by tablename, policyname), '')
+    into have
+    from pg_policies
+   where schemaname = 'public' and (qual = 'true' or with_check = 'true');
+
+  want := 'app_user.app_user_read, block.block_read, event.event_read, '
+       || 'lineage.lineage_insert, lineage.lineage_read, location.location_read, '
+       || 'node.node_insert, party.party_read, placement.placement_insert, '
+       || 'placement.placement_read, subject_resolver.subject_resolver_read, '
+       || 'task.task_read, task_claim_log.task_claim_log_read, template.template_read, '
+       || 'template_step.template_step_read, term.term_read, vessel.vessel_read, '
+       || 'vessel_code.vessel_code_read, vessel_type_note.vessel_type_note_read';
+
+  if have <> want then
+    raise exception
+      E'FAIL: the set of wide-open policies changed.\nnow:  %\nwas:  %', have, want;
+  end if;
+  perform test_ok('the nineteen wide-open policies are exactly the ones ledger A5 and A23 describe');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- the writes a cellar user is supposed to have'; end $$;
+
+-- Ledger A7 says node, lineage and placement insertion is admission by token
+-- alone. It is still open and fixing it is out of scope here. What is asserted is
+-- the half that is intended: a cellar user creating a lot through the press
+-- screen must work, which is what makes dropping those three policies a caught
+-- mutation rather than a silent one.
+do $$
+declare n int;
+begin
+  perform test_act_as('00000000-0000-0000-0000-00000000a002');   -- the cellar user
+  set local role authenticated;
+
+  insert into node (id, stage, name, quantity, unit)
+    values ('00000000-0000-0000-0000-0000000000d1', 'ferment', 'Cellar made this', 100, 'L');
+  insert into placement (id, node_id, vessel_id, volume_l)
+    values ('00000000-0000-0000-0000-0000000000d2',
+            '00000000-0000-0000-0000-0000000000d1',
+            '00000000-0000-0000-0000-0000000000c2', 100);
+  insert into lineage (parent_id, child_id, fraction)
+    values ('00000000-0000-0000-0000-00000000b001',
+            '00000000-0000-0000-0000-0000000000d1', 1.0);
+
+  reset role;
+
+  select count(*) into n from node where id = '00000000-0000-0000-0000-0000000000d1';
+  if n <> 1 then raise exception 'FAIL: a cellar user could not create a lot'; end if;
+  perform test_ok('a cellar user may create a lot, place it and give it a parent, which is the press screen');
+end $$;
+
+-- And the half that is the defect, documented rather than endorsed. A client
+-- login can do the same thing, which is A7. Written so that fixing A7 fails this
+-- assertion on purpose: the fix and the assertion belong in one commit, and a
+-- suite that quietly kept passing through the fix would be worse than one that
+-- stops.
+do $$
+declare inserted boolean := false;
+begin
+  perform test_act_as('00000000-0000-0000-0000-00000000a003');   -- the client login
+  set local role authenticated;
+  begin
+    insert into node (id, stage, name, quantity, unit)
+      values ('00000000-0000-0000-0000-0000000000d3', 'ferment', 'Client made this', 10, 'L');
+    inserted := true;
+  exception when insufficient_privilege then
+    inserted := false;
+  end;
+  reset role;
+
+  if not inserted then
+    raise exception
+      'FAIL: a client can no longer insert a node, which means A7 was fixed. That is good; update this assertion to say so.';
+  end if;
+  perform test_ok('a client can still insert a node, which is A7 open and asserted so a fix cannot land unnoticed');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- the photo bucket refuses a client, where storage exists'; end $$;
+
+-- A6. The catalog half was asserted when 0022 landed; this is the behavioural
+-- half, and it can only run where the storage schema exists, which is a real
+-- Supabase and not the shim. Guarded the same way 0005 and 0022 guard, so the
+-- suite says what it did not test rather than passing quietly.
+do $$
+declare visible int;
+begin
+  if not exists (select 1 from information_schema.schemata where schema_name = 'storage') then
+    raise notice 'ok   no storage schema here, so the photo bucket is not probed';
+    return;
+  end if;
+
+  insert into storage.objects (bucket_id, name, owner)
+  values ('vessel-photos', '00000000-0000-0000-0000-0000000000c2/photo.jpg', null)
+  on conflict do nothing;
+
+  perform test_act_as('00000000-0000-0000-0000-00000000a003');   -- the client login
+  set local role authenticated;
+  select count(*) into visible from storage.objects where bucket_id = 'vessel-photos';
+  reset role;
+
+  if visible <> 0 then
+    raise exception 'FAIL: a client login can read % vessel photo(s)', visible;
+  end if;
+  perform test_ok('a client login reads no vessel photographs, which is A6 probed rather than read');
+
+  perform test_act_as('00000000-0000-0000-0000-00000000a002');   -- a cellar user
+  set local role authenticated;
+  select count(*) into visible from storage.objects where bucket_id = 'vessel-photos';
+  reset role;
+
+  if visible = 0 then
+    raise exception 'FAIL: a cellar user cannot see vessel photographs either, so the bucket is useless';
+  end if;
+  perform test_ok('a cellar user reads vessel photographs, so the fix did not close the bucket to everyone');
+end $$;
+
+-- ---------------------------------------------------------------------------
 do $$ begin raise notice '--- functions survive a restore'; end $$;
 
 -- pg_dump sets search_path to empty at the top of every dump, on purpose, so a

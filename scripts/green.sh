@@ -130,12 +130,16 @@ else
 fi
 
 # The two counts are allowed to differ, and by exactly one thing: the scratch
-# database has no storage schema, so the vessel-photos policies report that they
-# were not asserted instead of asserting two things. Any other gap is a real one.
-if [ "$scratch_n" -gt 0 ] && [ "$copy_n" -gt 0 ] && [ "$copy_n" -ne "$scratch_n" ]; then
-  diff=$((copy_n - scratch_n))
-  if [ "$diff" -ne 1 ]; then
-    bad "the two runs differ by $diff assertions; only the storage skip should differ, which is 1"
+# database has no storage schema, so each storage-guarded block emits one notice
+# saying it was skipped in place of the two assertions it would otherwise make.
+# The expected gap is therefore one per skipped block, counted from the scratch
+# run rather than written down, so adding another guarded block does not require
+# editing this number.
+if [ "$scratch_n" -gt 0 ] && [ "$copy_n" -gt 0 ]; then
+  skipped=$(grep -c 'no storage schema here' /tmp/green-assert-scratch.log)
+  actual=$((copy_n - scratch_n))
+  if [ "$actual" -ne "$skipped" ]; then
+    bad "the two runs differ by $actual assertions and $skipped storage block(s) were skipped; those should match"
   fi
 fi
 

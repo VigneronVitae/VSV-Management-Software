@@ -53,9 +53,9 @@ build on top of it. Halting with a clear write-up is a good outcome.
 
 | | |
 |---|---|
-| Last green commit | `7c6faa6`, phase 4 |
+| Last green commit | `46fd253`, W-2 session one |
 | Current migration number | `0024`, so the next one is `0025` |
-| Assertions | 138 from empty, 139 against the cellar copy |
+| Assertions | 146 from empty, 148 against the cellar copy |
 | Module migration numbering | not yet designed, phase 6 designs it |
 
 ## Phases
@@ -67,8 +67,8 @@ build on top of it. Halting with a clear write-up is a good outcome.
 | 2 | Read the unreviewed range, `0006` to `0022`, plus the mutation score | done |
 | 3 | The resolver registry, `AR-E5` | done |
 | 4 | `task_board` against the registry, `AR-E6` | done |
-| 5 | Enums to registry rows, `AR-E7` | not started |
-| 6 | The scheduling block to core, plus per-module migration numbering | not started |
+| 5 | Enums to registry rows, `AR-E7` | on hold, W-3 runs first |
+| 6 | The scheduling block to core, plus per-module migration numbering | on hold, W-3 runs first |
 | 7 | The schema split and the `public` facade, plus the `AR-B8` gate check | **blocked** |
 | 8 | The manifest and the register, plus the `AR-F5` falsifier | **blocked**, it depends on 7 |
 
@@ -291,6 +291,62 @@ the answer is a per-type contract view and a real lateral join over the union, w
 `create or replace view` rather than drop and create, so the column list is unchanged, no
 grant is lost, and the client keeps working untouched.
 
+## W-3: making the suite police the schema
+
+W-2 phases 5 through 8 are on hold until this finishes. W-3's phases are A, B, C, D and
+they are tracked here alongside W-2's.
+
+| Phase | What | State |
+|---|---|---|
+| A | RLS assertions | done |
+| B | Constraint assertions | not started |
+| C | Remeasure and decide whether phase 7's gate is met | not started |
+| D | A22, the `E-4` repoint, the standing rule | not started |
+
+### Phase A: row level security is now asserted to be on
+
+The set-independent fact W-3 is built around: row level security could be disabled on 16
+of 21 tables and the suite still passed. It is now 0 of 22.
+
+Derived rather than listed, because every base table in `public` carries row level
+security, so the rule is "all of them" and a table added later is covered the moment it
+exists rather than the moment somebody remembers. Three class assertions: every base table
+has RLS, none has it forced, and no table has it on with no policy at all, which would
+deny everything silently and look like an empty cellar.
+
+Two pinned facts about the policy surface: the count, and the exact list of policies whose
+predicate is literally `true`, which is ledger A5's surface written down. Both need a
+deliberate edit when a migration changes them, and that friction is the point.
+
+The behavioural half of A6 now exists. The catalog half was asserted when `0022` landed;
+this probes `storage.objects` as a client and as a cellar user, guarded on the storage
+schema the same way `0005` and `0022` guard, so it runs against the cellar and reports
+itself skipped against the shim.
+
+A7 is asserted in both directions and one of them is deliberately the defect. A cellar
+user creating a lot, placing it and giving it a parent must work, which is what makes
+dropping those three policies a caught mutation. A client can still do the same thing,
+which is A7 open, and that assertion is written to fail when A7 is fixed so the fix and
+the assertion land in one commit.
+
+**Measured, not reasoned:** `bash scripts/mutate.sh rls` reports 22 of 22 caught, 100
+percent.
+
+### The harness gained a class, and it changes what the numbers mean
+
+Dropping a policy and weakening one are different tests and only the second is the failure
+mode a schema move produces. A pinned list of policy names catches every drop and nothing
+else; a policy that is still there and has stopped refusing anything is invisible to it.
+
+`weaken` recreates each policy with the same name, command and roles and a predicate of
+`true`. Nineteen of the fifty six are excluded because they are already `true`, so
+weakening them injects no defect at all; counting those as survivors would have
+understated the suite by nineteen and that would have been the same mistake this whole
+session exists to correct.
+
+**`bash scripts/mutate.sh weaken` reports 37 of 37 caught, 100 percent.** Behavioural
+policy coverage is strong, which the 20 percent drop score did not show and could not.
+
 ## Decisions
 
 | Decision | Why |
@@ -306,6 +362,9 @@ grant is lost, and the client keeps working untouched.
 | `scripts/mutate.sh` is committed | `G-5` measured and did not commit, so its number could not be reproduced |
 | Mutations enumerated from the catalog, not listed | A written list goes stale; this set grows with the schema |
 | `task_board` uses a scalar call, not a lateral join | A lateral join needs the relation at plan time and a view cannot have it |
+| The harness gained a `weaken` class | Dropping a policy and weakening one are different tests; only the second is what a schema move does |
+| Degenerate `weaken` mutations excluded | A policy already `true` cannot be weakened, and counting it as survived understates the suite |
+| `green.sh` derives the expected assertion gap | Adding another storage-guarded block should not require editing a number |
 | A22 filed rather than fixed | Whether a cellar hand may label a barrel is the winemaker's call, and phase 2 files rather than fixes |
 
 ## A tooling trap that has now cost time twice

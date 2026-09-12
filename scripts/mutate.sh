@@ -27,7 +27,13 @@
 #   unique       every unique constraint and unique index, dropped
 #   trigger      every user trigger, disabled
 #   policy       every row level security policy, dropped
+#   weaken       every policy recreated with a predicate of true
 #   rls          row level security itself, disabled per table
+#
+# policy and weaken are not the same test and the difference matters. A pinned
+# list of policy names catches every drop and nothing else; only weaken catches a
+# policy that is still present and has stopped refusing anything, which is the
+# failure mode a schema move actually produces.
 #
 # A mutation that cannot be applied at all, usually because something depends on
 # it, is reported separately and counted in neither column, because it is not a
@@ -123,6 +129,29 @@ select 'policy' || chr(9) || tablename || '.' || policyname || chr(9) ||
   from pg_policies where schemaname = 'public'
  order by tablename, policyname;" >> "$muts"
 
+# Weakening rather than dropping. A pinned policy list catches a policy that
+# disappears; only this catches one that is still there and no longer refuses
+# anything, which is the failure mode a schema move actually produces. Recreated
+# with the same name, same command, same roles, and a predicate of true.
+q "$BASE" "
+select 'weaken' || chr(9) || tablename || '.' || policyname || chr(9) ||
+       format('drop policy %I on public.%I; create policy %I on public.%I for %s to %s%s%s',
+              policyname, tablename, policyname, tablename,
+              case cmd when 'ALL' then 'all' when 'SELECT' then 'select'
+                       when 'INSERT' then 'insert' when 'UPDATE' then 'update'
+                       else 'delete' end,
+              array_to_string(roles, ', '),
+              case when qual is not null then ' using (true)' else '' end,
+              case when with_check is not null or cmd in ('INSERT','ALL','UPDATE')
+                   then ' with check (true)' else '' end)
+  from pg_policies where schemaname = 'public'
+   -- A policy that is already wide open cannot be weakened. Recreating
+   -- using (true) where the predicate is already true injects no defect, so
+   -- counting it as survived would understate the suite by nineteen. Excluded
+   -- here rather than explained in the results.
+   and not (coalesce(qual, 'true') = 'true' and coalesce(with_check, 'true') = 'true')
+ order by tablename, policyname;" >> "$muts"
+
 q "$BASE" "
 select 'rls' || chr(9) || t.relname || chr(9) ||
        format('alter table public.%I disable row level security', t.relname)
@@ -175,7 +204,7 @@ echo
 echo "| Class | Mutations | Caught | Score |"
 echo "|---|---|---|---|"
 ts=0; tc=0
-for class in check unique trigger policy rls; do
+for class in check unique trigger policy weaken rls; do
   s=${seen[$class]:-0}; c=${caught[$class]:-0}
   [ "$s" -eq 0 ] && continue
   ts=$((ts + s)); tc=$((tc + c))
@@ -186,7 +215,7 @@ done
 echo
 echo "survivors, which are the defects this suite would not notice:"
 sort "$survivors" | awk -F'\t' '{printf "  %-8s %s\n", $1, $2}'
-n_inap=$(grep -c . "$inapplicable" 2>/dev/null || echo 0)
+n_inap=$(grep -c . "$inapplicable" 2>/dev/null); n_inap=${n_inap:-0}
 if [ "$n_inap" -gt 0 ]; then
   echo
   echo "$n_inap mutation(s) could not be applied and are counted in neither column:"
