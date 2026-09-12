@@ -1,6 +1,6 @@
 ---
 Type: ledger
-Version: 1.3
+Version: 1.4
 Purpose: "Deduplicates the thirteen review reports into one entry per defect, keyed by the database or code identifier rather than by line number, so entries survive the schema reorganization."
 Depends on: [docs/architecture-rulings.md, docs/sorry-ledger.md, docs/review/README.md]
 Depended on by: [docs/status-ledger.md, supabase/migrations/0021_cellar_write_paths.sql, supabase/migrations/0022_admission_and_authorship.sql, scripts/verify.sh, docs/session-reports/modularization-progress.md, supabase/migrations/0025_bind_an_unbound_code.sql]
@@ -9,8 +9,22 @@ Depended on by: [docs/status-ledger.md, supabase/migrations/0021_cellar_write_pa
 # Findings Ledger
 
 Thirteen reports, three engines, roughly 200 findings, 73 distinct defects, all against
-`c3eae3c7c262544e4b2e29526b513c964c6852fe`. Five more were added by the phase 2 read of
-migrations `0006` to `0022`, which no review had seen, bringing it to 78.
+`c3eae3c7c262544e4b2e29526b513c964c6852fe`, which was five migrations and forty two files.
+Five more were added by the phase 2 read of migrations `0006` to `0022`, which no review
+had seen, and two more, A24 and A25, by the phase B and phase 2 reads in W-3 and W-4. That
+is 80.
+
+**The tree this describes has moved a long way from the tree it was written against.** It
+is now 27 migrations, `0001` through `0027`, and the head is
+`45eaed57a43f77b327674475b2b4c1c990d8bb1b` on branch `claude/sql-files-to-markdown-i31rob`.
+`docs/review/CURRENT-BASELINE.md` states the current facts and supersedes the canary block
+in every archived prompt. This ledger is still keyed by identifier rather than by line
+number precisely so it survives that, and it has: every entry below is still greppable.
+
+Seventeen entries have been closed since the review and the "What has been closed" section
+below names each with the migration that did it. Two entries were made worse by work done
+after the review and are named there too, which is the half a progress table usually
+omits.
 
 ## Why this is keyed by identifier
 
@@ -267,6 +281,19 @@ import rule all currently hold, they are simply enforced by nothing.
 ---
 
 ## Changelog
+
+### 1.4 (2026-09-12)
+
+*Cause: W-5, a handoff session. The ledger's own front matter still described a tree of
+forty two files and five migrations, which is the tree it was written against and not the
+tree it now governs.*
+
+**Front matter corrected only.** The entries are not re-derived. What changed is the
+statement of what this document is about: 27 migrations rather than five, the current head
+named, and a pointer to `docs/review/CURRENT-BASELINE.md` for the rest. The count of
+distinct defects is 80 rather than 78, which corrects an arithmetic slip in 1.3: A24 and
+A25 were added and the total was not moved.
+
 
 ### 1.1 (2026-09-12)
 

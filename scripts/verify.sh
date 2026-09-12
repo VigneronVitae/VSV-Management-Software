@@ -213,12 +213,19 @@ if [ -n "$claim" ] && [ "$claim" != "$want" ]; then
   fail "CLAUDE.md: says '$claim entries' in the compost ledger; there are $n_compost ($want)"
 fi
 
-# docs/review and docs/session-reports are skipped entirely here. The archive
-# README states counts about c3eae3c, and a session report describes the tree as
-# it stood on a date and is append-only by the convention in its own index. Both
-# are history rather than claims about now, and a count check that cannot tell
-# the difference would force history to be rewritten to stay green.
-history() { case "$1" in docs/review/*|docs/session-reports/*) return 0 ;; *) return 1 ;; esac; }
+# History is skipped here: the archived prompts and reports, the archive README
+# which states counts about c3eae3c, and the session reports, which describe the
+# tree as it stood on a date and are append-only by their own convention. A count
+# check that cannot tell the difference would force history to be rewritten to
+# stay green.
+#
+# docs/review/CURRENT-BASELINE.md is deliberately NOT exempt. It is the one file
+# in docs/review whose whole subject is now rather than then, and its counts are
+# the first thing a reviewer will trust, so they are checked like any other.
+history() { case "$1" in
+    docs/review/prompts/*|docs/review/reports/*|docs/review/README.md|docs/session-reports/*) return 0 ;;
+    *) return 1 ;;
+  esac; }
 n_files=$(tracked | grep -c .)
 for f in $(tracked); do
   history "$f" && continue

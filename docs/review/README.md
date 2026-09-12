@@ -1,7 +1,7 @@
 ---
 Type: reference
 Purpose: "Explains what the review corpus is, how to read a report against a tree that has moved, and why the findings ledger rather than any report is the thing to act on."
-Depends on: []
+Depends on: [docs/review/CURRENT-BASELINE.md]
 Depended on by: [docs/findings-ledger.md]
 ---
 
