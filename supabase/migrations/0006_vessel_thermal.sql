@@ -7,7 +7,7 @@
 -- Depends on: [supabase/migrations/0001_core_schema.sql,
 --              supabase/migrations/0005_account_and_walk.sql,
 --              packages/cellar/docs/spec.md]
--- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql]
+-- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql, supabase/migrations/0007_vessel_edit.sql, supabase/migrations/0016_lot_owner_name.sql]
 -- Open sorries: S-18 (thermal state is set at creation, records no
 --               setpoint_change event, and cannot be changed afterwards)
 -- ---------------------------------------------------------------------------

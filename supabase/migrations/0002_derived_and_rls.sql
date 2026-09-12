@@ -8,7 +8,10 @@
 --                 docs/status-ledger.md,
 --                 supabase/migrations/0004_terms_and_effects.sql,
 --                 supabase/migrations/0005_account_and_walk.sql,
---                 tests/schema_assertions.sql]
+--                 tests/schema_assertions.sql,
+--                 supabase/migrations/0015_fork_and_history.sql,
+--                 supabase/migrations/0017_vessel_state_rls.sql,
+--                 supabase/migrations/0021_cellar_write_paths.sql]
 -- Axioms enforced: T0-2 (derived over stored), T0-4 (a producer cannot grant
 --                  itself standing), T1-1 (pickers, not text fields)
 -- Open sorries: S-7 (RLS untested against a real cellar user)

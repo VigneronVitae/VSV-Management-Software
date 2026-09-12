@@ -3,7 +3,7 @@ Type: ledger
 Version: 1.0
 Purpose: "Deduplicates the thirteen review reports into one entry per defect, keyed by the database or code identifier rather than by line number, so entries survive the schema reorganization."
 Depends on: [docs/architecture-rulings.md, docs/sorry-ledger.md, docs/review/README.md]
-Depended on by: [docs/status-ledger.md]
+Depended on by: [docs/status-ledger.md, supabase/migrations/0021_cellar_write_paths.sql]
 ---
 
 # Findings Ledger

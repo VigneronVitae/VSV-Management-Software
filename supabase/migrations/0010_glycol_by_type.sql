@@ -5,7 +5,7 @@
 --           details. Neither hides it, because somebody does occasionally
 --           jacket a barrel and the form should not call them wrong."
 -- Depends on: [supabase/migrations/0009_vessel_type_form.sql]
--- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql]
+-- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql, supabase/migrations/0011_vessel_type_fields.sql]
 -- Open sorries: none new
 -- ---------------------------------------------------------------------------
 

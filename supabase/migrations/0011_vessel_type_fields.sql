@@ -9,7 +9,7 @@
 --              supabase/migrations/0009_vessel_type_form.sql,
 --              supabase/migrations/0010_glycol_by_type.sql,
 --              packages/cellar/docs/spec.md]
--- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql]
+-- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql, supabase/migrations/0012_vessel_type_notes.sql]
 -- Axioms enforced: T1-1 (pickers, not text fields), T0-2 (the database refuses
 --                  what is meaningless rather than the screen declining to ask)
 -- Open sorries: S-20 (a field descriptor carries unit, and unit is display only)

@@ -5,7 +5,7 @@
 --           caller happens to have the right search_path, and a restore does
 --           not: pg_dump sets it to empty on purpose."
 -- Depends on: [supabase/migrations/0019_procedures.sql]
--- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql]
+-- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql, supabase/migrations/0021_cellar_write_paths.sql]
 -- Axioms enforced: none. This is the schema being robust rather than correct.
 -- Open sorries: none new
 -- ---------------------------------------------------------------------------

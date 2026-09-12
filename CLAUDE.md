@@ -51,7 +51,7 @@ costs an afternoon. A bug in intake costs a bin that cannot be reconstructed.
   these, stop and read compost entry C-3 first.
 - **Events are append-only.** Corrections are new events. Do not add an update path
   for cellar users, however much simpler it looks.
-- **Check the compost ledger before proposing an approach.** Five entries, each with
+- **Check the compost ledger before proposing an approach.** Eight entries, each with
   a reactivation condition. If your idea is in there, either meet the condition
   explicitly or pick something else. Rebuilding a killed approach without addressing
   why it died is the specific failure this file exists to prevent.

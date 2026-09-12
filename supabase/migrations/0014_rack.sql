@@ -9,7 +9,7 @@
 --              supabase/migrations/0004_terms_and_effects.sql,
 --              supabase/migrations/0013_close_on_empty.sql,
 --              packages/cellar/docs/spec.md]
--- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql]
+-- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql, supabase/migrations/0015_fork_and_history.sql, supabase/migrations/0021_cellar_write_paths.sql]
 -- Axioms enforced: T0-2 (loss is derived, never stored), T0-3 (provenance on
 --                  every event), T0-5 (append only)
 -- Open sorries: S-21 (quantity stored and derivable), S-22 (a blend across

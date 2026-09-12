@@ -53,6 +53,27 @@ as a matter of course, so divergence is the norm and versioning would answer a q
 nobody asks.
 *Surviving fragment:* `created_from` on the task, recording that a step was seeded
 rather than added by hand.
+*Reactivate if:* a template is edited while lots are in flight and somebody is
+surprised by what changed under them. The kill rests on divergence being the norm, so
+nobody reading a lot's steps expects them to match the template. The moment a person
+says "that is not what this lot was supposed to do", the template stopped being an
+autopopulator and started being a claim, and a version on the lot is how a claim is
+held still. *Written by the agent, not the winemaker.*
+
+**C-5. Pick as the atomic intake unit.**
+*Tried:* modelling each pick as a lot, with three Pinot Gris picks as one lot carrying
+a pick attribute.
+*Killed by:* bins carry blocks, and press loads are assembled from bins across blocks,
+so the bin is atomic and the pick is not. Also, a lot is created by the operation that
+combines material, not by arrival: two days of Riesling pressed together is one lot,
+and modelling it otherwise would force a split that never happened.
+*Reactivate if:* a pick needs to be addressable in its own right rather than derivable
+from the bins that arrived under it. The cases that would do it are commercial rather
+than structural: a grower paid by the pick, a pick rejected at the door after some of
+its bins are already weighed in, or a harvest record that has to be filed per pick. All
+three ask a question about the pick itself, which a set of bins can answer only by
+being grouped, and a grouping that is asked about is a thing. *Written by the agent,
+not the winemaker.*
 
 **C-6. Configuration screens for the term vocabulary.**
 *Tried:* admin screens for creating, editing, reordering and deactivating terms:
@@ -121,11 +142,3 @@ A buyer wants to know a barrel is sound rather than who owned what, and both are
 by exporting each event's kind and date while reducing its subject to the opaque token.
 The buyer then derives "no off aroma in six years" from a complete list rather than
 being told it, which needs no key at all and is worth more than the sealed version.
-
-**C-5. Pick as the atomic intake unit.**
-*Tried:* modelling each pick as a lot, with three Pinot Gris picks as one lot carrying
-a pick attribute.
-*Killed by:* bins carry blocks, and press loads are assembled from bins across blocks,
-so the bin is atomic and the pick is not. Also, a lot is created by the operation that
-combines material, not by arrival: two days of Riesling pressed together is one lot,
-and modelling it otherwise would force a split that never happened.

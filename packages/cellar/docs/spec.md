@@ -2,7 +2,7 @@
 Type: specification
 Purpose: "Specifies the winery production app's object model, interaction modes, and build order, as the single source of design truth every other document cites."
 Depends on: []
-Depended on by: [CLAUDE.md, README.md, docs/architecture-rulings.md, docs/methodology-lineage.md, docs/status-ledger.md, docs/sorry-ledger.md, docs/compost-ledger.md, supabase/migrations/0001_core_schema.sql, supabase/migrations/0002_derived_and_rls.sql, supabase/migrations/0003_parties_and_products.sql, supabase/migrations/0004_terms_and_effects.sql, supabase/migrations/0005_account_and_walk.sql]
+Depended on by: [CLAUDE.md, README.md, docs/architecture-rulings.md, docs/methodology-lineage.md, docs/status-ledger.md, docs/sorry-ledger.md, docs/compost-ledger.md, supabase/migrations/0001_core_schema.sql, supabase/migrations/0002_derived_and_rls.sql, supabase/migrations/0003_parties_and_products.sql, supabase/migrations/0004_terms_and_effects.sql, supabase/migrations/0005_account_and_walk.sql, supabase/migrations/0006_vessel_thermal.sql, supabase/migrations/0007_vessel_edit.sql, supabase/migrations/0008_fill_vessel.sql, supabase/migrations/0009_vessel_type_form.sql, supabase/migrations/0011_vessel_type_fields.sql, supabase/migrations/0013_close_on_empty.sql, supabase/migrations/0014_rack.sql, supabase/migrations/0015_fork_and_history.sql, supabase/migrations/0018_lot_privacy.sql, supabase/migrations/0019_procedures.sql]
 ---
 
 # Winery Production App, Spec v0.2

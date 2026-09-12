@@ -8,7 +8,7 @@
 --              supabase/migrations/0004_terms_and_effects.sql,
 --              supabase/migrations/0006_vessel_thermal.sql,
 --              packages/cellar/docs/spec.md]
--- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql]
+-- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql, supabase/migrations/0021_cellar_write_paths.sql]
 -- Axioms enforced: T0-3 (provenance on every event), T0-5 (append-only
 --                  history: the correction is a new event, never an edit)
 -- Discharges: S-18, in the half that said a thermal state could be set and

@@ -8,7 +8,15 @@
 --                 docs/status-ledger.md,
 --                 supabase/migrations/0004_terms_and_effects.sql,
 --                 supabase/migrations/0005_account_and_walk.sql,
---                 tests/schema_assertions.sql]
+--                 tests/schema_assertions.sql,
+--                 supabase/migrations/0006_vessel_thermal.sql,
+--                 supabase/migrations/0007_vessel_edit.sql,
+--                 supabase/migrations/0008_fill_vessel.sql,
+--                 supabase/migrations/0012_vessel_type_notes.sql,
+--                 supabase/migrations/0013_close_on_empty.sql,
+--                 supabase/migrations/0014_rack.sql,
+--                 supabase/migrations/0015_fork_and_history.sql,
+--                 supabase/migrations/0019_procedures.sql]
 -- Axioms enforced: T0-1 (one node type), T0-3 (provenance on every event),
 --                  T0-5 (append-only history)
 -- Open sorries: S-3 (partial parent consumption), S-4 (subject_id not a FK),

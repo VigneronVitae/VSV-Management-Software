@@ -419,6 +419,22 @@ a client correcting their own record and being told it worked is the same failur
 as a cellar user racking into a silent no-op, one principal further out.
 
 
+**S-38. No test covers a line of TypeScript.**
+`bun run test` is in the definition of done in CLAUDE.md and was not a script, so for
+eight sessions it silently ran `/usr/bin/test` with no arguments and exited zero. Seven
+of the thirteen review reports found it. It is now a script that says what is missing
+and exits non-zero, which is the same shape as `doctor` and S-4: a command that exists
+and cannot pass is honest, and a command that does not exist and appears to pass is not.
+What is actually missing is any coverage of the client. The kernel is covered by 117
+assertions; `walk.ts`, `kernel.ts`, `pickers.ts` and `scan.ts` are covered by nothing,
+and the review corpus found nineteen client defects that no test would have caught
+because there are none. *Resolves when:* either a test runner is chosen and the first
+client test exists, which needs a dependency and therefore a conversation, or the
+definition of done drops the line and says the client is checked by hand. *Load-bearing:*
+the client is where every defect a person actually meets lives, and it is the half with
+no failing test waiting for it.
+
+
 ## Discharged
 
 **S-26. `vessel_state` did not obey row level security.** *Found and closed

@@ -8,7 +8,7 @@
 --              supabase/migrations/0015_fork_and_history.sql,
 --              supabase/migrations/0017_vessel_state_rls.sql,
 --              packages/cellar/docs/spec.md]
--- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql]
+-- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql, supabase/migrations/0021_cellar_write_paths.sql]
 -- Axioms enforced: T0-1 (the database refuses, rather than the screen omitting),
 --                  T0-2 (the edge is computed, never a second copy of the lot)
 -- Open sorries: S-27 (a client with no login cannot set privacy on their own

@@ -11,7 +11,7 @@
 --              supabase/migrations/0013_close_on_empty.sql,
 --              supabase/migrations/0014_rack.sql,
 --              packages/cellar/docs/spec.md]
--- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql]
+-- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql, supabase/migrations/0018_lot_privacy.sql, supabase/migrations/0021_cellar_write_paths.sql]
 -- Axioms enforced: T0-2 (history is inherited by walking, never copied),
 --                  T0-3 (provenance on every event), T0-5 (append only)
 -- Open sorries: S-21 (quantity stored and derivable), S-24 (an event recorded

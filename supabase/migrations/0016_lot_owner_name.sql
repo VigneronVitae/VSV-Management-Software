@@ -6,7 +6,7 @@
 --           barrel full of a client's wine."
 -- Depends on: [supabase/migrations/0004_terms_and_effects.sql,
 --              supabase/migrations/0006_vessel_thermal.sql]
--- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql]
+-- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql, supabase/migrations/0017_vessel_state_rls.sql]
 -- Axioms enforced: T0-2 (derived over stored: a name resolved in the view, not
 --                  copied onto the lot)
 -- Open sorries: S-22 (a blend across owners keeps one owner_id, so this shows

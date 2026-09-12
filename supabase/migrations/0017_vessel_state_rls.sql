@@ -5,7 +5,7 @@
 --           through the vessel list, which is the screen they would open first."
 -- Depends on: [supabase/migrations/0002_derived_and_rls.sql,
 --              supabase/migrations/0016_lot_owner_name.sql]
--- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql]
+-- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql, supabase/migrations/0018_lot_privacy.sql]
 -- Axioms enforced: T0-1 (the database refuses, rather than the screen omitting)
 -- Open sorries: none new
 -- ---------------------------------------------------------------------------

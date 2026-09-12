@@ -7,7 +7,7 @@
 -- Depends on: [supabase/migrations/0001_core_schema.sql,
 --              supabase/migrations/0004_terms_and_effects.sql,
 --              packages/cellar/docs/spec.md]
--- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql]
+-- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql, supabase/migrations/0020_pin_search_path.sql]
 -- Axioms enforced: T0-2 (a duration is the difference between two timestamps
 --                  and is never stored), T0-3 (provenance on every event),
 --                  T1-1 (pickers, not text fields)

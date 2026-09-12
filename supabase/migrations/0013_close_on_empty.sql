@@ -6,7 +6,7 @@
 --           from."
 -- Depends on: [supabase/migrations/0001_core_schema.sql,
 --              packages/cellar/docs/spec.md]
--- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql]
+-- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql, supabase/migrations/0014_rack.sql, supabase/migrations/0015_fork_and_history.sql]
 -- Axioms enforced: T0-2 (derived over stored: lineage describes origin and
 --                  stops standing in for how much is left)
 -- Discharges: S-3

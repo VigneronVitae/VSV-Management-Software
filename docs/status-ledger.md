@@ -9,7 +9,7 @@ Depended on by: [CLAUDE.md, README.md]
 
 ## In one read
 
-Nothing is built. This ledger exists before the code does, which is the point: the
+Some of this is built and most of it is not, and the grades below are the only place that says which. This ledger began by saying nothing was built, which was true when it was written and stopped being true without the sentence changing, which is the failure this file exists to prevent and committed itself. The point stands: the
 boundary between designed and built should be a checkable fact from the first commit
 rather than something reconstructed later.
 
