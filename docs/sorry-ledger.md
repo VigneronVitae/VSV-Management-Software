@@ -458,6 +458,31 @@ photographs at all, which is a feature nobody has yet asked for and a limitation
 knowing before somebody does.
 
 
+**S-41. The resolver registry executes an expression it stores as text.**
+`subject_resolver.name_expression` holds a SQL fragment, `name` for a vessel or
+`vineyard || ' ' || name` for a block, and `resolve_subject_name` interpolates it into a
+dynamic query. The relation name is quoted as an identifier; an expression cannot be,
+because it is an expression. Writing the registry is admin only and the function is
+`security invoker`, so the fragment runs with the caller's own rights and this is not a
+privilege escalation: an admin who can write that row can already run the same SQL
+directly. It is still an execution surface that did not exist before, and it is the kind
+that gets wider when somebody later makes the function `security definer` for a good
+reason. *Resolves when:* either the expression is narrowed to a list of column names that
+can be quoted, which costs the `vineyard || ' ' || name` case and every other composite
+label, or the registry becomes a set of typed columns rather than a fragment. *Not
+load-bearing:* nothing escalates today, and the note exists so the next person changing
+that function's rights knows what they are widening.
+
+**S-42. Resolving a subject is one query per row.**
+`resolve_subject_name` runs a dynamic statement per call, so a board of fifty tasks is
+fifty extra queries. That is the trade `AR-I3` takes deliberately at ten users, and it is
+the reason the registry is a table and a parse step rather than a service. It stops being
+free at a size this winery is not. *Resolves when:* the board is slow enough to measure,
+at which point the answer is probably a lateral join against a per-type view rather than a
+function call, which is the same shape `task_board` uses after phase 4. *Not
+load-bearing:* fifty tasks is the whole cellar.
+
+
 ## Discharged
 
 **S-25. An account belonging to no party is staff, so a client who signs up

@@ -24,7 +24,8 @@
 --              supabase/migrations/0019_procedures.sql,
 --              supabase/migrations/0020_pin_search_path.sql,
 --              supabase/migrations/0021_cellar_write_paths.sql,
---              supabase/migrations/0022_admission_and_authorship.sql]
+--              supabase/migrations/0022_admission_and_authorship.sql,
+--              supabase/migrations/0023_subject_resolver.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
 -- Open sorries: S-7 (what this exercises is Postgres policy evaluation, not
@@ -2061,6 +2062,151 @@ begin
     raise exception 'FAIL: % photo policy(ies) admit every login', blanket;
   end if;
   perform test_ok('every vessel-photos policy asks who is looking, which is why the bucket is private');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- a subject type is registered, not compiled in'; end $$;
+
+-- AR-E5. task.subject_type and task.subject_id are a polymorphic pointer with no
+-- foreign key, which is structurally forced rather than sloppy: a core table
+-- cannot reference a module that may not be installed. The registry is how the
+-- pointer becomes checkable anyway, and the property that matters is that core
+-- names no module table declaratively, so `relation` is text and resolution goes
+-- through to_regclass.
+
+insert into location (id, name)
+  values ('00000000-0000-0000-0000-0000000000c1', 'Resolver Barn');
+insert into vessel (id, name, type_id, capacity_l)
+  values ('00000000-0000-0000-0000-0000000000c2', 'RESOLVE-1',
+          term_id('vessel_type','tank'), 500);
+
+do $$
+declare n text; v text;
+begin
+  select resolve_subject_name('location','00000000-0000-0000-0000-0000000000c1') into n;
+  if n is distinct from 'Resolver Barn' then
+    raise exception 'FAIL: a location did not resolve to its name, got %', n;
+  end if;
+  select resolve_subject_name('vessel','00000000-0000-0000-0000-0000000000c2') into v;
+  if v is distinct from 'RESOLVE-1' then
+    raise exception 'FAIL: a vessel did not resolve to its name, got %', v;
+  end if;
+  perform test_ok('a registered subject type resolves through the registry');
+
+  if resolve_subject_name('vessel', gen_random_uuid()) is not null then
+    raise exception 'FAIL: a subject id that names nothing resolved to something';
+  end if;
+  perform test_ok('a subject id that names no row resolves to null, not to an error');
+end $$;
+
+-- The registry is a table, so `relation` carrying a name is the only declarative
+-- statement core makes about a module, and it is not one Postgres records. This
+-- is the assertion that would fail if somebody helpfully changed the column to
+-- regclass, which would put the edge back into pg_depend.
+do $$
+declare t text;
+begin
+  select data_type into t from information_schema.columns
+   where table_schema = 'public' and table_name = 'subject_resolver'
+     and column_name = 'relation';
+  if t <> 'text' then
+    raise exception 'FAIL: subject_resolver.relation is %, so core declares a dependency on a module relation', t;
+  end if;
+  perform test_ok('subject_resolver.relation is text, so core names no module table declaratively');
+end $$;
+
+-- Registration is a row and an admin writes it.
+do $$
+declare r subject_resolver;
+begin
+  perform test_act_as('00000000-0000-0000-0000-00000000a002');   -- a cellar user
+  set local role authenticated;
+  begin
+    r := register_subject_resolver('location','location','name','core');
+    raise exception 'FAIL: a cellar user registered a resolver';
+  exception when insufficient_privilege then
+    perform test_ok('only an administrator may register a resolver');
+  end;
+  reset role;
+
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');   -- the admin
+  set local role authenticated;
+  r := register_subject_resolver('location','location','''renamed by the test''','core');
+  reset role;
+  if r.name_expression <> '''renamed by the test''' then
+    raise exception 'FAIL: registering did not replace the existing row';
+  end if;
+  if resolve_subject_name('location','00000000-0000-0000-0000-0000000000c1')
+     is distinct from 'renamed by the test' then
+    raise exception 'FAIL: re-registering did not change what resolution returns';
+  end if;
+  perform test_ok('registering a subject type again replaces it, and resolution follows');
+
+  -- put it back, because later assertions read the board
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+  set local role authenticated;
+  r := register_subject_resolver('location','location','name','core');
+  reset role;
+end $$;
+
+-- The behaviour that matters: a subject whose module is not installed. Two
+-- versions, because they fail in different places. First a registration pointing
+-- at a relation that does not exist, which is what an uninstalled module looks
+-- like to the registry.
+do $$
+begin
+  update subject_resolver set relation = 'not_a_table_here' where subject_type = 'block';
+
+  if subject_is_resolvable('block') then
+    raise exception 'FAIL: a subject type pointing at a missing relation reports as resolvable';
+  end if;
+  if resolve_subject_name('block', gen_random_uuid()) is not null then
+    raise exception 'FAIL: resolving against a missing relation returned something';
+  end if;
+  perform test_ok('a subject type whose relation is absent resolves to null and reports unresolvable');
+
+  update subject_resolver set relation = 'block' where subject_type = 'block';
+end $$;
+
+-- And then the real thing: drop the module's table and confirm nothing raises.
+-- Inside a savepoint, because this also drops task_board today, which is the
+-- declarative edge phase 4 exists to remove. When phase 4 lands, the second half
+-- of this assertion changes and that is the point of writing it down now.
+-- No assertion here on purpose: the savepoint is setup, not a claim.
+savepoint before_dropping_block;
+
+drop table block cascade;
+
+do $$
+declare board_exists boolean;
+begin
+  if subject_is_resolvable('block') then
+    raise exception 'FAIL: block is resolvable after its table was dropped';
+  end if;
+  if resolve_subject_name('block', gen_random_uuid()) is not null then
+    raise exception 'FAIL: resolving a dropped module raised or returned a value';
+  end if;
+  perform test_ok('dropping a module''s table makes its subject type unresolvable, silently and without error');
+
+  select to_regclass('public.task_board') is not null into board_exists;
+  if board_exists then
+    perform test_ok('task_board survived dropping block, so core no longer names a module table');
+  else
+    perform test_ok('task_board still cascades from block, which is the declarative edge phase 4 removes');
+  end if;
+end $$;
+
+rollback to savepoint before_dropping_block;
+
+do $$
+begin
+  if to_regclass('public.block') is null then
+    raise exception 'FAIL: the savepoint did not restore block';
+  end if;
+  if to_regclass('public.task_board') is null then
+    raise exception 'FAIL: the savepoint did not restore task_board';
+  end if;
+  perform test_ok('the drop rolled back, so the suite stays hermetic');
 end $$;
 
 -- ---------------------------------------------------------------------------

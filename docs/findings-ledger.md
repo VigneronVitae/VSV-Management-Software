@@ -46,8 +46,8 @@ editing the tables, so that a reader can still see what the reviews found.
 | C1 | `package.json` | `bun run test` is a script. S-38 says what it is standing in for |
 | C2 | `docs/status-ledger.md` | The opening sentence; no grade was touched |
 | C3 | `CLAUDE.md`, `docs/compost-ledger.md` | Eight entries, all with a reactivation condition, in numeric order |
-| C4 | `supabase/config.toml` | Postgres 17, with 22 migrations and 129 assertions run against it |
-| D1 | partly | A throwaway shim proved 22 migrations apply from empty. A committed shim is still not in the tree |
+| C4 | `supabase/config.toml` | Postgres 17, with the tree as it stood at `0022` and 129 assertions run against it |
+| D1 | partly | A throwaway shim proved the tree as it stood at `0022` apply from empty. A committed shim is still not in the tree |
 | D4 | `scripts/verify.sh` | Found forty nine broken edges on its first run |
 | D9 | `scripts/verify.sh` | Em dash rule enforced; the import rule holds vacuously and says so |
 | E6 | `0014_rack.sql` | Racking writes `placement.to_at`, which nothing previously did |
@@ -171,7 +171,7 @@ The survey's conclusion. Thirty-seven of 123 dependency edges are enforceable by
 | D7 | backup, restore, deploy | No backup, no rehearsed restore, no deployment path, no rollback, nothing written for the hours Supabase is unreachable. With C4 there is no local stack to restore into either | 1 |
 | D8 | migrations | Neither transactional nor re-runnable, and applicable only to an empty database, against `0005`'s stated intent. `0002` needs the shim and does not guard; `0005` guards | 4 |
 | D9 | the em-dash and import rules | Both stated absolutely, both enforced by nothing. Biome can enforce the import rule with no new dependency | 3 |
-| D10 | the assertion suite's mutation score | 28 of 115 injected schema defects caught, 24 percent, measured by `scripts/mutate.sh`. On the subset of objects that existed at the reviewed baseline it is 15 of 71, 21 percent, against the 42 percent `G-5` measured on its own 45. Absolute catches rose from 19 to 28 while the schema roughly doubled, so the suite grew and its coverage of the schema fell. **This is the stop condition W-2 sets for the schema split** | 1 (p) |
+| D10 | the assertion suite's mutation score | 28 of 115 injected schema defects caught, 24 percent, measured by `scripts/mutate.sh` at migration `0022`. On the subset of objects that existed at the reviewed baseline it is 15 of 71, 21 percent, against the 42 percent `G-5` measured on its own 45. Absolute catches rose from 19 to 28 while the schema roughly doubled, so the suite grew and its coverage of the schema fell. **This is the stop condition W-2 sets for the schema split** | 1 (p) |
 | D11 | row level security itself | Disabling RLS outright on 16 of 21 tables is not noticed by any assertion. `app_user`, `party`, `lineage`, `placement`, `task`, `task_claim_log`, `template`, `template_step`, `vessel_code`, `block`, `vessel_type_note` and all five procedure tables can have RLS turned off and the suite still passes. The five that are caught are the ones an assertion reads through a second principal. This is the most actionable half of D10 and the cheapest to close | 1 (p) |
 | D12 | the mutation harness | `G-5` measured 42 percent and did not commit the harness, so the number could not be reproduced or improved against. That is D1's shape applied to a measurement rather than to a shim. `scripts/mutate.sh` now exists and enumerates its mutations from the catalog rather than from a written list, so the set grows with the schema | 1 |
 

@@ -45,9 +45,9 @@ build on top of it. Halting with a clear write-up is a good outcome.
 
 | | |
 |---|---|
-| Last green commit | `c33dbb4`, phase 1 plus its repair |
-| Current migration number | `0022`, so the next one is `0023` |
-| Assertions | 128 from empty, 129 against the cellar copy |
+| Last green commit | `c091fd1`, phase 2 |
+| Current migration number | `0023`, so the next one is `0024` |
+| Assertions | 137 from empty, 138 against the cellar copy |
 | Module migration numbering | not yet designed, phase 6 designs it |
 
 ## Phases
@@ -57,7 +57,7 @@ build on top of it. Halting with a clear write-up is a good outcome.
 | 0 | Reach green at all | done |
 | 1 | Namespace collision, rulings ids to `AR-` | done |
 | 2 | Read the unreviewed range, `0006` to `0022`, plus the mutation score | done |
-| 3 | The resolver registry, `AR-E5` | not started |
+| 3 | The resolver registry, `AR-E5` | done |
 | 4 | `task_board` against the registry, `AR-E6` | not started |
 | 5 | Enums to registry rows, `AR-E7` | not started |
 | 6 | The scheduling block to core, plus per-module migration numbering | not started |
@@ -216,6 +216,40 @@ The second is the policy class, which is the one that actually gates the schema 
 Thirty eight of 54 policies survive being dropped. Closing that means a probe per policy
 per principal, which is real work and is the thing W-2 declined to authorise by making
 the score a stop condition rather than a task.
+
+## Phase 3: the resolver registry
+
+`0023_subject_resolver.sql`. `AR-E5`, and the prerequisite the A-1 survey measured as
+making phase 4 cost under a day instead of half again as much.
+
+The property that matters is an absence. `subject_resolver.relation` is `text` and not
+`regclass`, because a `regclass` column would record the dependency in `pg_depend` and put
+back exactly the wrong-way edge the registry exists to remove. Resolution goes through
+`to_regclass`, which answers null for a relation that is not there. An assertion checks
+the column's type for that reason, so the next person who helpfully tightens it will be
+told what they broke.
+
+Resolution deflates at every step, per `AR-B7` and `AR-G2`: no resolver registered, the
+module absent, the row gone, or the row invisible to this caller all answer null, and none
+of them raises. `resolve_subject_name` is `security invoker` twice over on purpose, so the
+stored expression runs with the caller's own rights and row level security still evaluates
+as the caller, which means a client asking the name of a lot they cannot see gets null
+rather than the name.
+
+Probed by dropping `block` inside a savepoint: resolution went quiet, `subject_is_resolvable`
+went false, nothing raised, and the savepoint restored it.
+
+The four subject types that exist are registered as rows, saying exactly what `task_board`'s
+`CASE` says today. Phase 4 deletes the `CASE` rather than teaching it a fifth branch.
+
+**An assertion written to change its own answer.** The drop also confirms that
+`task_board` still cascades from `block`, which is the declarative edge phase 4 removes.
+The assertion reports which of the two states it is in rather than asserting one, so when
+phase 4 lands it will start saying the other thing without anybody editing it.
+
+New sorries: S-41, the registry stores an expression it later executes, which is not an
+escalation today because the function is invoker and only admins may write the row; and
+S-42, resolution is one query per row, which is `AR-I3`'s trade taken deliberately.
 
 ## Decisions
 
