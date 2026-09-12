@@ -2586,7 +2586,12 @@ begin
     raise exception
       E'FAIL: the constraint inventory changed.\nnow:  %\nwas:  %\nIf that is deliberate, update this line in the same commit that changed the schema.', have, want;
   end if;
-  perform test_ok('the constraint inventory is what this suite was written against: 18 check, 40 foreign key, 22 primary key, 14 unique');
+  -- X-1-9: this used to name 18 check, 40 foreign key, 22 primary key and 14
+  -- unique, which were the pre-0026 numbers, and printed them on every passing
+  -- run while pinning and comparing a different set four lines above. The whole
+  -- design of this file is that a number in a sentence is derived; here was one
+  -- that rotted in the one place the derivation was not applied.
+  perform test_ok('the constraint inventory is what this suite was written against: ' || have);
 end $$;
 
 -- The nine composite foreign keys into term(id, kind). These are the mechanism
@@ -3350,7 +3355,24 @@ begin
         elsif col.atttypid in ('jsonb'::regtype, 'json'::regtype) then
           cand_arr := array[quote_literal('{}'), quote_literal('{"effect": "treatment"}')];
         elsif col.atttypid in ('text'::regtype, 'character varying'::regtype, 'name'::regtype) then
+          -- X-1-4 and X-1-12. A text column used to be exercised against '' and
+          -- 'x' and null only. An enum column is exercised against every label,
+          -- so 0027 converting term.kind from an enum to text silently narrowed
+          -- this assertion until it could no longer see A24: the candidate set
+          -- never contained 'operation', so `kind <> 'operation'` was always
+          -- true and the predicate never answered null. Removing the allow-list
+          -- entry changed nothing, which is how the blindness was found.
+          --
+          -- The literals in the constraint's own expression are now candidates,
+          -- which is where the interesting values live: a predicate that
+          -- compares a column to a literal is only interesting at that literal.
+          -- Every enum-to-registry conversion after this one keeps working
+          -- rather than narrowing the population further.
           cand_arr := array[quote_literal(''), quote_literal('x')];
+          cand_arr := cand_arr || coalesce(
+            (select array_agg(distinct quote_literal(m[1]))
+               from regexp_matches(r.expr, '''([^'']+)''', 'g') as m),
+            '{}'::text[]);
         elsif col.atttypid in ('smallint'::regtype,'integer'::regtype,'bigint'::regtype,
                                'numeric'::regtype,'real'::regtype,'double precision'::regtype) then
           cand_arr := array['0', '1'];
@@ -3390,6 +3412,14 @@ begin
       end loop;
 
       if froms = '' then
+        -- X-1-16: there are two ways to reach this. One sets `unevaluable` first
+        -- and is reported; the other is a constraint whose conkey is empty,
+        -- where the column loop never ran, and that used to continue in silence.
+        -- A check constraint referencing no column is exactly what the `loosen`
+        -- mutation class creates.
+        if i = 0 then
+          unevaluable := unevaluable || format('%s.%s (references no column); ', r.tbl, r.con);
+        end if;
         continue;
       end if;
 
@@ -3465,6 +3495,71 @@ begin
 
   perform test_ok('every boolean function answers true or false and never null, with null arguments and nobody signed in');
 end $$;
+
+-- X-2-7. The two halves above enumerate check constraints and boolean functions.
+-- A validator that returns `trigger` or `void` and refuses by raising is in the
+-- class and in neither half, and `0027` did its work in exactly that layer:
+-- `validate_vessel_type_fields` proved a vocabulary existed by casting to an enum
+-- and catching the failure, and rewriting the cast to text would have made it
+-- always succeed.
+--
+-- The ledger says of A25 that "a derived assertion now enumerates the population
+-- from the catalog and searches it, and as of 0025 there is no fourth". That
+-- sentence was true of the population it enumerated and was read as a statement
+-- about the class.
+--
+-- This assertion cannot exercise a trigger validator the way it exercises a check
+-- constraint: there is no row to build, the guards are `if` conditions inside a
+-- body, and evaluating them means executing the function. So it does the next
+-- honest thing. It enumerates them, and requires that each is accounted for
+-- somewhere by name. A validator that appears without an entry fails the suite,
+-- which turns a silent gap in the population into a decision somebody has to
+-- make.
+do $$
+declare
+  r         record;
+  unaccounted text := '';
+  accounted text[] := array[
+    -- Each entry says where the function's null-permit behaviour is actually
+    -- exercised, because "we know about it" is not an account.
+    --
+    -- covered by the `logic` mutation class in scripts/mutate.sh, which
+    -- substitutes into the guard and requires the suite to notice:
+    'cellar_writable_columns',
+    'close_node_when_empty',
+    'validate_vessel_type_fields',
+    -- covered by behavioural assertions elsewhere in this file:
+    'refuse_self_granted_standing',
+    -- NOT covered, and filed as ledger A26. The `required` guard reads
+    -- `coalesce((f ->> 'required')::boolean, false)`, which is the defensive
+    -- form, but the `kind` guard above it is `(f ->> 'kind') not in (...)`,
+    -- which is null for a field carrying no kind, so the whole picker block
+    -- including the registry lookup is skipped. That is X-2-1 and it is a
+    -- fourth instance of A25. Filed, not fixed: section A is out of scope.
+    'validate_vessel_attributes'
+  ];
+begin
+  for r in
+    select p.proname as fn
+      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public'
+       and pg_get_function_result(p.oid) in ('trigger', 'void')
+       and p.prosrc ~* 'raise exception'
+     order by p.proname
+  loop
+    if not (r.fn = any(accounted)) then
+      unaccounted := unaccounted || r.fn || ', ';
+    end if;
+  end loop;
+
+  if unaccounted <> '' then
+    raise exception
+      'FAIL: these validators refuse by raising and are in A25''s class, and nothing accounts for how their null behaviour is exercised: %. Add each to the list in this assertion with where it is covered, or say it is not.', unaccounted;
+  end if;
+
+  perform test_ok('every validator that refuses by raising is accounted for, which is A25''s population beyond check constraints');
+end $$;
+
 
 -- ---------------------------------------------------------------------------
 do $$ begin raise notice '--- a subject type is a row, not a type'; end $$;

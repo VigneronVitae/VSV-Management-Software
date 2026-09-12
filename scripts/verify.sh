@@ -108,7 +108,28 @@ while read -r f; do
     || fail "$f: carries a typed header and no file depends on it"
 done < "$headered"
 
-[ "$fails" -eq 0 ] && pass "$(wc -l < "$headered" | tr -d ' ') headered files, $(wc -l < "$edges" | tr -d ' ') edges, every one bidirectional and resolving"
+# X-1-11, first half. Section 3 guards every id list with "this check is blind".
+# Section 1 had no equivalent: if no file were detected as headered, every loop
+# would run zero times and this would print "ok 0 headered files, 0 edges, every
+# one bidirectional and resolving".
+n_head=$(grep -c . "$headered" 2>/dev/null); n_head=${n_head:-0}
+n_edge=$(grep -c . "$edges" 2>/dev/null); n_edge=${n_edge:-0}
+if [ "$n_head" -lt 10 ] || [ "$n_edge" -lt 10 ]; then
+  fail "only $n_head headered files and $n_edge edges were found, so this check is blind"
+fi
+
+# X-1-11, second half, and X-3-3. CLAUDE.md says every document carries a typed
+# header, and this section only ever examined files that already had one, so
+# omitting the header was a complete exemption from the graph, the orphan check
+# and the bidirectionality check. Two tracked shell scripts had none.
+for f in $(tracked); do
+  corpus "$f" && continue
+  case "$f" in *.md|*.sql|*.sh) ;; *) continue ;; esac
+  case "$f" in supabase/seed/*) continue ;; esac
+  grep -q 'Depends on:' "$f" 2>/dev/null     || fail "$f: carries no typed header, so it is invisible to the dependency graph"
+done
+
+[ "$fails" -eq 0 ] && pass "$n_head headered files, $n_edge edges, every one bidirectional and resolving, and nothing outside the corpus lacks a header"
 
 # ---------------------------------------------------------------------------
 head_ "2. the em dash rule"

@@ -2,7 +2,7 @@
 Type: record
 Purpose: "Records every open deferred-verification obligation for the winery app, one entry per gap, as the honest unit of progress."
 Depends on: [packages/cellar/docs/spec.md, docs/methodology-lineage.md]
-Depended on by: [docs/status-ledger.md, docs/findings-ledger.md, CLAUDE.md, README.md, scripts/verify.sh]
+Depended on by: [docs/status-ledger.md, docs/findings-ledger.md, CLAUDE.md, README.md, scripts/verify.sh, scripts/db-restore.sh]
 ---
 
 # Sorry Ledger

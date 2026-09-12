@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+# ---------------------------------------------------------------------------
+# Type: tool
+# Purpose: "Puts a backup back after a reset. Imperfect by S-29: seeded vocabulary is reissued with new ids on every reset, so restored lots point at varieties that no longer exist."
+# Depends on: [scripts/db-backup.sh, docs/sorry-ledger.md]
+# Depended on by: [docs/status-ledger.md]
+# ---------------------------------------------------------------------------
 # Puts a backup back after a reset. Takes the file to restore, or the newest.
 set -euo pipefail
 
