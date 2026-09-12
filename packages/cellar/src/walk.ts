@@ -1494,7 +1494,7 @@ function vesselTypeScreen(user: AppUser, type: Term): HTMLElement {
     const parts: HTMLElement[] = [];
 
     if (isAdmin) {
-      fields.forEach((spec, i) => parts.push(fieldEditor(spec, i)));
+      for (const [i, spec] of fields.entries()) parts.push(fieldEditor(spec, i));
 
       const newKey = field({
         label: "Add a field",

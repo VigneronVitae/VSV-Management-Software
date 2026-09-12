@@ -1,0 +1,27 @@
+# Every committed blob in this repository is already LF. What was not pinned is
+# the checkout: git's core.autocrlf is true on at least one machine here, so
+# forty of the ninety eight tracked files arrive in the working tree with CRLF,
+# and `biome check` refuses six of them on that alone. `bun run lint` is named in
+# the definition of done in CLAUDE.md and could not pass on a Windows checkout.
+#
+# This changes no file's content. It changes what checkout writes, so the working
+# tree matches the blobs that were always there.
+#
+# Diagnosed twice and wrongly the second time: a `grep -q $'\r'` used to check
+# this reported zero CRLF files on a tree where python counted forty. Byte counts
+# are the check, not grep.
+* text=auto eol=lf
+
+# Lockfiles and dumps are written by tools rather than by people.
+bun.lock text eol=lf
+*.sql text eol=lf
+*.sh text eol=lf
+
+# Anything genuinely binary, so no conversion is attempted on it.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.pdf binary
+*.woff binary
+*.woff2 binary

@@ -7,7 +7,7 @@
 #           nothing enforced."
 # Depends on: [CLAUDE.md, docs/sorry-ledger.md, docs/compost-ledger.md,
 #              docs/status-ledger.md, docs/findings-ledger.md]
-# Depended on by: [package.json, docs/status-ledger.md]
+# Depended on by: [docs/status-ledger.md, scripts/green.sh]
 # ---------------------------------------------------------------------------
 #
 # Bash and standard tools only. No dependency is added by this file, which is
@@ -50,7 +50,10 @@ trap 'rm -f "$edges" "$headered"' EXIT
 
 for f in $(tracked); do
   corpus "$f" && continue
-  case "$f" in *.md|*.sql) ;; *) continue ;; esac
+  # .sh is scanned too. It was not until now, which meant this script's own
+  # typed header was the one header in the tree nothing checked, and it named
+  # package.json, a file that carries no header and never could.
+  case "$f" in *.md|*.sql|*.sh) ;; *) continue ;; esac
   grep -q 'Depends on:' "$f" 2>/dev/null || continue
   echo "$f" >> "$headered"
 
@@ -60,7 +63,7 @@ for f in $(tracked); do
   if [ "$(head -1 "$f" | tr -d '\r')" = "---" ]; then
     hdr=$(sed -n '2,/^---[[:space:]]*$/p' "$f")
   else
-    hdr=$(awk '/^--/ {print; next} {exit}' "$f" | sed 's/^--[[:space:]]*//')
+    hdr=$(awk '/^#!/ {next} /^(--|#)/ {print; next} {exit}' "$f" | sed 's/^\(--\|#\)[[:space:]]*//')
   fi
   hdr=$(printf '%s' "$hdr" | tr '\r\n' '  ')
 

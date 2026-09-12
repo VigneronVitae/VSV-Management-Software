@@ -20,6 +20,7 @@
     "db:backup": "bash scripts/db-backup.sh",
     "db:restore": "bash scripts/db-restore.sh",
     "verify": "bash scripts/verify.sh",
+    "green": "bash scripts/green.sh",
     "test": "echo \"test: no client tests exist. See sorry S-38 in docs/sorry-ledger.md. The kernel is covered by tests/schema_assertions.sql; the TypeScript is covered by nothing.\" && exit 1"
   },
   "devDependencies": {

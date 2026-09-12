@@ -25,7 +25,7 @@
 --              supabase/migrations/0020_pin_search_path.sql,
 --              supabase/migrations/0021_cellar_write_paths.sql,
 --              supabase/migrations/0022_admission_and_authorship.sql]
--- Depended on by: [docs/status-ledger.md]
+-- Depended on by: [docs/status-ledger.md, scripts/green.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
 -- Open sorries: S-7 (what this exercises is Postgres policy evaluation, not
 --               Supabase's JWT to role mapping, so S-7 narrows and stays open)

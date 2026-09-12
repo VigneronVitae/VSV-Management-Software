@@ -2,7 +2,7 @@
 Type: record
 Purpose: "Records approaches killed for the winery app, with the condition under which each would be reconsidered."
 Depends on: [packages/cellar/docs/spec.md, docs/methodology-lineage.md]
-Depended on by: [docs/status-ledger.md, CLAUDE.md, README.md]
+Depended on by: [docs/status-ledger.md, CLAUDE.md, README.md, scripts/verify.sh]
 ---
 
 # Compost Ledger

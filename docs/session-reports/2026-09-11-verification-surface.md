@@ -2,7 +2,7 @@
 Type: record
 Purpose: "Records the session that archived the red team corpus, gave the repository a checker, and closed the write paths and the four cheapest exploitable findings, including the defect the corpus predicted four days before the code that contained it existed."
 Depends on: []
-Depended on by: [docs/session-reports/index.md]
+Depended on by: [docs/session-reports/index.md, docs/session-reports/modularization-progress.md]
 ---
 
 # 2026-09-11: the verification surface
