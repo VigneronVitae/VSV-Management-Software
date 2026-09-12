@@ -102,9 +102,9 @@ build on top of it. Halting with a clear write-up is a good outcome.
 
 | | |
 |---|---|
-| Last green commit | `2e55dc9`, W-3 phase A |
-| Current migration number | `0025`, so the next one is `0026` |
-| Assertions | 189 from empty, 191 against the cellar copy |
+| Last green commit | `3a94d94`, W-4 phase 3b |
+| Current migration number | `0027`, so the next one is `0028` |
+| Assertions | 204 from empty, 206 against the cellar copy |
 | Module migration numbering | not yet designed, phase 6 designs it |
 
 ## Phases
@@ -116,8 +116,8 @@ build on top of it. Halting with a clear write-up is a good outcome.
 | 2 | Read the unreviewed range, `0006` to `0022`, plus the mutation score | done |
 | 3 | The resolver registry, `AR-E5` | done |
 | 4 | `task_board` against the registry, `AR-E6` | done |
-| 5 | Enums to registry rows, `AR-E7` | **unblocked**, next |
-| 6 | The scheduling block to core, plus per-module migration numbering | **unblocked** |
+| 5 | Enums to registry rows, `AR-E7` | done, as W-4 phase 3 |
+| 6 | The scheduling block to core, plus per-module migration numbering | **unblocked**, next |
 | 7 | The schema split and the `public` facade, plus the `AR-B8` gate check | **unblocked** |
 | 8 | The manifest and the register, plus the `AR-F5` falsifier | **unblocked** |
 
@@ -501,6 +501,111 @@ class is ten hand-chosen substitutions, not a systematic mutation of every branc
 function, and a written list is the kind of thing that goes stale. The honest reading is
 that the declarative surface is now policed and the procedural surface is sampled.
 
+## W-4: the harness, the null-permit class, and phase 5
+
+| Phase | What | State |
+|---|---|---|
+| 1 | Repair the harness | done |
+| 2 | The null-permit class | done |
+| 3 | W-2 phase 5, both enums | done |
+| 4 | The standing rules | done, first |
+
+### Phase 1: the instrument
+
+The two defects W-4 names were both already fixed in W-3, so the work was the part
+underneath them: a harness that reports a number without reporting that the number is
+unsound. It now fingerprints the catalog before and after every mutation. A mutation that
+applies and changes nothing is degenerate, named, and excluded from both columns. The
+enumeration-time exclusion of the nineteen already-open policies is gone, because dropping
+them quietly was correct and invisible and invisible was half the problem.
+
+The score cannot appear bare. Every run ends with what it excluded and why, and a run that
+scores nothing exits non-zero.
+
+**Writing that check reproduced the defect it was written to prevent.** The fingerprint
+query raised, because `tgenabled` is `"char"` and concatenating it needs a cast, so the
+function returned empty and the guard `[ -n "$before" ]` skipped degeneracy detection
+silently for every mutation. A check that fails open and says nothing, inside the fix for
+checks that fail open and say nothing. It aborts now, and that abort is break-tested.
+
+| | Before | After |
+|---|---|---|
+| Reported | 188 of 188, 100 percent | 188 of 188 scored, from 208 enumerated |
+| Excluded | 19 dropped at enumeration, 1 refused to apply, neither mentioned | 20, named in the output |
+
+The percentage did not move and was never the point.
+
+### Phase 2: the null-permit class, and the fourth instance that is not there
+
+A25 is filed as a class. The invariant: **in the fixed layer, a predicate that cannot
+determine an answer must refuse, never permit.** That is `AR-B9` applied below the gate.
+
+The derived assertion enumerates every check constraint and every boolean function from
+the catalog and exercises each against every row the table could actually hold. **At `0027`
+the allow-list has exactly one entry, A24, and there is no fourth instance.** A class with
+three instances and no fourth is the result, not the absence of one.
+
+**Two wrong tests preceded the right one and both are recorded in the assertion**, because
+a reader will otherwise reinvent them. A row of all nulls flagged twelve constraints,
+eleven wrongly: forcing a NOT NULL column to null asks about a row the table can never
+hold. A row of empty values flagged none, including the real one, because A24 needs
+`kind = 'operation'` and the empty row takes the first enum label. The second version
+passed and would have passed forever; it was caught only because the break test took A24
+off the allow-list and nothing failed.
+
+B2 is broadened: an effectless operation does not raise, it lands silently inert, which is
+A13's shape arriving through a check constraint rather than through row level security.
+A13 is therefore not only about RLS.
+
+### Phase 3: both enums are rows now
+
+Split into two migrations so each is green on its own.
+
+`0026`, `subject_type`. The registry already existed, so the enum is deleted rather than
+duplicated: registering a resolver is what brings a subject type into existence. Three
+foreign keys with `on delete restrict`, so uninstalling a module while tasks still point at
+its subjects is refused.
+
+`0027`, `term_kind`, much the larger: nine generated columns, nine composite foreign keys,
+four views, a view-returning function, three constraints, an index and two typed defaults.
+Enumerated from the catalog rather than listed by hand, following `0020`.
+
+**Two traps, both of which would have been silent.**
+
+Dropping a generated column and adding it back moves it to the end of the table.
+`vessel_state` reads `visible_node` through a **positional** column alias list, so
+reordering `node` rebound `product_type_id` to `hidden` and the view came back with
+`uuid = text[]`. The columns are altered in place instead. It failed loudly only because
+this migration recreates the view; one that did not would have left the alias list quietly
+wrong.
+
+`validate_vessel_type_fields` proved that a picker names a real vocabulary **by casting the
+text to the enum and catching the failure**. Rewrite `::term_kind` to `::text` and the cast
+always succeeds, the handler never fires, and the validator silently stops validating. It
+is a registry lookup now. This is exactly the shape W-4 warned the conversion produces, and
+it was caught by reading the body rather than substituting into it.
+
+### The pins earned their keep
+
+Five separate pinned assertions failed across the two migrations and every one was
+deliberate: the constraint inventory, the generated-column expressions, the policy count,
+the wide-open policy list, and the foreign-key delete behaviour. That is what W-3 phase B
+pinned them for.
+
+### The mutation score, with its set named
+
+| When | Scored | Caught | Score | Excluded |
+|---|---|---|---|---|
+| W-3 end, at `0025` | 188 | 188 | 100% | 20, unreported |
+| W-4 phase 1, at `0025` | 188 | 188 | 100% | 20, named |
+| After `0027`, before closing the gap | 198 | 195 | 98% | 20, named |
+| After closing it | 198 | 198 | 100% | 20, named |
+
+**The fall to 98 percent was real and was mine.** `0026` and `0027` added three bare-name
+check constraints and nothing asserted them, which the `loosen` class found the moment they
+existed. Three assertions closed it. That is the harness doing its job on new surface
+within the same session that created the surface.
+
 ## Decisions
 
 | Decision | Why |
@@ -524,6 +629,11 @@ that the declarative surface is now policed and the procedural surface is sample
 | Multi-line mutations travel base64 | A line-based file truncates them at the first newline, silently |
 | Degenerate and equivalent mutants excluded | A mutation that injects no defect is not a coverage gap |
 | A24 filed rather than fixed | Section A beyond A22 is out of W-3 scope |
+| Degeneracy detected by fingerprint, not at enumeration | Excluding quietly is half the defect |
+| The harness aborts when its fingerprint is empty | A check that fails open and says nothing is the thing being fixed |
+| Phase 3 split into `0026` and `0027` | Each is green on its own, and W-2 required only that both enums move |
+| Generated columns altered in place, not dropped | `vessel_state` reads `visible_node` through a positional alias list |
+| `validate_vessel_type_fields` rewritten, not substituted | Its cast to the enum *was* the check, and `::text` always succeeds |
 
 ## A tooling trap that has now cost time twice
 

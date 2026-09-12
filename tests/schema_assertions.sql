@@ -3524,6 +3524,33 @@ begin
   perform test_ok('a vessel type field naming a vocabulary that does exist is still accepted');
 end $$;
 
+-- The bare-name checks on the two registries, added by 0026 and 0027. Each is
+-- what keeps a registry key out of the dynamic SQL that reads it, and the
+-- mutation class found all three unasserted the moment they existed.
+do $$
+begin
+  begin
+    update subject_resolver set subject_type = 'not a bare name' where subject_type = 'node';
+    raise exception 'FAIL: a subject type with a space in it was accepted';
+  exception when check_violation then
+    perform test_ok('a subject type must be a bare name, because it reaches dynamic SQL');
+  end;
+
+  begin
+    insert into term_kind (kind, module, label) values ('not a bare name', 'core', 'X');
+    raise exception 'FAIL: a term kind with a space in it was accepted';
+  exception when check_violation then
+    perform test_ok('a term kind must be a bare name');
+  end;
+
+  begin
+    insert into term_kind (kind, module, label) values ('fine_kind', 'not a module', 'X');
+    raise exception 'FAIL: a term kind owned by a module with a space in its name was accepted';
+  exception when check_violation then
+    perform test_ok('the module owning a term kind must be a bare name');
+  end;
+end $$;
+
 -- ---------------------------------------------------------------------------
 do $$ begin raise notice '--- functions survive a restore'; end $$;
 
