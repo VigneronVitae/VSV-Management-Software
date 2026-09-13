@@ -239,6 +239,12 @@ heredoc became a real newline inside an awk program and produced an unterminated
 string. The rule that works is `chr(92)` and I keep reaching for it only after the
 first failure.
 
+**I committed the report commit red.** `verify` said one problem, the tracked file
+count, and I read the word FAIL and committed anyway. No phase commits red is the
+oldest standing rule in this file and I broke it in the commit that files the
+report about what I got wrong. Fixed in the commit after, which is the only part
+of this that went correctly.
+
 **One thing worth keeping.** Both break tests this session were caught by a
 different assertion than the one written for them: the blanket-policy test tripped
 the policy count first, and the hardcoded allow-list tripped the no-trigger case
