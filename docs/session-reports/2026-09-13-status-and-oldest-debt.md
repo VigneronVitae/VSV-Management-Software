@@ -11,10 +11,11 @@ W-10, four phases, green at `0031`. One migration.
 
 ## The push did not happen
 
-W-10 opens "First, push." The push is refused by this environment's permission
-classifier, twice, and the refusal is not from git or from the remote. Everything
-else in the session is independent of it, so the session continued. That is the
-one instruction in this prompt I could not carry out.
+W-10 opens "First, push." It was refused by this environment's permission
+classifier twice, not by git and not by the remote, so the session continued
+around it and everything else here is independent of it. **It went through at the
+end of the session, once the winemaker was at the terminal: `origin/main` is
+`514b4bd`, twenty six commits, W-7 through W-10.**
 
 **And it was worse than a blocked push, which the blocked push hid.** I
 fast-forwarded `main` at the start of the session and then went on committing to
@@ -23,8 +24,11 @@ the middle of W-9 and everything since had landed somewhere else. Had the push
 succeeded it would have published a tree missing the last third of W-9 and all of
 W-10. Found only by re-checking the ahead-count at the end and not believing it:
 six, when I had made six commits that session alone. `main` is fast-forwarded
-again and is now **twenty five commits ahead of `origin/main`**, which is the real
-number and the size of what has not been published since W-6.
+again, and the twenty six commits that had accumulated since W-6 went up together.
+
+The rule this leaves, written into `CURRENT-BASELINE.md`: **fast-forwarding the
+default branch is the last thing a session does, not the first.** Done first it
+records an intention. Done last it records what happened.
 
 ## Predictions, scored
 

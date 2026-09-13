@@ -32,16 +32,23 @@ canaries below are the durable check and the sha is a convenience.**
 
 ## The trap that was open until this file was written
 
-**`main` carries this work up to the end of W-6.** It was fast-forwarded from
-`c3eae3c7c262544e4b2e29526b513c964c6852fe` to `0e3514c` during W-5, and that is worth
-recording rather than quietly fixing.
+**`main` carries this work and is pushed.** It was fast-forwarded from
+`c3eae3c7c262544e4b2e29526b513c964c6852fe` to `0e3514c` during W-5, drifted behind again
+through W-7 to W-10, and was pushed at the end of W-10: twenty six commits, `origin/main`
+at `514b4bd`. **A clone of the default branch is now this tree.**
 
-**It is behind again.** W-7's four commits are on `claude/sql-files-to-markdown-i31rob`
-only, because moving the default branch is a decision rather than a chore and the last one
-was made out loud. A reviewer cloning this repository gets a tree with `scripts/guards.sh`
-absent and no enumeration of the refusal surface, which the canary table below will tell
-them. That is the trap this section is about, arriving again in a smaller form, and it is
-recorded here for the same reason as the first one.
+**It went behind twice and the second time was worse than the first.** W-7 through W-9 sat
+on `claude/sql-files-to-markdown-i31rob` because moving the default branch is a decision
+rather than a chore and the previous one had been made out loud. Then W-10 fast-forwarded
+`main` at the start of the session and kept committing to the branch for the rest of it,
+so `main` pointed into the middle of W-9 while reading as though it were current. **That
+is the more dangerous shape**: behind and visibly behind is a state somebody notices, and
+behind after being deliberately updated is one nobody re-checks. It was caught by
+disbelieving an ahead-count of six after a session of six commits.
+
+The rule this leaves: **fast-forwarding the default branch is the last thing a session
+does, not the first.** Done first, it records an intention; done last, it records what
+happened.
 
 Until then, `main` was still at `c3eae3c`: forty two files, five migrations, the exact
 commit the thirteen-report corpus reviewed. Twenty six migrations of work sat on
