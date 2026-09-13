@@ -71,6 +71,30 @@ needing a cast, or the database is unreachable.
 **A check nobody has watched fail is not a check.** The first two rules above were both
 found by break tests and neither would have been found by reading.
 
+## Predictions for W-7, recorded before measuring
+
+Anchored on 31 percent, per W-7 phase 5, which is the least flattering figure available
+rather than the most recent. W-4's coverage prediction was optimistic by thirty points and
+W-6's by twenty four, both because each anchored on the least adversarial sample then
+available while predicting a more adversarial one. Anchoring low is a correction for a bias
+that has fired twice in the same direction, not a hedge.
+
+1. **The enumeration finds between 90 and 140 refusal sites.** There are 50 functions and a
+   crude count says 49 `raise exception` occurrences, so the loud form is about fifty. W-7's
+   point is that the quiet forms are where this class hides, and I expect roughly as many
+   again: early returns that report success, `if not found` that does not raise, `coalesce`
+   supplying a permissive default.
+2. **The catch rate over the full population lands between 15 and 28 percent.** Below the 31
+   percent anchor, because 31 was measured on sites I chose by reading guards, and every
+   site I chose that way was a loud one. The quiet forms are less likely to be covered, not
+   more, and adding them to the denominator should pull the figure down.
+3. **The first pass of the enumeration will be wrong**, because W-7 says to expect it and
+   because it has been true every time. My specific guess is that it will miss refusals
+   expressed as a `where` clause that matches nothing, since those have no keyword to grep
+   for and are the shape that produced A14.
+4. **Between five and fifteen sites will be unreachable.** Mostly defensive `if not found`
+   guards behind a foreign key that already makes the case impossible.
+
 ## Predictions for W-6, recorded before measuring
 
 Written before phase 1 ran, after reading the three X reports.
