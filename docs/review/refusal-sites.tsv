@@ -1,0 +1,184 @@
+# The refusal surface of the kernel, as enumerated by scripts/guards.sh.
+# Committed so that a count is script output rather than an estimate, and so
+# that a refusal site disappearing shows up as a diff rather than as a smaller
+# denominator nobody chose.
+#
+# occ 0 would mean a site this instrument cannot substitute. There are none
+# today. If one appears, it is a hole in the instrument and not in the schema.
+# id	fn	kind	find	repl	occ
+apply_owner_privacy:guard:1	apply_owner_privacy	guard	if new.hidden = '{}' and new.owner_id is not null then	if false then	1
+bind_vessel_code:guard:1	bind_vessel_code	guard	if found then	if false then	1
+bind_vessel_code:guard:2	bind_vessel_code	guard	if existing.vessel_id = p_vessel_id then	if false then	1
+bind_vessel_code:guard:3	bind_vessel_code	guard	if not is_admin() then	if false then	1
+bind_vessel_code:raise:1	bind_vessel_code	raise	raise exception	raise notice	1
+cellar_writable_columns:guard:1	cellar_writable_columns	guard	if current_user not in ('authenticated', 'anon') then	if false then	1
+cellar_writable_columns:earlyreturn:1	cellar_writable_columns	earlyreturn	return new;	null;	1
+cellar_writable_columns:guard:2	cellar_writable_columns	guard	if is_admin() then	if false then	1
+cellar_writable_columns:earlyreturn:2	cellar_writable_columns	earlyreturn	return new;	null;	2
+cellar_writable_columns:guard:3	cellar_writable_columns	guard	if not (changed = any(tg_argv)) then	if false then	1
+cellar_writable_columns:raise:1	cellar_writable_columns	raise	raise exception	raise notice	1
+claim_account:guard:1	claim_account	guard	if auth.uid() is null then	if false then	1
+claim_account:raise:1	claim_account	raise	raise exception 'not signed in' using errcode = 'insufficient_privilege';	raise notice 'not signed in' using errcode = 'insufficient_privilege';	1
+claim_account:guard:2	claim_account	guard	if found then	if false then	1
+claim_task:guard:1	claim_task	guard	if who is null then	if false then	1
+claim_task:raise:1	claim_task	raise	raise exception 'not signed in, so there is nobody to claim this task for'	raise notice 'not signed in, so there is nobody to claim this task for'	1
+claim_task:guard:2	claim_task	guard	if not is_facility_user() then	if false then	1
+claim_task:raise:2	claim_task	raise	raise exception 'only somebody who works here may claim a task'	raise notice 'only somebody who works here may claim a task'	1
+claim_task:silent:1	claim_task	silent	and status = 'open'	and true	1
+claim_task:silent:2	claim_task	silent	and claimed_by is null	and true	1
+claim_task:silent:3	claim_task	silent	and (assignee is null or assignee = who)	and true	1
+claim_task:guard:3	claim_task	guard	if claimed.id is null then	if false then	1
+claim_task:raise:3	claim_task	raise	raise exception 'task % is not available to you', p_task_id	raise notice 'task % is not available to you', p_task_id	1
+close_node_when_empty:guard:1	close_node_when_empty	guard	if new.quantity is not null and new.quantity <= 0 then	if false then	1
+close_node_when_empty:guard:2	close_node_when_empty	guard	if new.status <> 'closed' then	if false then	1
+close_node_when_empty:head:1	close_node_when_empty	head	elsif new.quantity is not null and new.quantity > 0 and new.status = 'closed'\n        and new.closed_at is not null and old.quantity is not null\n        and old.quantity <= 0 then	elsif false then	1
+close_node_when_empty:raise:1	close_node_when_empty	raise	raise exception 'lot % is closed; record the wine as a new lot rather than refilling this one', new.id;	raise notice 'lot % is closed; record the wine as a new lot rather than refilling this one', new.id;	1
+confirm_event:guard:1	confirm_event	guard	if not is_admin() then	if false then	1
+confirm_event:raise:1	confirm_event	raise	raise exception 'only a verifier may confirm' using errcode = 'insufficient_privilege';	raise notice 'only a verifier may confirm' using errcode = 'insufficient_privilege';	1
+confirm_event:silent:1	confirm_event	silent	where id = p_event_id and provenance = 'inferred'	where id = p_event_id and true	1
+confirm_event:guard:2	confirm_event	guard	if e.id is null then	if false then	1
+confirm_event:raise:2	confirm_event	raise	raise exception 'event % is not an inferred event awaiting confirmation', p_event_id;	raise notice 'event % is not an inferred event awaiting confirmation', p_event_id;	1
+create_vessel_with_wine:permissive:1	create_vessel_with_wine	permissive	coalesce((p_vessel ->> 'has_glycol')::boolean, false),	coalesce((p_vessel ->> 'has_glycol')::boolean, true),	1
+create_vessel_with_wine:guard:1	create_vessel_with_wine	guard	if p_generate_history then	if false then	1
+end_run_step:silent:1	end_run_step	silent	where run_id = p_run_id and step_id = p_step_id	where run_id = p_run_id and true	1
+end_run_step:notfound:1	end_run_step	notfound	if not found then	if false then	1
+end_run_step:raise:1	end_run_step	raise	raise exception 'that step was never started, so there is nothing to time';	raise notice 'that step was never started, so there is nothing to time';	1
+fill_vessel:guard:1	fill_vessel	guard	if not exists (select 1 from vessel where id = p_vessel_id and active) then	if false then	1
+fill_vessel:raise:1	fill_vessel	raise	raise exception 'no active vessel with id %', p_vessel_id;	raise notice 'no active vessel with id %', p_vessel_id;	1
+fill_vessel:guard:2	fill_vessel	guard	if occupied is not null then	if false then	1
+fill_vessel:raise:2	fill_vessel	raise	raise exception 'that vessel already holds a lot; rack it out before filling it';	raise notice 'that vessel already holds a lot; rack it out before filling it';	1
+fill_vessel:guard:3	fill_vessel	guard	if p_generate_history then	if false then	1
+finish_run:raise:1	finish_run	raise	if v_id is null then raise exception 'no such run'; end if;	if v_id is null then raise notice 'no such run'; end if;	1
+fork_lot:notfound:1	fork_lot	notfound	if not found then	if false then	1
+fork_lot:raise:1	fork_lot	raise	raise exception 'no lot with id %', p_node_id;	raise notice 'no lot with id %', p_node_id;	1
+fork_lot:guard:1	fork_lot	guard	if n_here = 0 then	if false then	1
+fork_lot:raise:2	fork_lot	raise	raise exception 'none of those vessels hold that lot';	raise notice 'none of those vessels hold that lot';	1
+fork_lot:guard:2	fork_lot	guard	if n_here <> array_length(p_vessel_ids, 1) then	if false then	1
+fork_lot:raise:3	fork_lot	raise	raise exception 'some of those vessels do not hold that lot';	raise notice 'some of those vessels do not hold that lot';	1
+fork_lot:guard:3	fork_lot	guard	if n_here = n_total then	if false then	1
+fork_lot:raise:4	fork_lot	raise	raise exception 'that is every vessel this lot is in, so there is nothing to fork it from';	raise notice 'that is every vessel this lot is in, so there is nothing to fork it from';	1
+fork_lot:silent:1	fork_lot	silent	where node_id = p_node_id and to_at is null and vessel_id = any(p_vessel_ids);	where node_id = p_node_id and true;	2
+fork_lot:silent:2	fork_lot	silent	where id = p_node_id and quantity is not null;	where id = p_node_id and true;	1
+generate_inferred_history:guard:1	generate_inferred_history	guard	if n.id is null then	if false then	1
+generate_inferred_history:raise:1	generate_inferred_history	raise	raise exception 'no such node %', p_node_id;	raise notice 'no such node %', p_node_id;	1
+generate_inferred_history:guard:2	generate_inferred_history	guard	if n.variety_id is null then	if false then	1
+generate_inferred_history:guard:3	generate_inferred_history	guard	if tmpl is null then	if false then	1
+next_cap_action:guard:1	next_cap_action	guard	if array_length(seq, 1) is null then	if false then	1
+node_bin_shares:notfound:1	node_bin_shares	notfound	if not found then	if false then	1
+node_bin_shares:head:1	node_bin_shares	head	if not coalesce(is_admin() or n.owner_id = current_party_id()\n                  or is_facility_user(), false) then	if false then	1
+node_bin_shares:earlyreturn:1	node_bin_shares	earlyreturn	return;	null;	2
+node_bin_shares:head:2	node_bin_shares	head	if 'composition' = any(n.hidden)\n     and not coalesce(may_see_all_of(n.owner_id, n.hidden), false) then	if false then	1
+node_bin_shares:permissive:1	node_bin_shares	permissive	and not coalesce(may_see_all_of(n.owner_id, n.hidden), false) then	and not coalesce(may_see_all_of(n.owner_id, n.hidden), true) then	1
+node_bin_shares:earlyreturn:2	node_bin_shares	earlyreturn	return;	null;	3
+node_history:notfound:1	node_history	notfound	if not found then	if false then	1
+node_history:head:1	node_history	head	if not coalesce(is_admin() or n.owner_id = current_party_id()\n                  or is_facility_user(), false) then	if false then	1
+node_history:earlyreturn:1	node_history	earlyreturn	return;	null;	2
+node_history:head:2	node_history	head	if 'history' = any(n.hidden)\n     and not coalesce(may_see_all_of(n.owner_id, n.hidden), false) then	if false then	1
+node_history:permissive:1	node_history	permissive	and not coalesce(may_see_all_of(n.owner_id, n.hidden), false) then	and not coalesce(may_see_all_of(n.owner_id, n.hidden), true) then	1
+node_history:earlyreturn:2	node_history	earlyreturn	return;	null;	3
+rack:guard:1	rack	guard	if jsonb_array_length(plan -> 'overfill') > 0 and not p_allow_overfill then	if false then	1
+rack:raise:1	rack	raise	raise exception 'that puts more in % than it holds; confirm the overfill to record it anyway',	raise notice 'that puts more in % than it holds; confirm the overfill to record it anyway',	1
+rack:guard:2	rack	guard	if plan ->> 'kind' = 'move' then	if false then	1
+rack:guard:3	rack	guard	if held is null or held - vol <= 0.0001 then	if false then	1
+rack:silent:1	rack	silent	where vessel_id = v_id and to_at is null;	where vessel_id = v_id and true;	1
+rack:silent:2	rack	silent	where vessel_id = v_id and to_at is null;	where vessel_id = v_id and true;	2
+rack:guard:4	rack	guard	if plan ->> 'kind' = 'blend' then	if false then	1
+rack:silent:3	rack	silent	where id = p_node_id and quantity is not null;	where id = p_node_id and true;	1
+rack:guard:5	rack	guard	if plan ->> 'kind' = 'blend' then	if false then	2
+rack:guard:6	rack	guard	if p_node_id is not null and p_node_id <> target then	if false then	1
+rack:silent:4	rack	silent	where vessel_id = (dst ->> 'vessel_id')::uuid and to_at is null;	where vessel_id = (dst ->> 'vessel_id')::uuid and true;	1
+rack:silent:5	rack	silent	where id = p_node_id and quantity is not null;	where id = p_node_id and true;	2
+rack:guard:7	rack	guard	if remaining = 0 then	if false then	1
+rack:guard:8	rack	guard	if held is not null then	if false then	1
+rack:silent:6	rack	silent	where vessel_id = v_id and to_at is null and node_id = target;	where vessel_id = v_id and true;	1
+rack:guard:9	rack	guard	if plan ->> 'kind' = 'move' then	if false then	2
+rack:silent:7	rack	silent	where id = target and quantity is not null;	where id = target and true;	1
+rack_plan:guard:1	rack_plan	guard	if jsonb_array_length(coalesce(p_sources, '[]'::jsonb)) = 0 then	if false then	1
+rack_plan:raise:1	rack_plan	raise	raise exception 'a rack needs somewhere to come from';	raise notice 'a rack needs somewhere to come from';	1
+rack_plan:guard:2	rack_plan	guard	if jsonb_array_length(coalesce(p_destinations, '[]'::jsonb)) = 0 then	if false then	1
+rack_plan:raise:2	rack_plan	raise	raise exception 'a rack needs somewhere to go';	raise notice 'a rack needs somewhere to go';	1
+rack_plan:guard:3	rack_plan	guard	if n_id is null then	if false then	1
+rack_plan:raise:3	rack_plan	raise	raise exception '% is empty, so nothing can be racked out of it',	raise notice '% is empty, so nothing can be racked out of it',	1
+rack_plan:guard:4	rack_plan	guard	if vol is null or vol <= 0 then	if false then	1
+rack_plan:raise:4	rack_plan	raise	raise exception 'how much came out of % is not recorded', v_name;	raise notice 'how much came out of % is not recorded', v_name;	1
+rack_plan:guard:5	rack_plan	guard	if held is not null and vol > held then	if false then	1
+rack_plan:raise:5	rack_plan	raise	raise exception '% holds % L and this takes % L out of it', v_name, held, vol;	raise notice '% holds % L and this takes % L out of it', v_name, held, vol;	1
+rack_plan:guard:6	rack_plan	guard	if not (n_id = any(node_ids)) then	if false then	1
+rack_plan:guard:7	rack_plan	guard	if v_name is null then	if false then	1
+rack_plan:raise:6	rack_plan	raise	raise exception 'no vessel with id %', v_id;	raise notice 'no vessel with id %', v_id;	1
+rack_plan:guard:8	rack_plan	guard	if vol is null or vol <= 0 then	if false then	2
+rack_plan:raise:7	rack_plan	raise	raise exception 'how much went into % is not recorded', v_name;	raise notice 'how much went into % is not recorded', v_name;	1
+rack_plan:guard:9	rack_plan	guard	if n_id is not null and not (n_id = any(node_ids)) then	if false then	1
+rack_plan:guard:10	rack_plan	guard	if cap is not null and (coalesce(held, 0) + vol) > cap then	if false then	1
+record_event:guard:1	record_event	guard	if op_id is null then	if false then	1
+record_event:raise:1	record_event	raise	raise exception 'there is no operation called %', p_operation;	raise notice 'there is no operation called %', p_operation;	1
+record_event:guard:2	record_event	guard	if p_vessel_ids is not null and array_length(p_vessel_ids, 1) > 0 then	if false then	1
+record_event:guard:3	record_event	guard	if n_here = 0 then	if false then	1
+record_event:raise:2	record_event	raise	raise exception 'none of those vessels hold that lot';	raise notice 'none of those vessels hold that lot';	1
+record_event:guard:4	record_event	guard	if n_here < n_total then	if false then	1
+record_vessel_note:guard:1	record_vessel_note	guard	if op is null then	if false then	1
+record_vessel_note:raise:1	record_vessel_note	raise	raise exception 'there is no operation called %', p_operation;	raise notice 'there is no operation called %', p_operation;	1
+refuse_self_granted_standing:guard:1	refuse_self_granted_standing	guard	if new.provenance = 'confirmed' then	if false then	1
+refuse_self_granted_standing:raise:1	refuse_self_granted_standing	raise	raise exception	raise notice	1
+register_subject_resolver:guard:1	register_subject_resolver	guard	if not is_admin() then	if false then	1
+register_subject_resolver:raise:1	register_subject_resolver	raise	raise exception 'only an administrator may register a resolver'	raise notice 'only an administrator may register a resolver'	1
+resolve_subject_name:notfound:1	resolve_subject_name	notfound	if not found then	if false then	1
+resolve_subject_name:earlyreturn:1	resolve_subject_name	earlyreturn	return null;	null;	1
+resolve_subject_name:guard:1	resolve_subject_name	guard	if to_regclass('public.' || quote_ident(r.relation)) is null then	if false then	1
+resolve_subject_name:earlyreturn:2	resolve_subject_name	earlyreturn	return null;	null;	2
+resolve_subject_name:earlyreturn:3	resolve_subject_name	earlyreturn	return null;	null;	3
+set_lot_hidden:guard:1	set_lot_hidden	guard	if not may_set_privacy(p_node_id) then	if false then	1
+set_lot_hidden:raise:1	set_lot_hidden	raise	raise exception 'only the owner of that wine decides what is hidden about it'	raise notice 'only the owner of that wine decides what is hidden about it'	1
+set_lot_hidden:guard:2	set_lot_hidden	guard	if not (coalesce(p_hidden, '{}') <@ hideable_fields()) then	if false then	1
+set_lot_hidden:raise:2	set_lot_hidden	raise	raise exception 'that is not something the kernel knows how to hide';	raise notice 'that is not something the kernel knows how to hide';	1
+set_party_default_hidden:head:1	set_party_default_hidden	head	if not (p_party_id = current_party_id()\n          or (p_party_id = facility_party_id() and is_facility_user())) then	if false then	1
+set_party_default_hidden:raise:1	set_party_default_hidden	raise	raise exception 'only that party decides what it hides by default'	raise notice 'only that party decides what it hides by default'	1
+set_party_default_hidden:guard:1	set_party_default_hidden	guard	if not (coalesce(p_hidden, '{}') <@ hideable_fields()) then	if false then	1
+set_party_default_hidden:raise:2	set_party_default_hidden	raise	raise exception 'that is not something the kernel knows how to hide';	raise notice 'that is not something the kernel knows how to hide';	1
+start_procedure_session:guard:1	start_procedure_session	guard	if coalesce(array_length(p_vessel_ids, 1), 0) = 0 then	if false then	1
+start_procedure_session:raise:1	start_procedure_session	raise	raise exception 'a session needs at least one vessel';	raise notice 'a session needs at least one vessel';	1
+topping_check:guard:1	topping_check	guard	if tgt is null then	if false then	1
+topping_check:earlyreturn:1	topping_check	earlyreturn	return;	null;	1
+topping_check:guard:2	topping_check	guard	if (src -> f) is distinct from (tgt -> f) then	if false then	1
+topping_check:earlyreturn:2	topping_check	earlyreturn	return;	null;	2
+update_vessel:notfound:1	update_vessel	notfound	if not found then	if false then	1
+update_vessel:raise:1	update_vessel	raise	raise exception 'no vessel with id %', p_vessel_id;	raise notice 'no vessel with id %', p_vessel_id;	1
+update_vessel:head:1	update_vessel	head	if (was.has_glycol, was.setpoint_c, was.mode)\n     is distinct from\n     (now_.has_glycol, now_.setpoint_c, now_.mode)\n  then	if false then	1
+validate_vessel_attributes:head:1	validate_vessel_attributes	head	if v is null or jsonb_typeof(v) = 'null'\n       or (jsonb_typeof(v) = 'string' and (v #>> '{}') = '') then	if false then	1
+validate_vessel_attributes:guard:1	validate_vessel_attributes	guard	if coalesce((f ->> 'required')::boolean, false) then	if false then	1
+validate_vessel_attributes:raise:1	validate_vessel_attributes	raise	raise exception '% is required for this vessel type', name;	raise notice '% is required for this vessel type', name;	1
+validate_vessel_attributes:guard:2	validate_vessel_attributes	guard	if (f ->> 'kind') = 'number' then	if false then	1
+validate_vessel_attributes:raise:2	validate_vessel_attributes	raise	raise exception '% must be a number', name;	raise notice '% must be a number', name;	1
+validate_vessel_attributes:guard:3	validate_vessel_attributes	guard	if (f ->> 'min') is not null and num < (f ->> 'min')::numeric then	if false then	1
+validate_vessel_attributes:raise:3	validate_vessel_attributes	raise	raise exception '% must be at least %', name, f ->> 'min';	raise notice '% must be at least %', name, f ->> 'min';	1
+validate_vessel_attributes:guard:4	validate_vessel_attributes	guard	if (f ->> 'max') is not null and num > (f ->> 'max')::numeric then	if false then	1
+validate_vessel_attributes:raise:4	validate_vessel_attributes	raise	raise exception '% must be at most %', name, f ->> 'max';	raise notice '% must be at most %', name, f ->> 'max';	1
+validate_vessel_attributes:guard:5	validate_vessel_attributes	guard	elsif (f ->> 'kind') = 'term' then	elsif false then	1
+validate_vessel_attributes:head:2	validate_vessel_attributes	head	if not exists (\n        select 1 from terms_for_vessel_field(p_type_id, f ->> 'key') t\n         where t.id::text = (v #>> '{}')\n      ) then	if false then	1
+validate_vessel_attributes:raise:5	validate_vessel_attributes	raise	raise exception '% must be chosen from its own list', name;	raise notice '% must be chosen from its own list', name;	1
+validate_vessel_type_fields:guard:1	validate_vessel_type_fields	guard	if new.kind <> 'vessel_type' or not (new.attributes ? 'fields') then	if false then	1
+validate_vessel_type_fields:earlyreturn:1	validate_vessel_type_fields	earlyreturn	return new;	null;	1
+validate_vessel_type_fields:guard:2	validate_vessel_type_fields	guard	if jsonb_typeof(new.attributes -> 'fields') <> 'array' then	if false then	1
+validate_vessel_type_fields:raise:1	validate_vessel_type_fields	raise	raise exception 'fields must be a list';	raise notice 'fields must be a list';	1
+validate_vessel_type_fields:guard:3	validate_vessel_type_fields	guard	if k is null or btrim(k) = '' then	if false then	1
+validate_vessel_type_fields:raise:2	validate_vessel_type_fields	raise	raise exception 'every field needs a key';	raise notice 'every field needs a key';	1
+validate_vessel_type_fields:guard:4	validate_vessel_type_fields	guard	if k = any(seen) then	if false then	1
+validate_vessel_type_fields:raise:3	validate_vessel_type_fields	raise	raise exception 'two fields share the key %', k;	raise notice 'two fields share the key %', k;	1
+validate_vessel_type_fields:guard:5	validate_vessel_type_fields	guard	if (f ->> 'kind') not in ('term', 'number', 'text') then	if false then	1
+validate_vessel_type_fields:raise:4	validate_vessel_type_fields	raise	raise exception 'field % has kind %, which is not term, number or text',	raise notice 'field % has kind %, which is not term, number or text',	1
+validate_vessel_type_fields:guard:6	validate_vessel_type_fields	guard	if (f ->> 'kind') = 'term' then	if false then	1
+validate_vessel_type_fields:guard:7	validate_vessel_type_fields	guard	if f ->> 'term_kind' is null then	if false then	1
+validate_vessel_type_fields:raise:5	validate_vessel_type_fields	raise	raise exception 'field % is a picker and names no vocabulary', k;	raise notice 'field % is a picker and names no vocabulary', k;	1
+validate_vessel_type_fields:guard:8	validate_vessel_type_fields	guard	if not exists (select 1 from term_kind tk where tk.kind = f ->> 'term_kind') then	if false then	1
+validate_vessel_type_fields:raise:6	validate_vessel_type_fields	raise	raise exception 'field % names vocabulary %, which does not exist',	raise notice 'field % names vocabulary %, which does not exist',	1
+validate_vessel_type_fields:head:1	validate_vessel_type_fields	head	if (f ->> 'min') is not null and (f ->> 'max') is not null\n       and (f ->> 'min')::numeric > (f ->> 'max')::numeric then	if false then	1
+validate_vessel_type_fields:raise:7	validate_vessel_type_fields	raise	raise exception 'field % has a minimum above its maximum', k;	raise notice 'field % has a minimum above its maximum', k;	1
+visible_node:notfound:1	visible_node	notfound	if not found then	if false then	1
+visible_node:head:1	visible_node	head	if not coalesce(is_admin()\n                  or n.owner_id = current_party_id()\n                  or is_facility_user(), false) then	if false then	1
+visible_node:earlyreturn:1	visible_node	earlyreturn	return null;	null;	2
+visible_node:guard:1	visible_node	guard	if full_view then	if false then	1
+visible_node:guard:2	visible_node	guard	if 'name'       = any(n.hidden) then	if false then	1
+visible_node:guard:3	visible_node	guard	if 'owner'      = any(n.hidden) then	if false then	1
+visible_node:guard:4	visible_node	guard	if 'variety'    = any(n.hidden) then	if false then	1
+visible_node:guard:5	visible_node	guard	if 'vintage'    = any(n.hidden) then	if false then	1
+visible_node:guard:6	visible_node	guard	if 'attributes' = any(n.hidden) then	if false then	1

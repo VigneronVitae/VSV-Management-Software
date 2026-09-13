@@ -4,7 +4,7 @@
 # Purpose: "Measures what fraction of deliberately injected schema defects the
 #           assertion suite catches. A suite that passes tells you it ran; a
 #           mutation score tells you whether it would have noticed."
-# Depends on: [tests/shim.sql, tests/schema_assertions.sql]
+# Depends on: [tests/shim.sql, tests/schema_assertions.sql, scripts/guards.sh]
 # Depended on by: [docs/session-reports/modularization-progress.md]
 # ---------------------------------------------------------------------------
 #
@@ -30,7 +30,7 @@
 #   policy       every row level security policy, dropped
 #   weaken       every policy recreated with a predicate of true
 #   rls          row level security itself, disabled per table
-#   logic        a function body, changed one substitution at a time
+#   logic        every refusal site in every function, neutralised one at a time
 #
 # policy and weaken are not the same test and the difference matters. A pinned
 # list of policy names catches every drop and nothing else; only weaken catches a
@@ -236,81 +236,102 @@ select 'rls' || chr(9) || t.relname || chr(9) ||
 # pg_get_functiondef, so it carries the function's real signature, volatility and
 # search_path rather than a copy that drifts.
 #
-# The list is shared between two queries below rather than written twice, because
-# the first version of the vanished-target check duplicated it and a duplicated
-# list is a list that goes out of step.
+# This class used to be a list of substitutions written by hand, and X-1-5 was the
+# standing caveat on it: ten chosen by the author scored 10 of 10, nine chosen by
+# X-1 scored 6 of 9, sixteen chosen by W-6 scored 5 of 16. The three figures are
+# ordered by how far each chooser stood from the code and ordered equally well by
+# how hard each was looking for gaps, and nothing separates those explanations.
+# W-6 proposed fixing it by constraining who chooses. That constrains the chooser
+# and not the choice.
 #
-# X-1-5 is the standing caveat on this class and it is not fixed here: ten
-# substitutions chosen by the author score 10 of 10, and nine chosen
-# independently score 6 of 9. The class samples the procedural surface; it does
-# not cover it.
-LOGIC_SUBS="
-  ('is_admin',                   'and active',                      '',                     'author: drops the active conjunct, ledger B10 in the client'),
-  ('is_facility_user',           'is_admin() or (',                 'true or (',            'author: everyone becomes staff'),
-  ('claim_account',              'when is_first then',              'when true then',       'author: every claimant becomes admin'),
-  ('close_node_when_empty',      'new.quantity <= 0',               'new.quantity < 0',     'author: a lot at exactly zero never closes'),
-  ('bind_vessel_code',           'existing.vessel_id = p_vessel_id','true',                 'author: the cross-vessel guard goes, a rebind returns silently'),
-  ('cellar_writable_columns',    'if not (changed = any(tg_argv))', 'if false',             'author: the column allow-list stops refusing'),
-  ('rack',                       'nullif(contributed, 0)',          'nullif(total_in, 0)',  'author: shares divided by arrival not contribution, the wire session bug'),
-  ('update_vessel',              'is distinct from',                'is not distinct from', 'author: a thermal change records only when nothing changed'),
-  ('resolve_subject_name',       'is null then',                    'is not null then',     'author: the deflation inverts'),
-  ('confirm_event',              'is_admin()',                      'true',                 'author: anyone may confirm, T0-4'),
-  ('claim_task',                 'and status = ''open''',           'and status is not null', 'independent: a claimed task can be taken from whoever holds it'),
-  ('validate_vessel_attributes', 'if coalesce((f ->> ''required'')::boolean, false) then', 'if false then', 'independent: required fields stop being required'),
-  ('finish_run',                 'raise exception ''no such run''', 'null',                 'independent: finishing a run that does not exist writes against a null vessel'),
-  ('visible_node',               'may_see_all_of',                  'true or may_see_all_of', 'independent: a client sees every field of every lot'),
-  ('set_lot_hidden',             'if not may_set_privacy(p_node_id)', 'if false',           'independent: anyone sets what is hidden about another party''s wine'),
-  ('validate_vessel_type_fields', 'not in (''term'', ''number'', ''text'')', 'is null and false', 'independent: a field of any kind at all is accepted'),
-  ('record_event',               'if op_id is null then',           'if false then',        'independent: an unknown operation writes an event with a null operation'),
-  ('fill_vessel',                'if occupied is not null then',    'if false then',        'independent: wine goes into a vessel that already holds some'),
-  ('update_vessel',              'if not found then',               'if false then',        'independent: editing a vessel that does not exist reports success'),
-  ('fork_lot',                   'if n_here = 0 then',              'if false then',        'independent: forking zero vessels off a lot'),
-  ('register_subject_resolver',  'if not is_admin() then',          'if false then',        'independent: anyone registers a resolver, which reaches dynamic SQL'),
-  ('rack',                       'and not p_allow_overfill',        'and false',            'independent: overfilling a vessel stops needing confirmation'),
-  ('node_bin_shares',            '''composition'' = any(n.hidden)', 'false',                'independent: a hidden composition is disclosed anyway'),
-  ('topping_check',              'if tgt is null then',             'if false then',        'independent: topping into a vessel with nothing in it'),
-  ('claim_task',                 'and claimed_by is null',          'and true',             'independent: the second half of the claim guard'),
-  ('fill_vessel',                'and active',                      '',                     'independent: wine goes into a deactivated vessel')
-"
-
-# X-1-7: this list is hand-maintained, and a substitution whose target string no
-# longer occurs used to be dropped by the where clause at enumeration. It was
-# absent from the total, absent from the inapplicable list, and absent from the
-# summary, against a comment claiming it reported as not applicable. Refactoring
-# any named function silently shrank the only class that tests procedural logic
-# while the percentage stayed at 100.
-#
-# It aborts now, and names the substitution, because a hand-maintained list that
-# has drifted from the code is not a smaller list, it is an unmaintained one.
-missing=$(q "$BASE" "
-with m(fn, find, repl, note) as (values $LOGIC_SUBS)
-select m.fn || ': ' || m.find
-  from m
-  left join pg_proc p
-    on p.proname = m.fn
-   and p.pronamespace = 'public'::regnamespace
-   and position(m.find in pg_get_functiondef(p.oid)) > 0
- where p.oid is null
- order by m.fn;")
-
-if [ -n "$missing" ]; then
-  echo "LOGIC SUBSTITUTION TARGETS HAVE GONE, refusing to score:" >&2
-  printf '%s\n' "$missing" | sed 's/^/    /' >&2
-  echo "    Either the function was refactored and the substitution needs rewriting," >&2
-  echo "    or the function is gone and the entry should be removed. Both are" >&2
-  echo "    deliberate acts. Silently dropping the entry is not." >&2
+# The population has no chooser. scripts/guards.sh enumerates every refusal site
+# in every function the kernel owns and this class now substitutes against all of
+# them, so the denominator is the surface rather than a sample of it.
+sites=$(bash scripts/guards.sh "$BASE" 2>/tmp/.guards-held)
+if [ -z "$sites" ]; then
+  echo "THE REFUSAL ENUMERATION RETURNED NOTHING, refusing to score." >&2
+  sed 's/^/    /' /tmp/.guards-held >&2
+  exit 2
+fi
+n_all=$(printf '%s\n' "$sites" | grep -c .)
+# guards.sh emits the population, including any site it cannot substitute. Those
+# are named, not dropped: a site missing from the denominator and a site that does
+# not exist produce the same percentage, and only one of them is true.
+mutable=$(printf '%s\n' "$sites" | awk -F'\t' '$6 > 0')
+n_sites=$(printf '%s\n' "$mutable" | grep -c .)
+if [ "$n_sites" -ne "$n_all" ]; then
+  echo "  note: $(( n_all - n_sites )) of $n_all enumerated refusal sites cannot be substituted"
+fi
+# The one character the transport reserves. No source line contains one and
+# this is here so that the first one that does is an abort rather than a class
+# that came up short without saying so.
+if printf '%s\n' "$sites" | grep -q "$(printf '\x01')"; then
+  echo "a refusal site contains the transport quote character, refusing to score." >&2
   exit 2
 fi
 
-enumerate logic "$BASE" "
-with m(fn, find, repl, note) as (values $LOGIC_SUBS)
-select 'logic' || chr(9) || m.fn || ': ' || m.note || chr(9) || 'b64:' ||
-       translate(encode(convert_to(replace(pg_get_functiondef(p.oid), m.find, m.repl), 'UTF8'), 'base64'), chr(10), '')
-  from m
-  join pg_proc p on p.proname = m.fn
-  join pg_namespace n on n.oid = p.pronamespace and n.nspname = 'public'
- where position(m.find in pg_get_functiondef(p.oid)) > 0
- order by m.fn;"
+# The transport is copy from stdin rather than a values list, because the fields
+# are arbitrary source lines and every quoting scheme that has to escape them is
+# a defect waiting for the first function that uses that character. csv format
+# with a quote character no source line can contain is the one shape that needs
+# no escaping at all: text format would read a backslash in a function body as an
+# escape, and the day the kernel gains its first backslash should not be the day
+# the logic class quietly loses a row.
+logic_sql="
+with u as (
+  select id, fn, replace(find, '\n', chr(10)) as find,
+              replace(repl, '\n', chr(10)) as repl, occ
+    from w7_sites)
+select 'logic' || chr(9) || s.id || ': ' || replace(s.find, chr(10), ' ') || chr(9) || 'b64:' ||
+       translate(encode(convert_to(
+         array_to_string((string_to_array(d.def, s.find))[1:s.occ], s.find)
+         || s.repl
+         || array_to_string((string_to_array(d.def, s.find))[s.occ+1:], s.find),
+       'UTF8'), 'base64'), chr(10), '')
+  from u s
+  join (select p.proname as fn, pg_get_functiondef(p.oid) as def
+          from pg_proc p
+          join pg_namespace n on n.oid = p.pronamespace and n.nspname = 'public') d
+    on d.fn = s.fn
+ order by s.id;"
+
+before=$(grep -c . "$muts" 2>/dev/null); before=${before:-0}
+{
+  echo "create temp table w7_sites(id text, fn text, kind text, find text, repl text, occ int);"
+  echo "copy w7_sites from stdin with (format csv, delimiter E'\t', quote E'\x01', escape E'\x01');"
+  printf '%s\n' "$mutable"
+  echo "\."
+  echo "$logic_sql"
+} | docker exec -i "$CONTAINER" psql -U postgres -At -q -v ON_ERROR_STOP=1 -d "$BASE" \
+      >> "$muts" 2>/tmp/.mutate-q.err
+rc=$?
+if [ "$rc" -ne 0 ] || [ -s /tmp/.mutate-q.err ]; then
+  echo "THE LOGIC ENUMERATION FAILED, refusing to score. psql exited $rc:" >&2
+  sed 's/^/    /' /tmp/.mutate-q.err >&2
+  exit 2
+fi
+after=$(grep -c . "$muts" 2>/dev/null); after=${after:-0}
+n_logic=$(( after - before ))
+
+# X-1-7 in its new form. The old check asked whether a hand-written target string
+# still existed, because the list could drift from the code. This list cannot
+# drift, it is read out of the same database in the same run, so the failure it
+# has to catch is a different one: a site enumerated and then lost on the way to
+# the mutation file. A site that is silently absent is scored as a site that does
+# not exist, and the two look identical inside a percentage.
+if [ "$n_logic" -ne "$n_sites" ]; then
+  echo "REFUSAL SITES LOST BETWEEN ENUMERATION AND MUTATION, refusing to score." >&2
+  echo "    guards.sh emitted $n_sites sites and $n_logic became mutations." >&2
+  exit 2
+fi
+printf '  %-8s %d mutations\n' logic "$n_logic"
+
+# A site guards.sh could not attribute to a position is a hole in the instrument
+# and not in the schema. It is printed rather than counted, because a hole
+# counted as covered is the thing this project keeps finding.
+if [ -s /tmp/.guards-held ]; then
+  sed 's/^/  /' /tmp/.guards-held
+fi
 
 [ -n "$ONLY" ] && { grep "^$ONLY	" "$muts" > "$muts.f"; mv "$muts.f" "$muts"; }
 
@@ -333,8 +354,8 @@ echo
 # denominator, because a harness that reports a number without reporting that the
 # number is unsound is the exact defect this whole line of work exists to correct,
 # arriving from inside the instrument.
-survivors=$(mktemp); inapplicable=$(mktemp); degenerate=$(mktemp); fixtures=$(mktemp); snaponly=$(mktemp); fixtures=$(mktemp)
-trap 'rm -f "$muts" "$survivors" "$inapplicable" "$degenerate" "$fixtures"' EXIT
+survivors=$(mktemp); inapplicable=$(mktemp); degenerate=$(mktemp); snaponly=$(mktemp); fixtures=$(mktemp)
+trap 'rm -f "$muts" "$survivors" "$inapplicable" "$degenerate" "$fixtures" "$snaponly"' EXIT
 
 # A fingerprint of everything any mutation class can touch. Taken before and
 # after a mutation is applied: if it does not move, the mutation changed nothing
@@ -530,26 +551,32 @@ if [ "$n_snap" -gt 0 ]; then
   sort "$snaponly" | awk -F'\t' '{printf "  %-8s %s\n", $1, $2}'
 fi
 
-# The logic class is the only sampled class, and the whole point of X-1-5 is that
-# who chose the sample decides the number. Reported split by provenance.
+# The logic class covers the whole refusal surface now rather than a sample of
+# it, so the useful cut is no longer who chose the substitution. It is what kind
+# of refusal was removed. A raise that has become a notice and a conjunct that
+# has stopped narrowing an update fail in very different ways, and there is no
+# reason to expect the suite to be equally able to see them.
 if [ "${seen[logic]:-0}" -gt 0 ]; then
-  la=0; lai=0; li=0; lii=0
+  declare -A ktot=() kmiss=()
   while IFS=$'	' read -r cls lbl _; do
     [ "$cls" = logic ] || continue
-    case "$lbl" in *"author:"*) la=$((la+1));; *) li=$((li+1));; esac
+    k=${lbl#*:}; k=${k%%:*}
+    ktot[$k]=$(( ${ktot[$k]:-0} + 1 ))
   done < "$muts"
   for f in "$survivors" "$snaponly"; do
     while IFS=$'	' read -r cls lbl _; do
       [ "$cls" = logic ] || continue
-      case "$lbl" in *"author:"*) lai=$((lai+1));; *) lii=$((lii+1));; esac
+      k=${lbl#*:}; k=${k%%:*}
+      kmiss[$k]=$(( ${kmiss[$k]:-0} + 1 ))
     done < "$f"
   done
   echo
-  echo "the logic class by who chose the substitution, which is X-1-5's point:"
-  [ "$la" -gt 0 ] && printf '  author       %d of %d caught behaviourally
-' "$((la-lai))" "$la"
-  [ "$li" -gt 0 ] && printf '  independent  %d of %d caught behaviourally
-' "$((li-lii))" "$li"
+  echo "the refusal surface by kind of refusal:"
+  for k in raise guard notfound earlyreturn permissive silent; do
+    t=${ktot[$k]:-0}; [ "$t" -eq 0 ] && continue
+    m=${kmiss[$k]:-0}
+    printf '  %-12s %d of %d caught behaviourally\n' "$k" "$((t-m))" "$t"
+  done
 fi
 
 if [ "$n_fix" -gt 0 ]; then
@@ -594,4 +621,36 @@ if [ "$excluded" -gt 0 ]; then
     "$excluded" "$n_degen" "$n_inap"
 else
   echo '  nothing excluded: every enumerated mutation applied and changed something.'
+fi
+
+# The gate in docs/review/CURRENT-BASELINE.md is enforced by scripts/ratchet.sh,
+# which needs the outcome of each mutation rather than the prose above. Prose is
+# what the last two gates were written against, and parsing it is how a gate ends
+# up agreeing with a run that did not happen.
+if [ -n "${MUT_REPORT:-}" ]; then
+  mkdir -p "$MUT_REPORT" || { echo "cannot write $MUT_REPORT" >&2; exit 2; }
+  cp "$muts"         "$MUT_REPORT/enumerated.tsv"
+  cp "$survivors"    "$MUT_REPORT/survived.tsv"
+  cp "$snaponly"     "$MUT_REPORT/snapshot-only.tsv"
+  cp "$fixtures"     "$MUT_REPORT/fixture-breakage.tsv"
+  cp "$inapplicable" "$MUT_REPORT/inapplicable.tsv"
+  cp "$degenerate"   "$MUT_REPORT/degenerate.tsv"
+  {
+    printf 'scored	%d
+'       "$ts"
+    printf 'behavioural	%d
+'  "$tb"
+    printf 'fixture	%d
+'      "$tf"
+    printf 'snapshot	%d
+'     "$tsn"
+    printf 'survived	%d
+'     "$n_surv"
+    printf 'degenerate	%d
+'   "$n_degen"
+    printf 'inapplicable	%d
+' "$n_inap"
+  } > "$MUT_REPORT/score.tsv"
+  echo
+  echo "machine readable results written to $MUT_REPORT"
 fi
