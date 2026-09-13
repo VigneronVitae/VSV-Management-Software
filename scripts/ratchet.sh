@@ -66,8 +66,15 @@ fi
 # X-1's whole point, arriving inside the thing that enforces the fix. If the
 # harness exits zero without writing its results, every loop below runs zero
 # times and every gate passes.
-for f in enumerated survived snapshot-only score; do
-  [ -s "$REPORT/$f.tsv" ] || { echo "the harness reported success and wrote no $f.tsv, refusing to gate" >&2; exit 2; }
+# Existence, not size. An empty survived.tsv is the best outcome there is and the
+# first version of this treated it as a missing file, so a run in which nothing
+# survived would have refused to gate. Found by a run where nothing survived,
+# which was itself void for a different reason.
+for f in enumerated survived snapshot-only fixture-breakage score; do
+  [ -e "$REPORT/$f.tsv" ] || { echo "the harness reported success and wrote no $f.tsv, refusing to gate" >&2; exit 2; }
+done
+for f in enumerated score; do
+  [ -s "$REPORT/$f.tsv" ] || { echo "$f.tsv is empty, which no run can legitimately produce" >&2; exit 2; }
 done
 
 # ---------------------------------------------------------------------------

@@ -32,7 +32,8 @@
 --              supabase/migrations/0027_term_kind_registry.sql,
 --              supabase/migrations/0028_redaction_is_row_level.sql,
 --              supabase/migrations/0029_viewer_scope.sql,
---              supabase/migrations/0030_writable_columns.sql]
+--              supabase/migrations/0030_writable_columns.sql,
+--              supabase/migrations/0031_scheduling_to_core.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -685,8 +686,9 @@ begin
 end $$;
 
 -- with a template, history appears, stamped inferred
-insert into template (id, variety_id, name)
-  values ('00000000-0000-0000-0000-00000000e001', term_id('variety','pinot_gris'), 'Assertion template');
+insert into template (id, applies_to_id, applies_to_kind, name)
+  values ('00000000-0000-0000-0000-00000000e001', term_id('variety','pinot_gris'),
+          'variety', 'Assertion template');
 insert into template_step (template_id, step_order, operation_id, offset_interval) values
   ('00000000-0000-0000-0000-00000000e001', 1, term_id('operation','batonnage'),  interval '14 days'),
   ('00000000-0000-0000-0000-00000000e001', 2, term_id('operation','malo_check'), interval '30 days');
@@ -2658,7 +2660,7 @@ begin
   -- with three foreign keys into the resolver registry plus a bare-name check.
   -- c=19 f=43 p=22 before 0027, which added the term_kind registry: two bare-name
   -- checks, its primary key, and the foreign key from term.kind into it.
-  want := 'c=21 f=44 p=23 u=14';
+  want := 'c=22 f=44 p=23 u=14';
   if have <> want then
     raise exception
       E'FAIL: the constraint inventory changed.\nnow:  %\nwas:  %\nIf that is deliberate, update this line in the same commit that changed the schema.', have, want;
@@ -2693,7 +2695,7 @@ begin
        || 'node.node_variety_is_a_variety, '
        || 'procedure_step.step_material_is_a_material, '
        || 'task.task_operation_is_an_operation, '
-       || 'template.template_variety_is_a_variety, '
+       || 'template.template_applies_to_a_registered_kind, '
        || 'template_step.template_step_operation_is_an_operation, '
        || 'vessel.vessel_type_is_a_vessel_type';
 
@@ -2726,7 +2728,6 @@ begin
        || 'node.variety_kind=''variety''::text '
        || 'procedure_step.material_kind=''material_kind''::text '
        || 'task.operation_kind=''operation''::text '
-       || 'template.variety_kind=''variety''::text '
        || 'template_step.operation_kind=''operation''::text '
        || 'vessel.type_kind=''vessel_type''::text';
 
@@ -4929,6 +4930,144 @@ begin
   perform test_ok('a table with no cellar allow-list answers none, not all');
 
   perform test_act_as('00000000-0000-0000-0000-00000000a001');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- AR-E6, the scheduling block is core'; end $$;
+
+-- AR-E6. The scheduling block moves to core and points at a generic subject.
+--
+-- `0031`. Every outward edge of `template`, `template_step`, `task` and
+-- `task_claim_log` was already core except one: `template.variety_id`, with a
+-- generated `variety_kind` pinned to the string 'variety'. `term_kind` records
+-- that `variety` belongs to winemaking, so a core table carried "a schedule is
+-- for a grape variety", which is what `AR-E7` took out of two enums.
+--
+-- The structural claim, asserted from the catalog rather than by reading the four
+-- tables. A generated kind column is how this schema pins a composite foreign key
+-- to one vocabulary, and a core table pinning itself to a module's vocabulary is
+-- the wrong-way edge `AR-A3` forbids. Pinning to a core vocabulary is fine, which
+-- is why `operation` on `task` and `template_step` is left alone.
+do $$
+declare offender text; n_pins int;
+begin
+  select string_agg(x.tbl || '.' || x.col || ' pinned to ' || x.kind || ', owned by ' || x.module, '; ')
+       , count(*) filter (where true)
+    into offender, n_pins
+    from (
+      select c.relname as tbl, a.attname as col,
+             btrim(pg_get_expr(d.adbin, d.adrelid), '''()::text ') as kind,
+             tk.module
+        from pg_class c
+        join pg_namespace ns on ns.oid = c.relnamespace and ns.nspname = 'public'
+        join pg_attribute a on a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped
+        join pg_attrdef d on d.adrelid = c.oid and d.adnum = a.attnum
+        left join term_kind tk
+          on tk.kind = btrim(pg_get_expr(d.adbin, d.adrelid), '''()::text ')
+       where c.relname in ('template', 'template_step', 'task', 'task_claim_log')
+         and a.attgenerated <> ''
+    ) x
+   where x.module is not null and x.module <> 'core';
+
+  if offender is not null then
+    raise exception
+      'FAIL: a scheduling table pins itself to a module vocabulary: %. AR-E6 says these four are core', offender;
+  end if;
+  -- The blindness guard. If no generated kind column were found at all this
+  -- would pass on a schema that had lost the mechanism entirely.
+  select count(*) into n_pins
+    from pg_class c
+    join pg_namespace ns on ns.oid = c.relnamespace and ns.nspname = 'public'
+    join pg_attribute a on a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped
+   where c.relname in ('template', 'template_step', 'task', 'task_claim_log')
+     and a.attgenerated <> '';
+  if n_pins < 2 then
+    raise exception 'FAIL: only % generated kind column(s) on the scheduling block, so this check is blind', n_pins;
+  end if;
+  perform test_ok('no scheduling table pins itself to a vocabulary a module owns, which is what makes the block core');
+end $$;
+
+-- And the positive half: a schedule may be written against a vocabulary that has
+-- nothing to do with wine. This is the thing AR-E6 buys and it is the thing that
+-- would silently stop working if somebody put the variety back.
+do $$
+declare kept uuid;
+begin
+  insert into template (id, applies_to_id, applies_to_kind, name)
+  values ('00000000-0000-0000-0000-00000000e0a1',
+          term_id('location_kind', (select value from term where kind = 'location_kind' limit 1)),
+          'location_kind', 'Opening checklist');
+  select id into kept from template where id = '00000000-0000-0000-0000-00000000e0a1';
+  if kept is null then
+    raise exception 'FAIL: a schedule against a non-winemaking vocabulary was not accepted';
+  end if;
+  perform test_ok('a schedule may be written against a vocabulary that is not winemaking, which is what AR-E6 is for');
+
+  -- S-46, asserted rather than only filed. It applies to a kind no generator
+  -- reads, so it is accepted, correct, and inert. That is a refusal returning
+  -- success wearing a different coat, and it is worth seeing in the output.
+  delete from template where id = '00000000-0000-0000-0000-00000000e0a1';
+end $$;
+
+-- The composite key still proves the term is of the kind claimed. Making the kind
+-- a value rather than a constant loosens nothing, and that is the sentence this
+-- assertion is here to keep true.
+do $$
+begin
+  begin
+    insert into template (id, applies_to_id, applies_to_kind, name)
+    values ('00000000-0000-0000-0000-00000000e0a2',
+            term_id('variety', 'pinot_noir'), 'vessel_type', 'Lying about its kind');
+    raise exception 'FAIL: a schedule named a variety and called it a vessel type';
+  exception when foreign_key_violation then
+    perform test_ok('a schedule naming a term of one kind and claiming another is refused by the composite key');
+  end;
+
+  begin
+    insert into template (id, applies_to_kind, name)
+    values ('00000000-0000-0000-0000-00000000e0a3', 'variety', 'A kind and no member of it');
+    raise exception 'FAIL: a schedule named a vocabulary and no member of it';
+  exception when check_violation then
+    perform test_ok('a schedule carries a vocabulary and a member of it, or neither');
+  end;
+end $$;
+
+-- Where the winemaking knowledge went. It is in the generator now, which asks for
+-- the vocabulary it understands by name, and a schedule against any other
+-- vocabulary is not history and does not become events.
+do $$
+declare written int;
+begin
+  insert into node (id, stage, status, name, variety_id, owner_id, created_by)
+  values ('00000000-0000-0000-0000-00000000b0e6', 'maturation', 'open', 'AR-E6 lot',
+          term_id('variety', 'pinot_noir'),
+          '00000000-0000-0000-0000-00000000f001', '00000000-0000-0000-0000-00000000a001');
+
+  insert into template (id, applies_to_id, applies_to_kind, name, active)
+  values ('00000000-0000-0000-0000-00000000e0a4',
+          term_id('variety', 'pinot_noir'), 'variety', 'PN schedule', true);
+  insert into template_step (template_id, step_order, operation_id, offset_interval)
+  values ('00000000-0000-0000-0000-00000000e0a4', 1, term_id('operation', 'batonnage'), interval '7 days');
+
+  written := generate_inferred_history('00000000-0000-0000-0000-00000000b0e6');
+  if written <> 1 then
+    raise exception 'FAIL: a schedule against the lot''s variety generated % events', written;
+  end if;
+  perform test_ok('history generation asks for the variety vocabulary by name, which is where that knowledge belongs');
+
+  -- Re-pointed at a vocabulary the generator does not read, the same schedule
+  -- generates nothing. S-46 is that nothing says so.
+  delete from event where subject_id = '00000000-0000-0000-0000-00000000b0e6';
+  update template set applies_to_id = term_id('vessel_type', 'barrel'), applies_to_kind = 'vessel_type'
+   where id = '00000000-0000-0000-0000-00000000e0a4';
+  written := generate_inferred_history('00000000-0000-0000-0000-00000000b0e6');
+  if written <> 0 then
+    raise exception 'FAIL: a schedule against another vocabulary generated % events for a lot', written;
+  end if;
+  perform test_ok('S-46, asserted: a schedule against a vocabulary no generator reads is accepted and does nothing, silently');
+
+  delete from template where id = '00000000-0000-0000-0000-00000000e0a4';
+  delete from node where id = '00000000-0000-0000-0000-00000000b0e6';
 end $$;
 
 -- ---------------------------------------------------------------------------

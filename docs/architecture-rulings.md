@@ -304,7 +304,7 @@ registry built first, the scheduling move costs under a day because `task_board`
 becomes a lateral join. Built after, it costs half again as much and has to be redone.
 
 **AR-E6. The scheduling block moves to core and points at a generic subject. Settled.**
-*Status:* ruled
+*Status:* built, 0031_scheduling_to_core.sql
 `template`, `template_step`, `task`, `task_claim_log`, and `event` are generic. Nothing
 about them is winemaking. Maintenance, spray scheduling, tasting room opening
 checklists, and inventory work orders are then free.

@@ -108,6 +108,25 @@ adm_or_die() {
   fi
 }
 
+# W-10. The inputs, fingerprinted, because editing one of them mid-run is now the
+# second measurement this project has lost that way and the first cost thirty
+# minutes with a rule written down immediately afterwards.
+#
+# W-8 edited this script while it was running, and bash reads a script
+# incrementally, so it misparsed its own scoring section after completing every
+# mutation. W-10 edited tests/schema_assertions.sql while this was reading it once
+# per mutation, and the run reported 356 of 367 behavioural with 294 of those
+# being fixture breakage, against 34 the session before. **A number that good is
+# the shape of a broken suite, not of a covered schema**, and nothing said so.
+#
+# So the rule becomes a check. If anything this run depends on changes underneath
+# it, the score is void and saying so is cheaper than discovering it from the
+# fixture column.
+inputs_fingerprint() {
+  cat tests/schema_assertions.sql tests/shim.sql scripts/guards.sh "$0"       supabase/migrations/0*.sql 2>/dev/null | cksum
+}
+INPUTS_AT_START=$(inputs_fingerprint)
+
 if ! docker exec "$CONTAINER" true 2>/dev/null; then
   echo "cannot reach $CONTAINER"; exit 2
 fi
@@ -615,6 +634,25 @@ if [ "$ts" -eq 0 ]; then
   echo "NO SCORE: nothing was scored. $excluded mutation(s) were excluded."
   exit 2
 fi
+if [ "$(inputs_fingerprint)" != "$INPUTS_AT_START" ]; then
+  echo "THE INPUTS CHANGED WHILE THIS RAN, so the score is void." >&2
+  echo "    One of tests/schema_assertions.sql, tests/shim.sql, scripts/guards.sh," >&2
+  echo "    this script or a migration was edited after the run began. Every" >&2
+  echo "    mutation after that point was scored against a different suite." >&2
+  exit 2
+fi
+
+# A suite that is failing for its own reasons catches every mutation, and the
+# fixture column is where that shows. It was 34 of 268 in W-9 and 294 of 356 in
+# the run that prompted this check. There is no correct threshold, and a share
+# above half means the suite was probably broken rather than the schema covered.
+if [ "$tb" -gt 0 ] && [ $(( tf * 2 )) -gt "$tb" ]; then
+  echo "MOST CATCHES ARE FIXTURE BREAKAGE, $tf of $tb, so this score is not about coverage." >&2
+  echo "    A suite failing for its own reasons catches everything. Check that the" >&2
+  echo "    assertion suite passes unmutated before reading any of this." >&2
+  exit 2
+fi
+
 echo "SCORES, $SCOPE, from $total enumerated:"
 printf '  behavioural  %d of %d (%d%%)   the gate. An assertion exercised the schema and refused.\n' \
   "$tb" "$ts" "$(( tb * 100 / ts ))"

@@ -532,6 +532,22 @@ repeating it. *Load-bearing:* no. It is load-bearing only for whoever reads
 `column_privileges` and believes it.
 
 
+**S-46. A template may declare it applies to a vocabulary nothing generates from, and nothing says so.**
+`0031` makes the scheduling block generic per AR-E6: a template names `applies_to_kind` and
+`applies_to_id` against any registered vocabulary rather than a variety specifically, which is
+what takes the last winemaking edge out of core. The cost is that the pairing of a kind to a
+generator is now a convention rather than a constraint. `generate_inferred_history` reads
+templates whose kind is `variety`; a template written against `vessel_type`, intending a
+maintenance schedule, is accepted by the database, is correct, and does nothing, because the
+generator that would read it has not been written. **That is the same shape as a refusal that
+returns success**, which is this project's standing failure mode, arriving in a place where the
+silence is about a feature rather than about a permission. *Resolves when:* either a registry
+pairs a vocabulary kind with the generator that consumes it, which is the AR-B contract register
+one level down and should not be invented ahead of it, or a check reports templates whose kind
+no generator reads, which is a `doctor` check and therefore S-4. *Load-bearing:* not yet. It
+becomes load-bearing the first time somebody writes a maintenance template and waits for tasks.
+
+
 ## Discharged
 
 **S-25. An account belonging to no party is staff, so a client who signs up
