@@ -94,6 +94,44 @@ at all when `q` is null. One assertion in the suite had been passing that way si
 written, and the update it was written to protect could be deleted without it noticing. This
 is A25, the null-permit class, arriving inside the instrument that was built to find A25.
 
+## Predictions for W-9, recorded before measuring
+
+Anchored on detection figures, per W-9. W-8's running produced ten findings reading had not,
+against five of seventeen section B entries reproduced. **That 2:1 is the number I distrust
+most**, because it was measured on the third of the set I chose to spend the session on, and I
+chose the leak. Selection deciding a ratio is the defect this project has spent three sessions
+on, arriving in the one figure W-8 was commissioned to produce.
+
+1. **Of the twelve unscored section B entries, seven to ten reproduce, one to three do not,
+   and one to two are unreachable in this environment.** The unreachable ones are the two that
+   need hardware or a network condition I cannot produce honestly: B8 needs a camera decoding
+   frames, B17 needs a session to expire on a device that is offline. I will say which rather
+   than simulating them and calling it a reproduction.
+
+2. **Across all seventeen, twelve to fifteen reproduce, and the reading-against-running ratio
+   falls to about one to one.** This is the prediction I care about. W-8's 2:1 should not
+   survive completing the denominator, because the new findings came from the part of the
+   surface I went looking at hardest, and the twelve remaining entries are mostly small and
+   local, so they will add reproductions faster than they add discoveries. **If the ratio
+   holds at 2:1 on the full set, my explanation was wrong and reading really is worth about
+   half of running.**
+
+3. **Of the twenty degenerate policies, five to nine are deliberately permissive and the rest
+   are findings.** The deliberate ones are vocabulary: `term`, `term_kind`, `template`,
+   `template_step` and probably `location`. Everything carrying wine, ownership, movement or
+   people is a finding.
+
+4. **No enumeration of sites would have caught B20, and I do not expect to find one.** A site
+   enumeration finds sites and B20 is a density. What would catch it is enumerating render
+   paths and asking of each whether it can compose a complete screen from an absent
+   response, which is a different question with a different unit. **Two to five siblings.**
+
+5. **Column privileges are not granted per column, so the phase 6 query returns every column
+   as writable and the answer is useless.** The kernel enforces this with the
+   `cellar_writable_columns` trigger, which is a `BEFORE UPDATE` check and not a grant, so
+   `information_schema.column_privileges` cannot see it. I expect phase 6 to end in the
+   finding it anticipates rather than in the query it hopes for.
+
 ## Predictions for W-8, recorded before measuring
 
 W-8 is the client's first run. Nothing in this project has ever measured the client, so
