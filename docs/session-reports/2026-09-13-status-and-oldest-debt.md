@@ -13,9 +13,18 @@ W-10, four phases, green at `0031`. One migration.
 
 W-10 opens "First, push." The push is refused by this environment's permission
 classifier, twice, and the refusal is not from git or from the remote. Everything
-else in the session is independent of it, so the session continued. **`main` is
-now eleven commits ahead of `origin/main`** and that is the one instruction in
-this prompt I could not carry out.
+else in the session is independent of it, so the session continued. That is the
+one instruction in this prompt I could not carry out.
+
+**And it was worse than a blocked push, which the blocked push hid.** I
+fast-forwarded `main` at the start of the session and then went on committing to
+`claude/sql-files-to-markdown-i31rob`, so by the end `main` pointed at a commit in
+the middle of W-9 and everything since had landed somewhere else. Had the push
+succeeded it would have published a tree missing the last third of W-9 and all of
+W-10. Found only by re-checking the ahead-count at the end and not believing it:
+six, when I had made six commits that session alone. `main` is fast-forwarded
+again and is now **twenty five commits ahead of `origin/main`**, which is the real
+number and the size of what has not been published since W-6.
 
 ## Predictions, scored
 
@@ -203,6 +212,10 @@ mark something built without an assertion, and I did not, because writing the
 check made me conservative about the claim before the check ran. Predicting your
 own carelessness and then being careful is a strange way to be wrong.
 
-**The push.** Refused by the environment twice, and the session continued around
-it, which is right, but it means the one thing W-10 asked for first is the one
-thing not done.
+**The push, and the branch under it.** Refused by the environment twice, and the
+session continued around it, which is right. What is not right is that I
+fast-forwarded `main` at the start and then committed to the working branch for
+the rest of the session, so the thing I was trying to push was six commits behind
+what I had written. A blocked push is the only reason that did not ship. I found
+it by disbelieving an ahead-count of six after making six commits, which is a
+thin margin to have caught it by.
