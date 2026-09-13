@@ -35,6 +35,20 @@ export type AppUser = {
   active: boolean;
 };
 
+/** What the caller is entitled to see, answered by the kernel rather than worked
+ * out here. `sees` is the whole point: an empty result read against it is a
+ * complete statement, where an empty result on its own is not. See 0029. */
+export type ViewerScope = {
+  signed_in: boolean;
+  account: boolean;
+  role: Role | null;
+  party_id: Uuid | null;
+  party_name: string | null;
+  party_kind: PartyKind | null;
+  may_admin: boolean;
+  sees: "everything" | "own" | "nothing";
+};
+
 export type PartyKind = "facility" | "client";
 
 export type Party = {

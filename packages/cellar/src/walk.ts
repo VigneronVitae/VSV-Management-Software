@@ -37,12 +37,15 @@ import {
   uploadVesselPhoto,
   type VesselRow,
   type VesselState,
+  type ViewerScope,
   vesselById,
   vesselPhotoUrl,
   vessels,
   vesselTypeNotes,
+  viewerScope,
 } from "core";
 import { locationPicker, partyPicker, termPicker } from "./pickers.ts";
+import { describeEmpty, describeRefusal, mayEnter } from "./refusal.ts";
 import { codeCapture } from "./scan.ts";
 import { activeSkin, applySkin, skins } from "./skins.ts";
 import { remember, stickyValue } from "./sticky.ts";
@@ -80,19 +83,64 @@ function show(node: HTMLElement): void {
   window.scrollTo(0, 0);
 }
 
+// The viewer's standing, as the kernel last answered it. Held here rather than
+// threaded through every screen because every screen needs it and none of them
+// should be deciding it. Refreshed by route() on each pass, so a sign-out or a
+// deactivation is picked up on the next navigation rather than remembered.
+let scope: ViewerScope | null = null;
+
+// W-9 phase 4. Every error in this client already arrived here, which is why one
+// path was reachable at all; what it did was relay whatever Postgres said. It now
+// asks describeRefusal, which is the only place that knows what the three shapes
+// are and what to say about each.
 function fail(error: unknown): HTMLElement {
-  return banner((error as Error).message ?? String(error), "error");
+  return banner(describeRefusal(error, scope), "error");
 }
 
 // --- the gates ------------------------------------------------------------
+
+// Ledger B10's replacement. A signed-in account with no standing used to reach
+// every screen and be refused one write at a time; it now stops here and is told
+// which of the two reasons applies, because "ask an administrator" is useless
+// advice if the answer is that you are looking at the wrong winery.
+function noStandingScreen(): HTMLElement {
+  return screen(
+    "This account cannot work here",
+    lede(
+      "You are signed in, and this sign-in has nothing to work on here. That is " +
+        "not the same as being signed out, so the screen says which it is.",
+    ),
+    banner(
+      scope?.signed_in && !scope.account
+        ? "The account exists and has been deactivated. An administrator turns it back on."
+        : "This sign-in is not attached to anything at this winery yet.",
+      "note",
+    ),
+    button(
+      "Sign out",
+      async () => {
+        await signOut();
+        await route();
+      },
+      "quiet",
+    ),
+  );
+}
 
 async function route(): Promise<void> {
   try {
     const session = await currentSession();
     if (!session) return show(signInScreen());
 
+    scope = await viewerScope();
+
     const user = await currentAppUser();
     if (!user) return show(claimScreen(session.email));
+
+    // Ledger B10. This used to compare user.role to "admin" and never looked at
+    // active, so a deactivated account reached every screen and was refused one
+    // write at a time by the kernel. mayEnter asks the kernel instead.
+    if (!mayEnter(scope)) return show(noStandingScreen());
 
     const facility = await facilityParty();
     if (!facility) return show(facilityScreen(user));
@@ -425,7 +473,9 @@ function vesselListScreen(kit: VesselState[]): HTMLElement {
     ),
     kit.length === 0
       ? empty(
-          "No vessels yet. The first one is the longest; the rest remember your answers.",
+          // W-9 phase 4. "No vessels yet" is only true for somebody who can see
+          // all of them. describeEmpty is the one place that difference is said.
+          `${describeEmpty("vessels", scope)} The first one is the longest; the rest remember your answers.`,
         )
       : vesselList(kit),
     button("Back", () => route(), "quiet"),

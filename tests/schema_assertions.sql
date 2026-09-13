@@ -30,7 +30,8 @@
 --              supabase/migrations/0025_bind_an_unbound_code.sql,
 --              supabase/migrations/0026_subject_type_registry.sql,
 --              supabase/migrations/0027_term_kind_registry.sql,
---              supabase/migrations/0028_redaction_is_row_level.sql]
+--              supabase/migrations/0028_redaction_is_row_level.sql,
+--              supabase/migrations/0029_viewer_scope.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
 -- Open sorries: S-7 (what this exercises is Postgres policy evaluation, not
@@ -4813,6 +4814,59 @@ begin
       'FAIL: S-44 says a vessel a client may not see into reports as empty, and it reported %. If AR-E11 is built, this assertion is what should have changed with it', empty_to_them;
   end if;
   perform test_ok('S-44, recorded as an assertion: a vessel a client may not see into says it is empty, which is false and is the narrower of the two errors');
+
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- what the caller is, answered by the kernel'; end $$;
+
+-- 0029. The client used to decide who was staff by comparing app_user.role to the
+-- string "admin", which reimplements is_admin() and drops its active conjunct, so
+-- a deactivated account reached every screen and was refused one write at a time.
+-- That is ledger B10 and the R-4 class. viewer_scope() is the kernel answering
+-- instead, and these assert the three answers it can give.
+do $$
+declare v record;
+begin
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+  select * into v from viewer_scope();
+  if v.sees is distinct from 'everything' or not v.may_admin then
+    raise exception 'FAIL: an admin is scoped as % / may_admin %', v.sees, v.may_admin;
+  end if;
+  perform test_ok('an administrator is scoped to everything');
+
+  perform test_act_as('00000000-0000-0000-0000-00000000a002');
+  select * into v from viewer_scope();
+  if v.sees is distinct from 'everything' or v.may_admin then
+    raise exception 'FAIL: a cellar hand is scoped as % / may_admin %', v.sees, v.may_admin;
+  end if;
+  perform test_ok('a cellar hand is scoped to everything and is not an administrator');
+
+  perform test_act_as('00000000-0000-0000-0000-00000000a003');
+  select * into v from viewer_scope();
+  if v.sees is distinct from 'own' or v.party_name is distinct from 'Test Client' then
+    raise exception 'FAIL: a client login is scoped as % for %', v.sees, coalesce(v.party_name, 'nobody');
+  end if;
+  perform test_ok('a client login is scoped to its own party, by name');
+
+  -- The B10 case. Deactivation has to change the answer, or the client is back to
+  -- reading a role string and ignoring the column that matters.
+  update app_user set active = false where id = '00000000-0000-0000-0000-00000000a002';
+  perform test_act_as('00000000-0000-0000-0000-00000000a002');
+  select * into v from viewer_scope();
+  if v.account or v.sees is distinct from 'nothing' then
+    raise exception 'FAIL: a deactivated account is scoped account=% sees=%, so B10 is open again', v.account, v.sees;
+  end if;
+  perform test_ok('a deactivated account is scoped to nothing, which is what B10 needed and the client could not see');
+  update app_user set active = true where id = '00000000-0000-0000-0000-00000000a002';
+
+  perform test_act_as(null);
+  select * into v from viewer_scope();
+  if v.signed_in or v.sees is distinct from 'nothing' then
+    raise exception 'FAIL: nobody is scoped signed_in=% sees=%', v.signed_in, v.sees;
+  end if;
+  perform test_ok('nobody at all is scoped to nothing, without raising');
 
   perform test_act_as('00000000-0000-0000-0000-00000000a001');
 end $$;

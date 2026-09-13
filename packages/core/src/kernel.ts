@@ -14,6 +14,7 @@ import type {
   VesselPayload,
   VesselRow,
   VesselState,
+  ViewerScope,
   WalkResult,
 } from "./types.ts";
 
@@ -33,6 +34,31 @@ export function kernel(): SupabaseClient {
 
 // Ids are generated here so an offline write has identity before the server
 // sees it. Never a sequence.
+/**
+ * A refusal, with the thing that says who refused still attached.
+ *
+ * Every wrapper below used to end `throw new KernelError(error)`, in thirty
+ * four places, which discards the SQLSTATE. That one character of carelessness is
+ * why W-8 found three shapes of refusal and no way to tell them apart: P0001 is a
+ * sentence the kernel wrote for a person and 42501 is a policy that has none, and
+ * downstream of `new Error(message)` they are the same object. The code that
+ * needed the discriminator never saw it.
+ */
+export class KernelError extends Error {
+  readonly code: string | undefined;
+  readonly details: string | undefined;
+  constructor(e: {
+    message: string;
+    code?: string | undefined;
+    details?: string | null | undefined;
+  }) {
+    super(e.message);
+    this.name = "KernelError";
+    this.code = e.code;
+    this.details = e.details ?? undefined;
+  }
+}
+
 export function newId(): Uuid {
   return crypto.randomUUID();
 }
@@ -41,12 +67,12 @@ export function newId(): Uuid {
 
 export async function signUp(email: string, password: string): Promise<void> {
   const { error } = await kernel().auth.signUp({ email, password });
-  if (error) throw new Error(error.message);
+  if (error) throw new KernelError(error);
 }
 
 export async function signIn(email: string, password: string): Promise<void> {
   const { error } = await kernel().auth.signInWithPassword({ email, password });
-  if (error) throw new Error(error.message);
+  if (error) throw new KernelError(error);
 }
 
 export async function signOut(): Promise<void> {
@@ -70,10 +96,31 @@ export async function currentSession(): Promise<{
 // rather than betting on which.
 export async function claimAccount(name: string): Promise<AppUser> {
   const { data, error } = await kernel().rpc("claim_account", { p_name: name });
-  if (error) throw new Error(error.message);
+  if (error) throw new KernelError(error);
   const row = Array.isArray(data) ? data[0] : data;
   if (!row) throw new Error("claim_account returned nothing");
   return row as AppUser;
+}
+
+/** The caller's standing, from the kernel. Never cached across a sign-in: it is
+ * the answer to "what am I", and the one thing that changes when that changes. */
+export async function viewerScope(): Promise<ViewerScope> {
+  const { data, error } = await kernel().rpc("viewer_scope");
+  if (error) throw new KernelError(error);
+  const row = Array.isArray(data) ? data[0] : data;
+  // A caller with no session still gets a shape rather than a null, so that every
+  // reader downstream has a scope to render against and none of them has to ask
+  // whether it exists.
+  return (row ?? {
+    signed_in: false,
+    account: false,
+    role: null,
+    party_id: null,
+    party_name: null,
+    party_kind: null,
+    may_admin: false,
+    sees: "nothing",
+  }) as ViewerScope;
 }
 
 export async function currentAppUser(): Promise<AppUser | null> {
@@ -84,7 +131,7 @@ export async function currentAppUser(): Promise<AppUser | null> {
     .select("id, name, role, active")
     .eq("id", session.userId)
     .maybeSingle();
-  if (error) throw new Error(error.message);
+  if (error) throw new KernelError(error);
   return data as AppUser | null;
 }
 
@@ -98,7 +145,7 @@ export async function terms(kind: TermKind): Promise<Term[]> {
     .eq("active", true)
     .order("sort_order")
     .order("label");
-  if (error) throw new Error(error.message);
+  if (error) throw new KernelError(error);
   return (data ?? []) as Term[];
 }
 
@@ -112,7 +159,7 @@ export async function termsForVesselField(
     p_vessel_type_id: vesselTypeId,
     p_field_key: fieldKey,
   });
-  if (error) throw new Error(error.message);
+  if (error) throw new KernelError(error);
   return (data ?? []) as Term[];
 }
 
@@ -123,7 +170,7 @@ export async function makersForVesselType(vesselTypeId: Uuid): Promise<Term[]> {
   const { data, error } = await kernel().rpc("makers_for_vessel_type", {
     p_vessel_type_id: vesselTypeId,
   });
-  if (error) throw new Error(error.message);
+  if (error) throw new KernelError(error);
   return (data ?? []) as Term[];
 }
 
@@ -140,7 +187,7 @@ export async function addTerm(
     .insert({ id: newId(), kind, value, label, attributes })
     .select("id, kind, value, label, active, sort_order, attributes")
     .single();
-  if (error) throw new Error(error.message);
+  if (error) throw new KernelError(error);
   return data as Term;
 }
 
@@ -165,7 +212,7 @@ export async function facilityParty(): Promise<Party | null> {
     .eq("kind", "facility")
     .eq("active", true)
     .maybeSingle();
-  if (error) throw new Error(error.message);
+  if (error) throw new KernelError(error);
   return data as Party | null;
 }
 
@@ -176,7 +223,7 @@ export async function parties(): Promise<Party[]> {
     .eq("active", true)
     .order("kind")
     .order("name");
-  if (error) throw new Error(error.message);
+  if (error) throw new KernelError(error);
   return (data ?? []) as Party[];
 }
 
@@ -189,7 +236,7 @@ export async function addParty(
     .insert({ id: newId(), name, kind })
     .select("id, name, kind, app_user_id, active")
     .single();
-  if (error) throw new Error(error.message);
+  if (error) throw new KernelError(error);
   return data as Party;
 }
 
@@ -202,7 +249,7 @@ export async function appUsers(): Promise<AppUser[]> {
     .select("id, name, role, active")
     .eq("active", true)
     .order("name");
-  if (error) throw new Error(error.message);
+  if (error) throw new KernelError(error);
   return (data ?? []) as AppUser[];
 }
 
@@ -217,7 +264,7 @@ export async function setPartyLogin(
     .from("party")
     .update({ app_user_id: appUserId })
     .eq("id", partyId);
-  if (error) throw new Error(error.message);
+  if (error) throw new KernelError(error);
 }
 
 export async function locations(): Promise<Location[]> {
@@ -225,7 +272,7 @@ export async function locations(): Promise<Location[]> {
     .from("location")
     .select("id, name, kind_id, controlled, ambient_c")
     .order("name");
-  if (error) throw new Error(error.message);
+  if (error) throw new KernelError(error);
   return (data ?? []) as Location[];
 }
 
@@ -235,7 +282,7 @@ export async function addLocation(row: Omit<Location, "id">): Promise<Location> 
     .insert({ id: newId(), ...row })
     .select("id, name, kind_id, controlled, ambient_c")
     .single();
-  if (error) throw new Error(error.message);
+  if (error) throw new KernelError(error);
   return data as Location;
 }
 
@@ -253,7 +300,7 @@ export async function setVesselTypeFields(
     .select("attributes")
     .eq("id", vesselTypeId)
     .single();
-  if (error) throw new Error(error.message);
+  if (error) throw new KernelError(error);
   const attributes = {
     ...((data as { attributes: Record<string, unknown> }).attributes ?? {}),
     fields,
@@ -280,7 +327,7 @@ export async function vesselTypeNotes(vesselTypeId: Uuid): Promise<VesselTypeNot
     .select("id, vessel_type_id, body, created_by, created_at, resolved_at")
     .eq("vessel_type_id", vesselTypeId)
     .order("created_at", { ascending: false });
-  if (error) throw new Error(error.message);
+  if (error) throw new KernelError(error);
   return (data ?? []) as VesselTypeNote[];
 }
 
@@ -299,7 +346,7 @@ export async function addVesselTypeNote(
       body,
       created_by: session?.userId ?? null,
     });
-  if (error) throw new Error(error.message);
+  if (error) throw new KernelError(error);
 }
 
 export async function resolveVesselTypeNote(noteId: Uuid): Promise<void> {
@@ -311,14 +358,14 @@ export async function resolveVesselTypeNote(noteId: Uuid): Promise<void> {
       resolved_by: session?.userId ?? null,
     })
     .eq("id", noteId);
-  if (error) throw new Error(error.message);
+  if (error) throw new KernelError(error);
 }
 
 // --- vessels --------------------------------------------------------------
 
 export async function vessels(): Promise<VesselState[]> {
   const { data, error } = await kernel().from("vessel_state").select("*").order("name");
-  if (error) throw new Error(error.message);
+  if (error) throw new KernelError(error);
   return (data ?? []) as VesselState[];
 }
 
@@ -326,7 +373,7 @@ export async function vessels(): Promise<VesselState[]> {
 // failing, because mid-walk people scan things twice.
 export async function resolveCode(code: string): Promise<VesselState | null> {
   const { data, error } = await kernel().rpc("resolve_vessel_code", { p_code: code });
-  if (error) throw new Error(error.message);
+  if (error) throw new KernelError(error);
   const rows = (data ?? []) as VesselState[];
   return rows[0] ?? null;
 }
@@ -342,12 +389,12 @@ export async function bindCode(
     p_label: label,
     p_id: newId(),
   });
-  if (error) throw new Error(error.message);
+  if (error) throw new KernelError(error);
 }
 
 export async function addVessel(vessel: VesselPayload): Promise<void> {
   const { error } = await kernel().from("vessel").insert(vessel);
-  if (error) throw new Error(error.message);
+  if (error) throw new KernelError(error);
 }
 
 // Wine into a vessel that already exists. The inventory case: a new lot with no
@@ -363,7 +410,7 @@ export async function fillVessel(args: {
     p_volume_l: args.volumeL,
     p_generate_history: true,
   });
-  if (error) throw new Error(error.message);
+  if (error) throw new KernelError(error);
   return data as WalkResult;
 }
 
@@ -375,7 +422,7 @@ export async function vesselById(vesselId: Uuid): Promise<VesselRow> {
     )
     .eq("id", vesselId)
     .single();
-  if (error) throw new Error(error.message);
+  if (error) throw new KernelError(error);
   return data as VesselRow;
 }
 
@@ -390,7 +437,7 @@ export async function updateVessel(
     p_vessel_id: vesselId,
     p_patch: patch,
   });
-  if (error) throw new Error(error.message);
+  if (error) throw new KernelError(error);
   return data as { thermal_change: boolean };
 }
 
@@ -409,7 +456,7 @@ export async function createVesselWithWine(args: {
     p_codes: args.codes,
     p_generate_history: true,
   });
-  if (error) throw new Error(error.message);
+  if (error) throw new KernelError(error);
   return data as WalkResult;
 }
 
@@ -446,7 +493,7 @@ export async function rackPlan(
     p_sources: sources,
     p_destinations: destinations,
   });
-  if (error) throw new Error(error.message);
+  if (error) throw new KernelError(error);
   return data as RackPlan;
 }
 
@@ -464,7 +511,7 @@ export async function rackTransfer(args: {
     p_allow_overfill: args.allowOverfill ?? false,
     p_node: args.node ?? {},
   });
-  if (error) throw new Error(error.message);
+  if (error) throw new KernelError(error);
   return data as RackPlan & { node_id: Uuid; event_id: Uuid };
 }
 
@@ -473,7 +520,7 @@ export async function rackTransfer(args: {
 // no history at all, which reads as "nothing has ever been done to this".
 export async function nodeHistory(nodeId: Uuid): Promise<HistoryRow[]> {
   const { data, error } = await kernel().rpc("node_history", { p_node_id: nodeId });
-  if (error) throw new Error(error.message);
+  if (error) throw new KernelError(error);
   return (data ?? []) as HistoryRow[];
 }
 
@@ -492,7 +539,7 @@ export async function recordEvent(args: {
     p_data: args.data ?? {},
     p_vessel_ids: args.vesselIds ?? null,
   });
-  if (error) throw new Error(error.message);
+  if (error) throw new KernelError(error);
   return data as { event_id: Uuid; node_id: Uuid; forked: boolean };
 }
 
@@ -505,7 +552,7 @@ export async function nodeEvents(
     .eq("subject_type", "node")
     .eq("subject_id", nodeId)
     .order("at");
-  if (error) throw new Error(error.message);
+  if (error) throw new KernelError(error);
 
   const events = (data ?? []) as EventRow[];
   if (events.length === 0) return [];
@@ -537,7 +584,7 @@ export async function uploadVesselPhoto(vesselId: Uuid, file: File): Promise<str
   const { error } = await kernel()
     .storage.from(PHOTO_BUCKET)
     .upload(path, file, { upsert: true, contentType: file.type || "image/jpeg" });
-  if (error) throw new Error(error.message);
+  if (error) throw new KernelError(error);
   return path;
 }
 
