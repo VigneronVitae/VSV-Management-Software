@@ -3,7 +3,7 @@ Type: ruling
 Version: 2.1
 Purpose: "Records every architectural decision governing the decomposition of this system into installable modules, with the reasoning, the falsifier, and the condition under which each ruling would be wrong."
 Depends on: [packages/cellar/docs/spec.md, docs/methodology-lineage.md]
-Depended on by: [docs/findings-ledger.md, docs/status-ledger.md, docs/session-reports/modularization-progress.md, supabase/migrations/0023_subject_resolver.sql, supabase/migrations/0024_task_board_via_registry.sql, supabase/migrations/0026_subject_type_registry.sql, supabase/migrations/0027_term_kind_registry.sql]
+Depended on by: [docs/findings-ledger.md, docs/status-ledger.md, docs/session-reports/modularization-progress.md, supabase/migrations/0023_subject_resolver.sql, supabase/migrations/0024_task_board_via_registry.sql, supabase/migrations/0026_subject_type_registry.sql, supabase/migrations/0027_term_kind_registry.sql, scripts/status.sh]
 ---
 
 # Architecture Rulings
@@ -41,6 +41,7 @@ informative half.
 ## A. Modules and dependency
 
 **AR-A1. Decomposition is for packaging, not deployment. Settled.**
+*Status:* ruled
 One Postgres, one schema per module, one client per app. Separate databases would make
 every cross-module write distributed with no rollback and would buy nothing a schema
 boundary does not already provide. `create_vessel_with_wine` spans three candidate
@@ -51,6 +52,7 @@ That is an offline-client problem before it is a database-topology problem, and 
 be solved as one.
 
 **AR-A2. Candidate module assignment. Survived the survey, with one correction.**
+*Status:* ruled
 The A-1 catalog survey found all eight crossing foreign keys pointing the correct direction
 and no cycle among the groupings. One declarative contradiction: `task_board`, addressed at
 AR-E6. Three runtime-only contradictions: `subject_type`, `term_kind`, and five spanning
@@ -71,12 +73,14 @@ an architecture gap, and AR-I4 is what closes it.
 | finance | reporting over postings | core |
 
 **AR-A3. Dependency runs one way and is declared. Settled.**
+*Status:* ruled
 A module may reference a module it declares a hard dependency on. Never the reverse,
 never sideways, never undeclared. The hard-dependency graph is acyclic.
 *Wrong if:* never. This is the property that makes uninstall real, and a single
 wrong-way foreign key removes it.
 
 **AR-A4. Three kinds of edge, and only one constrains uninstall. Settled.**
+*Status:* ruled
 A *hard dependency* is a real schema reference; it constrains install order and blocks
 uninstall. A *provision* publishes rows conforming to a named contract. A *consumption*
 reads a contract and must tolerate zero providers. Provisions and consumptions are not
@@ -86,6 +90,7 @@ sense that should block anything.
 mean it was a hard dependency misfiled.
 
 **AR-A5. A module is a unit of installation. A contract is a unit of substitution. Settled.**
+*Status:* ruled
 These are not the same cut and conflating them produces modules that are really
 contracts. Inventory is one module offering two contracts.
 
@@ -94,27 +99,32 @@ contracts. Inventory is one module offering two contracts.
 ## B. The contract register
 
 **AR-B1. Core holds a registry, not an enumeration. Settled.**
+*Status:* ruled
 Core does not define the set of contracts. It holds a registry that modules write to.
 Adding a cidery or a hop farm is a manifest and a view, never a core migration.
 *Wrong if:* the registry needs core to understand a contract's semantics in order to
 serve it. It must not.
 
 **AR-B2. A contract is a name, a version, and a typed column set. Settled.**
+*Status:* ruled
 A declaration is not a contract. If each module declares its own shape, a consumer
 receives N shapes and the coupling removed from the foreign-key graph reappears inside
 the consumer. The contract exists independently of both sides and the manifest
 references it rather than defining it inline.
 
 **AR-B3. Contract versions are append-only. Settled.**
+*Status:* ruled
 Never mutated after first release. Providers may publish several versions. Consumers
 pin a version or a range.
 
 **AR-B4. A contract becomes unowned when a second module provides it. Settled.**
+*Status:* ruled
 Invented by one module, moved into the registry when a second fills it. Winemaking
 cannot hold the definition of `marketable` hostage once livestock also fills it.
 
 **AR-B5. A contract admitted to seat one module is provisional and dies unless a second
 exercises it. Settled.**
+*Status:* ruled
 Without this cap the register grows one contract per module, the consumer must
 understand all of them, and the decomposition is a naming convention.
 *Falsifier for the whole design:* if contract count rises roughly one per module as
@@ -122,6 +132,7 @@ modules arrive, this failed. If it flattens while modules keep arriving, the min
 shared structure is real.
 
 **AR-B6. Four gate checks, run at install, no judgment required. Settled.**
+*Status:* ruled
 Every required consumption has a compatible provider. The hard-dependency graph is
 acyclic. Every claimed contract version exists in the registry. Every provided view's
 columns match its declaration. All four run against the catalogs in seconds.
@@ -130,10 +141,12 @@ Whether a module's `marketable` rows are worth marketing is not checkable and is
 checked.
 
 **AR-B7. Missing providers deflate. Settled.**
+*Status:* ruled
 A consumer with no provider shows nothing. Never an error, never a cached result, never
 a guess. Emptiness is read from the absence of providers, never declared.
 
 **AR-B8. A fifth gate check: function bodies resolve within declared dependencies. Settled.**
+*Status:* ruled
 Postgres does not track function body dependencies. Dropping a module removes only the
 functions whose *return types* are tied to dropped relations; every function whose *body*
 references them survives in the catalog with a signature and grants, and raises on first
@@ -145,6 +158,7 @@ set.
 *Falsifier:* drop a module's tables and call every surviving function. Zero should raise.
 
 **AR-B9. A gate returns three values. Settled.**
+*Status:* ruled
 Pass, refuse, and cannot-determine. The third is the honest output when a check falls
 outside what the checker can decide, and it is not a hedge. Its default is refuse, because
 an installer is alone in the room and a guessed yes is the inflationary case. This is the
@@ -152,6 +166,7 @@ same category as UNVERIFIED in the review protocol, which is the verdict that ha
 most work in practice.
 
 **AR-B10. Every gate check names the layer that can refuse it. Settled.**
+*Status:* ruled
 A rule enforced at the wrong layer is a rule that drifts into prose. Four checks are catalog
 reads, AR-B8 is a static parse, and PostgREST schema exposure is a deployment step no
 migration can perform. The register carries a layer column, and a check with no layer that
@@ -160,6 +175,7 @@ can refuse it is not a check.
 `supabase/config.toml` while the database does not know about it.
 
 **AR-B11. The install gate returns a bit and a reason code. Settled.**
+*Status:* ruled
 Not a narrative. A verifier that explains itself richly is one that can be negotiated with
 and optimized against. Frozen, read-only, minimal output surface.
 
@@ -168,22 +184,26 @@ and optimized against. Frozen, read-only, minimal output surface.
 ## C. Extension
 
 **AR-C1. Extension points are contracts with the arrows reversed. Settled.**
+*Status:* ruled
 A module declares `extends: channel@1`; another declares `fills: channel@1`. Same
 registry, same gate checks, same versioning. Marketing never learns what a tasting room
 is.
 
 **AR-C2. An extension adds and does not modify. Settled.**
+*Status:* ruled
 It contributes a channel, a field, a filter, a display block. It does not alter the host
 module's existing behaviour, override a default, or reach into the host's schema. Allow
 modification and uninstalling an extension changes behaviour nobody knew depended on it,
 which is a plugin system with global mutable state wearing a manifest.
 
 **AR-C3. Filters are conjunctive and deflationary. Settled.**
+*Status:* ruled
 Any registered filter may hide. None may reveal. Absence of the filter module means
 nothing is hidden. A filter that could surface a row would be an inflationary null and
 is refused.
 
 **AR-C4. Extension ordering is deterministic and explicit. Settled.**
+*Status:* ruled
 Sort by module name, or let the host carry an ordering table the operator controls.
 Never registration order, which is install-history dependent and therefore different on
 every farm.
@@ -193,6 +213,7 @@ every farm.
 ## D. Inventory
 
 **AR-D1. Two contracts, one module. Settled.**
+*Status:* ruled
 An *asset register* answers where is it, one row per physical object. A *stock ledger*
 answers how many are left, fungible and depleting. A barrel is an asset. A case of wine
 is stock. Different primary questions, different scan behaviour, different work-order
@@ -201,35 +222,42 @@ semantics.
 than being two things.
 
 **AR-D2. Individual versus pooled is a parameter on the asset contract, not a split. Settled.**
+*Status:* ruled
 Nobody asks where shovel number three is; they ask how many shovels are in the barn. A
 tractor is individually identified, a shovel is pooled. This changes what a sighting
 means and what a work order reserves. It correlates loosely with price and is caused by
 whether the individuals are distinguishable and whether distinguishing them helps.
 
 **AR-D3. Price is not a contract boundary. Settled.**
+*Status:* ruled
 A forty dollar shovel and a forty thousand dollar tractor answer the same primary
 question. What price drives is an attribute cluster: acquisition cost and date, serial
 or VIN, make and model, replacement value. Those become required above a threshold.
 
 **AR-D4. The capitalization and insurance thresholds are devolving parameters. Settled.**
+*Status:* ruled
 The IRS de minimis safe harbour and an insurer's scheduling floor are both external and
 both move. Hardcode either and the schema is wrong on a date nobody chose.
 
 **AR-D5. Insurance and capital status are views, never columns. Settled.**
+*Status:* ruled
 Store no `is_scheduled` or `is_capital` flag. Derive from cost against the current
 threshold. The insurer's form shapes a report and never a table, because it is an
 external schema that will change.
 
 **AR-D6. Belongs and last-seen are two facts. Settled.**
+*Status:* ruled
 `home_location_id` on the item is the static belongs-here. A `sighting` table,
 append-only, gives last-seen as a derived read. This also repairs `vessel.location_id`,
 which is the one place the current schema knowingly stores a mutable derived value.
 
 **AR-D7. Maintenance is a contract on the asset register, not a submodule. Settled.**
+*Status:* ruled
 Service intervals are templates, services are events, parts consumed are stock draws,
 downtime is an availability predicate. The machinery already exists in the wrong place.
 
 **AR-D8. Winterization is a condition state, not a feature. Settled.**
+*Status:* ruled
 A template sets it seasonally and an interlock reads it. Same mechanism as maintenance
 due, certification held, and pre-harvest interval elapsed.
 
@@ -238,11 +266,13 @@ due, certification held, and pre-harvest interval elapsed.
 ## E. Core mechanisms
 
 **AR-E1. Postings are one mechanism in core. Settled.**
+*Status:* ruled
 Expenses, revenue, and stock movement are the same event seen from different sides.
 Every module posts. Finance reads only postings and depends on no producer.
 No payment processing. Linking to external systems is a provider, not a core concern.
 
 **AR-E2. Interlocks are one mechanism in core. Settled.**
+*Status:* ruled
 A spray pre-harvest interval, a feed withdrawal period, an applicator certification, an
 expired permit, a dirty vessel, an overdue service, an unwinterized line. All are a
 predicate over state that refuses a dispatch. Any module may register one. Core
@@ -252,17 +282,20 @@ another module why.
 answering module's domain.
 
 **AR-E3. Lineage belongs in core. Settled, and this overturns an earlier assignment.**
+*Status:* ruled
 A calf has a dam and a sire. A graft has rootstock and scion. Saved seed has a parent
 line. A blend has parent lots. Same relation. Lineage moves to core with closure
 semantics stripped out.
 
 **AR-E4. Closure is a property of the relation type, not a trigger on the table. Settled.**
+*Status:* built, 0013_close_on_empty.sql
 Breeding does not close the dam. Topping does not close the topping vessel. Scooping
 DAP does not close the bag. Solera never closes anything. The current
 `lineage_closes_parent` trigger is wrong rather than incomplete, which is S-3 arriving
 from four unrelated directions.
 
 **AR-E5. The polymorphic task subject stays polymorphic, and resolvers are registered. Settled.**
+*Status:* built, 0023_subject_resolver.sql
 A core table cannot carry a foreign key to a module that may not be installed, so
 `subject_type` and `subject_id` are structurally forced rather than sloppy. Each module
 registers a resolver so the pointer is checkable at runtime.
@@ -271,14 +304,19 @@ registry built first, the scheduling move costs under a day because `task_board`
 becomes a lateral join. Built after, it costs half again as much and has to be redone.
 
 **AR-E6. The scheduling block moves to core and points at a generic subject. Settled.**
+*Status:* ruled
 `template`, `template_step`, `task`, `task_claim_log`, and `event` are generic. Nothing
 about them is winemaking. Maintenance, spray scheduling, tasting room opening
 checklists, and inventory work orders are then free.
-*Blocked by:* `task_board`, a core view whose `CASE` over `subject_type` names `node`,
-`vessel` and `block` declaratively. That single view is why core as drawn cannot install
-alone. Probed: `drop table block cascade` reports the cascade to `task_board`.
+*Was blocked by:* `task_board`, a core view whose `CASE` over `subject_type` named `node`,
+`vessel` and `block` declaratively. That single view was why core as drawn could not
+install alone. **`0024` removed it** and this entry went on saying it was blocked for four
+sessions, because a blocking relationship lived in a document and nothing re-read it. That
+is the drift `scripts/status.sh` exists to stop, and it is the reason this ruling sat
+available and untouched.
 
 **AR-E7. Core enums that carry module vocabulary become registry rows. Settled.**
+*Status:* built, 0026_subject_type_registry.sql and 0027_term_kind_registry.sql
 `subject_type` names three higher-module tables. `term_kind` carries inventory and
 winemaking vocabulary. Both are core objects holding higher-module knowledge, both are
 wrong-way edges under AR-A3, and neither will ever fail to install. `0004` already performed
@@ -287,16 +325,19 @@ same migration twice more rather than a new idea.
 *Wrong if:* a value set is genuinely fixed for every possible installer. Few are.
 
 **AR-E8. `is_admin()`, `app_user` and `term` are the empirical core. Settled.**
+*Status:* ruled
 Measured rather than reasoned: `is_admin()` has in-degree 19, tied with `node` for highest
 in the tree, and is called by 17 of 38 policies across 14 of 15 tables. A module installing
 without it has seventeen policies that refuse to create. `term` has in-degree 18 and is the
 tree's best existing contract. Everything else in core is negotiable.
 
 **AR-E9. Measurements are a contract, not a module. Settled.**
+*Status:* ruled
 Brix, TA, pH, free SO2, soil tests, somatic cell counts, honey moisture. One contract,
 per-domain panels, lab integration as a provider.
 
 **AR-E10. Redaction is row-level. If you cannot see the lot, you do not get the row. Settled.**
+*Status:* built, 0028_redaction_is_row_level.sql
 Column-level redaction was tried and it contradicts itself. `vessel_state` drew the row
 count from rows a viewer could see and the names from columns they could not, so a custom
 crush client's home screen said two of three vessels held wine while they could name one.
@@ -318,6 +359,7 @@ the two errors, and AR-E11 is the thing that removes it.
 ---
 
 **AR-E11. Availability is a contract; contents are ownership. Settled in principle, unbuilt.**
+*Status:* ruled
 What a custom crush client legitimately needs from a vessel they do not own is whether it
 can take wine. That is a boolean over the exclusivity mechanism and it discloses neither
 whose wine is in it nor how much. It is a contract in the AR-B sense: any module that can
@@ -334,22 +376,27 @@ before that is settled would ship the trade rather than make it.
 ## F. Origin and composition
 
 **AR-F1. Grapes are not privileged. An origin is derived, not declared. Settled.**
+*Status:* ruled
 A node with no lineage parents is an origin. That is a property of the graph, not a
 stage enum and not a nullable foreign key. `node.block_id` is removed.
 
 **AR-F2. An origin carries a typed source reference. Settled.**
+*Status:* ruled
 A vineyard block, a purchased fruit lot with a grower, a spirit lot, a botanical lot,
 sugar, water. Bought fruit and grown fruit fill the same slot with different providers.
 
 **AR-F3. `block_composition` becomes a projection over general source composition. Settled.**
+*Status:* ruled
 Composition by block is one question. By supplier, by input type, by origin lot are
 others. A vermouth answers without anything special happening.
 
 **AR-F4. An unattributed origin is reported, never dropped. Settled.**
+*Status:* ruled
 The current function silently omits bins with no block and returns a short total. The
 replacement returns an explicit unattributed share. Deflationary and visible.
 
 **AR-F5. Removing `block_id` is what makes vineyard optional. Settled.**
+*Status:* ruled
 If `block` lives in vineyard and winemaking must not depend on vineyard, the column is a
 wrong-way edge. The change that makes vermouth work is the change that makes vineyard
 uninstallable, and both fix the puttonyos and the fortifying spirit.
@@ -357,19 +404,23 @@ uninstallable, and both fix the puttonyos and the fortifying spirit.
 assertion suite passes. If it does not, the coupling was deeper than one column.
 
 **AR-F6. Lineage fractions carry a unit per edge. Settled.**
+*Status:* ruled
 Two kilos of botanicals into twenty litres of spirit. A puttony is a 25kg basket.
 Fortifying spirit is litres at a proof. Composition either converts or refuses. It does
 not silently normalize over what it happened to find.
 
 **AR-F7. Quantity derives from an event series. Settled.**
+*Status:* ruled
 Appassimento, angel's share, ullage, disgorgement loss. Quantity is currently a stored
 scalar on `node` and is the column that escaped derived-over-stored.
 
 **AR-F8. Vintage derives from lineage. Settled.**
+*Status:* ruled
 Stored only on origins. A non-vintage cuvée and a solera have a vintage composition
 rather than a vintage.
 
 **AR-F9. Regulated composition carries a named convention and a basis. Settled.**
+*Status:* ruled
 Volume does not conserve and mass does not survive fermentation, so composition above
 the origin is bookkeeping rather than physics. TTB thresholds for varietal, appellation,
 and vintage claims are conventions computed a specific way. The label-facing answer is
@@ -381,15 +432,18 @@ to an untyped bag of parents loses it.
 ## G. Depth and providers
 
 **AR-G1. A producer module deepens a slot rather than sending data. Settled.**
+*Status:* ruled
 Vineyard fills `fruit_source@1` and adds resolution behind it. Winemaking never learns
 what a rootstock is. Same pattern for livestock deepening a carcass lot, orchard a cider
 fruit lot, apiary a honey lot.
 
 **AR-G2. A consumer renders an unresolved source. Settled.**
+*Status:* ruled
 A name and nothing else. Never an error, never a blank. Direction-of-error applied to
 depth rather than to presence.
 
 **AR-G3. A source contract must be shallow enough to fill by hand. Settled.**
+*Status:* ruled
 Test: can someone who bought two bins from a neighbour with a handshake fill it? If not,
 the contract is a vineyard module in disguise and every non-vineyard install will fake
 it.
@@ -399,21 +453,25 @@ it.
 ## H. Transformation
 
 **AR-H1. A style is a template, not a type. Settled.**
+*Status:* ruled
 The system knows fortification, secondary fermentation, fractional draw, maceration,
 pressing, addition. Port is a named sequence of those with parameters. No `wine_style`
 enum ever ships. If the schema learns the word retsina, something has gone wrong.
 
 **AR-H2. Decisions are parameters on operations. Settled.**
+*Status:* ruled
 Whole cluster fraction, press cut points, yeast or ambient, temperature regime, SO2
 timing, vessel choice, when you stopped. The ones worth capturing are those that change
 the outcome and are not recoverable afterward.
 
 **AR-H3. Intent is the third member of the provenance set. Settled.**
+*Status:* ruled
 `provenance` distinguishes observed from inferred. A template step is intent. The gap
 between the template saying two bar and the event saying three is a fact about the
 vintage.
 
 **AR-H4. Cider and vermouth are the falsifiers, and vermouth is the real one. Settled.**
+*Status:* ruled
 Cider should cost a term vocabulary and three operations. Vermouth exercises AR-F6 on
 every bottle. If either needs tables of its own, winemaking was renamed rather than
 decomposed.
@@ -423,15 +481,18 @@ decomposed.
 ## I. Migrations and packaging
 
 **AR-I1. Per-module migration numbering starts with the next module's first file. Settled.**
+*Status:* ruled
 Retrofitting a numbering scheme after two modules have diverged is worse than adopting
 it cold.
 
 **AR-I2. A `public` facade is optional and temporary if used at all. Settled.**
+*Status:* ruled
 The client has twelve `.from` calls across seven tables and four RPCs, all through
 `kernel.ts`. That is an afternoon, not a compatibility problem. The real constraint is
 PostgREST schema exposure, which is configuration.
 
 **AR-I3. Cross-module reads are views. The interface stays PostgREST. Settled.**
+*Status:* ruled
 A contract is a view, the union over providers is a view, and a consumer reads it with the
 client it already has. Gate checks are catalog reads plus one parse. A service layer would
 buy somewhere to host the resolver registry and would cost an authorization layer
@@ -443,6 +504,7 @@ application logic and invite a gateway. They are tables and a parse step.
 no test currently covers. See AR-B10.
 
 **AR-I4. Enforcement is a build step or it is a hope. Settled, and this is the survey's conclusion.**
+*Status:* ruled
 A rule that runs in CI is a rule. A rule in a document is an intention. This tree has
 neither: `doctor` is a stub that cannot pass, `bun run test` does not exist, there is no
 `.github/`, and the twenty-eight assertions run only when someone remembers. Thirty-seven of
@@ -454,13 +516,16 @@ ledger cross-references and the style rule. `doctor` before intake, since orphan
 before anything looks for them. CI last.
 
 **AR-I5. Errors carry stable codes, not strings. Settled.**
+*Status:* ruled
 A consumer reading a union must distinguish no-providers from provider-failed from
 not-authorized. The client currently surfaces a thrown error string on one screen.
 
 **AR-I6. A manifest is structurally invalid without its contract versions. Settled.**
+*Status:* ruled
 Rejected by the shape before any checker runs, rather than by a check that could be skipped.
 
 **AR-I7. Coliving is an acceptance test, not a roadmap item. Settled.**
+*Status:* ruled
 If core plus scheduling plus postings installs with no farm module and runs chores and
 shared expenses, the decomposition is real. Keeping it as a test rather than a product
 is what stops it acquiring an undeclared dependency.
@@ -470,6 +535,7 @@ is what stops it acquiring an undeclared dependency.
 ## J. Distribution
 
 **AR-J1. Reference for the invariant, copy for the adaptation. Settled.**
+*Status:* ruled
 What must be identical across every install ships as a pinned reference to a signed version,
 so divergence is a hash mismatch. What must be locally owned ships as a copy, so an operator
 can modify or reject it without forking anything. The core schema, the contract registry and
@@ -479,6 +545,7 @@ This answers how a hop farm gets the fixed floor and still owns its own vocabula
 rather than being argued about.
 
 **AR-J2. Intent is stated before action, and corrections are the signal. Settled.**
+*Status:* ruled
 A resolver states what it inferred the requirement to be and the operator confirms or
 corrects before anything is dispatched. Nearly free for a work-order resolver, and the
 corrections are the data worth having, because they say the requirement tags are wrong.
@@ -488,26 +555,31 @@ corrections are the data worth having, because they say the requirement tags are
 ## Open questions
 
 **AR-Q1. Custody separated from ownership.**
+*Status:* open question
 A node has an owner and a custodian and they can differ. This makes tolling, co-packing,
 boarding, and shared equipment the same module, and it decides whose name is on a TTB
 filing when a client ferments at your facility. Not yet ruled because it touches
 `node.owner_id`, which `0003` already shipped.
 
 **AR-Q2. Which policy module was meant.**
+*Status:* open question
 Governance in the constitutional-kernel sense, or regulatory compliance. Different
 modules, and only one is interesting.
 
 **AR-Q3. Distribution scope.**
+*Status:* open question
 Wholesale allocation and shipping compliance, or DTC fulfilment, or both. The compliance
 half pulls in state-by-state rules and is the heaviest item on the list.
 
 **AR-Q4. Template confidentiality.**
+*Status:* open question
 A custom crush client's botanical formula is a `template` with `template_step` rows.
 `template` has no owner column and its read policy is the blanket `using (true)` from
 `0002`. This is a migration, not a policy edit, and it blocks handing the system to a
 client. Belongs in `0006`.
 
 **AR-Q7. Whether the contract register needs a hard cap as well as AR-B5.**
+*Status:* open question
 AR-B5 kills a contract that only ever seats one module. It does not cap the rate of admission.
 A register that grows one contract per module, each genuinely exercised by two, still ends as
 a structure whose navigability requires a cross-reference matrix. Whether the provisional
@@ -516,11 +588,13 @@ answer is that it should be instrumented before it is decided: contract count ag
 count, checked on every module landing.
 
 **AR-Q5. Solera truncation depth.**
+*Status:* open question
 Perpetual fractional draw has no terminating lineage walk. Composition converges as a
 geometric series, so the implementation computes a limit with a stated truncation depth.
 That depth is a devolving parameter and is not chosen.
 
 **AR-Q6. Package as vessel.**
+*Status:* open question
 Méthode traditionnelle ferments in the bottle, so a lot becomes eight thousand vessels.
 This is AR-D2's individual-versus-pooled parameter arriving on the winemaking side, and it
 also kills the assumption that packaging is terminal.

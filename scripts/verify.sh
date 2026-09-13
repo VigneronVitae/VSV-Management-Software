@@ -333,7 +333,27 @@ fi
 if grep -q 'Nothing is built' docs/sorry-ledger.md && grep -q '| Built' docs/status-ledger.md; then
   fail "docs/sorry-ledger.md: repeats 'Nothing is built' while the status ledger grades rows Built"
 fi
-[ "$fails" -eq "$before" ] && pass "the status ledger's opening sentence agrees with its own grades"
+# W-10. The same shape one level down, and the one that was actually wrong:
+# five rows graded a migration Specified, three of them saying it had never been
+# run or had only been tried on Postgres 16, while `bun run green` applied all of
+# them from empty on 17 in every session for nine sessions. That is not a
+# judgment call. A migration that green applies is not specified, it is applied,
+# and the grade is checkable against the directory listing.
+#
+# Deliberately narrow. It does not try to decide whether a component is built; it
+# decides whether a row naming a migration file may say Specified, and the answer
+# is no, because there is exactly one set of migrations and green runs all of it.
+while read -r m; do
+  base=$(basename "$m")
+  row=$(grep -n "\`$base\`" docs/status-ledger.md | head -1)
+  [ -z "$row" ] && continue
+  case "$row" in
+    *"| Specified |"*)
+      fail "docs/status-ledger.md: grades $base Specified, and green applies every migration from empty on every run" ;;
+  esac
+done < <(ls supabase/migrations/0*.sql)
+
+[ "$fails" -eq "$before" ] && pass "the status ledger's opening sentence agrees with its own grades, and no applied migration is graded Specified"
 
 # ---------------------------------------------------------------------------
 head_ "7. the module import rule"

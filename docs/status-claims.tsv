@@ -1,0 +1,25 @@
+# Things that are built and that nothing checks. The middle column.
+#
+# W-10 phase 2. Phase 1 puts every client item from W-8 and W-9 here, and the
+# temptation is to resolve that by building a client test harness. W-9 established
+# that no enumeration would have caught B20 and that a gate set before the surface
+# is known measures the wrong thing, and neither has changed since.
+#
+# So this is the degenerate-policy move again: **the state is allowed and it must be
+# declared.** Every row is a claim resting on a session report rather than on a
+# check, with the session that made it and the reason nothing checks it. The count
+# is printed on every run of `bun run green`.
+#
+# It does not fail the build. It is supposed to be uncomfortable to read.
+#
+# A row leaves this file when something checks the thing, and the check and the
+# deletion belong in the same commit.
+#
+# item	session	reason
+one workflow end to end, bins to lot to vessel to rack	W-8	Walked in a browser against live policies, both roles, and the database matched the screen at every step. Nothing replays it. S-38: no test covers a line of TypeScript.
+viewer_scope refusal path in the client	W-9	The kernel half is asserted, four assertions in the suite. What is unchecked is that the client calls it, routes on it, and renders the three shapes through one function. Verified by hand in a browser and by nothing else.
+writable columns derived rather than hardcoded	W-9	The kernel half is asserted, including that the answer is read out of the trigger rather than kept beside it. That the form asks, and renders the rest as display, is a session report.
+B20, the fabricated success screen	W-9	Fixed and reproduced fixed by failing one GET by hand. No enumeration would have caught it, per W-9 phase 5, so there is nothing to add it to.
+B11, a volume of zero rendering as unrecorded	W-9	Three sites, each now testing for null rather than truthiness. Checked by reading and by one browser run.
+B10, a deactivated account reaching every screen	W-9	The kernel half is asserted: viewer_scope reports `nothing` for a deactivated account and an assertion fails if it stops doing so. That the client stops at a screen rather than proceeding is unchecked.
+KernelError preserving the SQLSTATE	W-9	Thirty four call sites changed from discarding the code to keeping it. Nothing checks that a thirty fifth is not added flat, and the W-9 report records that keying on the code was itself wrong, so this row is a claim about a mechanism whose first use was a mistake.

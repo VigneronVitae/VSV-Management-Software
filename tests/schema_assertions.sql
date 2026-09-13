@@ -33,7 +33,8 @@
 --              supabase/migrations/0028_redaction_is_row_level.sql,
 --              supabase/migrations/0029_viewer_scope.sql,
 --              supabase/migrations/0030_writable_columns.sql]
--- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh]
+-- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
+--                  scripts/status.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
 -- Open sorries: S-7 (what this exercises is Postgres policy evaluation, not
 --               Supabase's JWT to role mapping, so S-7 narrows and stays open)
@@ -940,6 +941,7 @@ end $$;
 -- ---------------------------------------------------------------------------
 do $$ begin raise notice '--- a lot closes when it is empty, not when it feeds'; end $$;
 
+-- AR-E4. Closure is a property of the relation type, not a trigger on the table.
 -- The winemaker's rule, in his own numbers: one barrel broken out of a 2000 L
 -- lot for topping wine leaves 1772 L of that lot, open. 0001 closed it instead,
 -- and nothing in this file noticed for two sessions.
@@ -4703,6 +4705,8 @@ end $$;
 
 -- ---------------------------------------------------------------------------
 do $$ begin raise notice '--- AR-E10, redaction is row-level'; end $$;
+
+-- AR-E10. Redaction is row-level. If you cannot see the lot, you do not get the row.
 
 -- 0028. `node_read` had been scoped since 0003 and everything pointing at `node`
 -- had not, so the privacy model was enforced on one table and on nothing that

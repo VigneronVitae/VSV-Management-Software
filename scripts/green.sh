@@ -7,7 +7,7 @@
 #           and a copy of the cellar. Every phase of the modularization has to
 #           end green and this is what says whether it did."
 # Depends on: [scripts/verify.sh, tests/shim.sql, tests/schema_assertions.sql,
-#              scripts/guards.sh]
+#              scripts/guards.sh, scripts/status.sh]
 # Depended on by: [docs/session-reports/modularization-progress.md, docs/status-ledger.md]
 # ---------------------------------------------------------------------------
 #
@@ -272,6 +272,26 @@ fi
 
 admin -c "drop database if exists $SCRATCH;" >/dev/null 2>&1
 admin -c "drop database if exists $COPY;" >/dev/null 2>&1
+
+# ---------------------------------------------------------------------------
+step "7. what is built, what is claimed, what is only ruled"
+# ---------------------------------------------------------------------------
+# Needs no database, and runs whether or not one is up, because it reads the tree
+# against itself. Seventy one rulings and eleven session reports, and until this
+# existed the only way to answer "is AR-E6 built" was to read four documents and
+# trust them, which X-3 already found drifting in eight places.
+if bash scripts/status.sh > /tmp/green-status.log 2>&1; then
+  ok "$(grep -m1 '^ok    [0-9]* rulings' /tmp/green-status.log | sed 's/^ok *//')"
+  # The claimed count is printed rather than gated. It is supposed to be
+  # uncomfortable to read and it is not supposed to fail the build: W-9
+  # established that a gate set before the surface is known measures the wrong
+  # thing, and the client's surface is still not known.
+  sed -n '/built and nothing checks them/,/^$/p' /tmp/green-status.log | sed 's/^/      /'
+  sed -n '/pending, with the prompt/,/^$/p' /tmp/green-status.log | sed 's/^/      /'
+else
+  bad "status: $(grep -c '^FAIL' /tmp/green-status.log) problem(s)"
+  grep '^FAIL' /tmp/green-status.log | head -5 | sed 's/^/      /'
+fi
 
 # ---------------------------------------------------------------------------
 printf '\n'
