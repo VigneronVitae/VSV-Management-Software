@@ -15,7 +15,7 @@ had seen, and two more, A24 and A25, by the phase B and phase 2 reads in W-3 and
 is 80.
 
 **The tree this describes has moved a long way from the tree it was written against.** It
-is 27 migrations, `0001` through `0027`. This paragraph used to name a head sha and a
+is 28 migrations, `0001` through `0028`. This paragraph used to name a head sha and a
 branch, and both went stale within two commits, which is X-3-8 and is exactly the mistake
 `docs/review/CURRENT-BASELINE.md` exists to correct. That file states the current facts and
 supersedes the canary block in every archived prompt; a sha does not belong in a second
@@ -99,7 +99,7 @@ Written once, after the schema split, against the new layout.
 | A2 | `close_parent_on_lineage()` | No `security definer`, so the `update node` runs as invoker and is filtered by the admin-only node update policy. Zero rows, no error, parent stays open. Fires for an admin and not for a cellar user | 3 (p) | EXPLOITABLE |
 | A3 | `event_insert` | `by_user = auth.uid() or by_sensor is not null`. Any string in `by_sensor` unbinds the author check, including planting another user's uuid in `by_user` | 5 (p) | EXPLOITABLE |
 | A4 | `event_admin_update` | An admin rewrites any field of any event in place, `at`, `by_user` and `provenance` included, with no trace. Reaches `confirmed` on an observed event, which `confirm_event()` exists to refuse | 7 (p) | EXPLOITABLE |
-| A5 | `node_read` and the `0002` policy loop | Only `node_read` was narrowed by `0003`. `event`, `placement`, `lineage`, `vessel`, `party`, `term`, `task` and the rest still read blanket `using (true)` | 4 (p) | EXPLOITABLE |
+| A5 | `node_read` and the `0002` policy loop | Only `node_read` was narrowed by `0003`. `event`, `placement`, `lineage`, `vessel`, `party`, `term`, `task` and the rest still read blanket `using (true)`. **Partly closed by `0028`**, which scopes the three that carry wine by reference, `placement`, `event` and `lineage`, under AR-E10. The rest are open and each now carries a disposition and a reason in `tests/schema_assertions.sql`: `app_user`, `party`, `task`, `task_claim_log`, `vessel`, `vessel_code`, `block` and the three `with check (true)` inserts | 4 (p) | EXPLOITABLE, partly closed |
 | A6 | `vessel-photos` storage policies | Both policies are `to authenticated using (bucket_id = 'vessel-photos')`. Every login reads every photo, eighteen lines below the comment explaining why the bucket is private | 5 | EXPLOITABLE |
 | A7 | `node_insert`, `lineage_insert`, `placement_insert` | `with check (true)`. A custom crush client can insert a lineage edge naming one of your lots as parent. Reachable today by design, unlike the unclaimed-stranger case | 3 (p) | EXPLOITABLE |
 | A8 | `claim_task` | `security definer` with no entitlement check and no signed-in check. Takes a task assigned to someone else; a null uid permanently wedges it and no cellar user can recover it | 3 (p) | EXPLOITABLE |
@@ -325,7 +325,7 @@ forty two files and five migrations, which is the tree it was written against an
 tree it now governs.*
 
 **Front matter corrected only.** The entries are not re-derived. What changed is the
-statement of what this document is about: 27 migrations rather than five, the current head
+statement of what this document is about: 28 migrations rather than five, the current head
 named, and a pointer to `docs/review/CURRENT-BASELINE.md` for the rest. The count of
 distinct defects is 80 rather than 78, which corrects an arithmetic slip in 1.3: A24 and
 A25 were added and the total was not moved.

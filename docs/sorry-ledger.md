@@ -497,6 +497,23 @@ the event model. *Load-bearing:* a sticker that moves without a record is the on
 barrel's history can be reattributed with nothing to read afterwards.
 
 
+**S-44. A vessel a viewer may not see into reports as empty rather than as occupied.**
+AR-E10 rules that redaction is row-level, so 0028 scopes `placement_read` and a custom
+crush client no longer receives placement rows for wine that is not theirs. `vessel_state`
+derives `is_empty` from `p.node_id is null`, and a placement filtered away by row level
+security is indistinguishable from a placement that does not exist, so a barrel full of
+somebody else's Pinot now tells that client it is empty. **This is a falsehood traded for a
+leak and it is deliberately the narrower error**: the previous behaviour disclosed the lot
+id and the volume, and this one asserts an availability that is wrong. Two clients asked to
+fill the same barrel is a worse outcome than either for whoever is holding the hose.
+*Resolves when:* AR-E11 is built, which answers availability as a boolean over the
+exclusivity mechanism rather than by the absence of a row, and which is unbuilt because the
+magnitude case is unresolved: whether availability carries remaining capacity, which is a
+number about somebody else's wine and therefore the same question one level down.
+*Load-bearing:* yes, and it is the only thing 0028 made worse. Anything that shows a client
+a vessel list is showing them something false until AR-E11 exists.
+
+
 ## Discharged
 
 **S-25. An account belonging to no party is staff, so a client who signs up

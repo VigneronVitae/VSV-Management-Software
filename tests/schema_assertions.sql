@@ -29,7 +29,8 @@
 --              supabase/migrations/0024_task_board_via_registry.sql,
 --              supabase/migrations/0025_bind_an_unbound_code.sql,
 --              supabase/migrations/0026_subject_type_registry.sql,
---              supabase/migrations/0027_term_kind_registry.sql]
+--              supabase/migrations/0027_term_kind_registry.sql,
+--              supabase/migrations/0028_redaction_is_row_level.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
 -- Open sorries: S-7 (what this exercises is Postgres policy evaluation, not
@@ -2469,13 +2470,7 @@ begin
      'Rooms and their ambient temperature. Facility infrastructure, and anybody standing in the barn can read a thermometer.'),
 
     -- Open findings. Everything carrying wine, ownership, movement or people.
-    ('placement.placement_read', 'finding',
-     'A5. Every placement to everybody: which vessel holds which lot, how much, and when it moved. W-8 read the facility entire movement history from a client login.'),
-    ('event.event_read', 'finding',
-     'A5. Every event to everybody, payload included. W-8 read the facility rack, its volumes and its method, from a client login.'),
-    ('lineage.lineage_read', 'finding',
-     'A5. Composition by reference. node_bin_shares guards this and the table under it does not, so the guard is walked around rather than through.'),
-    ('app_user.app_user_read', 'finding',
+                ('app_user.app_user_read', 'finding',
      'A5. Every staff name and role to every authenticated user, a custom crush client included.'),
     ('party.party_read', 'finding',
      'A5. Every client sees the name of every other client of the same facility.'),
@@ -4702,6 +4697,124 @@ begin
     raise exception 'FAIL: absorbing one of two placements left the lot in % vessels', open_now;
   end if;
   perform test_ok('a lot absorbed out of one vessel is still in the other, and is not closed');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- AR-E10, redaction is row-level'; end $$;
+
+-- 0028. `node_read` had been scoped since 0003 and everything pointing at `node`
+-- had not, so the privacy model was enforced on one table and on nothing that
+-- refers to it. W-8 read the facility's whole movement history, its rack events
+-- with volumes and method, and the lot ids behind a redacting view, from a
+-- browser signed in as a custom crush client.
+--
+-- These assert the refusal from the client's side rather than the policy's, so
+-- that a policy which is present and has stopped refusing is caught. The first
+-- two are the blindness guards: without them every check below passes on a
+-- database where the client can see nothing at all, which is a different bug.
+do $$
+declare seen int; mine int;
+begin
+  -- A lot the facility owns, in a vessel, with an event and a parent.
+  insert into vessel (id, type_id, name, capacity_l)
+  values ('00000000-0000-0000-0000-000000009001', term_id('vessel_type','tank'), 'E10 ours', 500),
+         ('00000000-0000-0000-0000-000000009002', term_id('vessel_type','tank'), 'E10 theirs', 500);
+
+  insert into node (id, stage, status, name, owner_id, created_by)
+  values ('00000000-0000-0000-0000-000000009101', 'bin', 'open', 'E10 bin',
+          '00000000-0000-0000-0000-00000000f001', '00000000-0000-0000-0000-00000000a001'),
+         ('00000000-0000-0000-0000-000000009102', 'maturation', 'open', 'E10 facility lot',
+          '00000000-0000-0000-0000-00000000f001', '00000000-0000-0000-0000-00000000a001'),
+         ('00000000-0000-0000-0000-000000009103', 'maturation', 'open', 'E10 client lot',
+          '00000000-0000-0000-0000-00000000f002', '00000000-0000-0000-0000-00000000a001');
+
+  insert into placement (node_id, vessel_id, volume_l) values
+    ('00000000-0000-0000-0000-000000009102', '00000000-0000-0000-0000-000000009001', 400),
+    ('00000000-0000-0000-0000-000000009103', '00000000-0000-0000-0000-000000009002', 300);
+
+  insert into lineage (parent_id, child_id, fraction)
+  values ('00000000-0000-0000-0000-000000009101', '00000000-0000-0000-0000-000000009102', 1.0);
+
+  insert into event (operation_id, subject_type, subject_id, by_user, provenance) values
+    (term_id('operation','punchdown'), 'node', '00000000-0000-0000-0000-000000009102',
+     '00000000-0000-0000-0000-00000000a001', 'observed'),
+    (term_id('operation','punchdown'), 'node', '00000000-0000-0000-0000-000000009103',
+     '00000000-0000-0000-0000-00000000a001', 'observed');
+
+  -- Staff see the cellar they work in. This is the blindness guard: if this
+  -- number were zero the checks below would pass on a schema that refuses
+  -- everybody, which is not the thing being asserted.
+  perform test_act_as('00000000-0000-0000-0000-00000000a002');
+  set local role authenticated;
+  select count(*) into seen from placement where vessel_id in
+    ('00000000-0000-0000-0000-000000009001','00000000-0000-0000-0000-000000009002');
+  reset role;
+  if seen <> 2 then
+    raise exception 'FAIL: a facility hand sees % of 2 placements, so the checks below are blind', seen;
+  end if;
+  perform test_ok('a facility hand reads the placements of the cellar they work in');
+
+  -- And the client sees one row, theirs, in each of the three tables that carry
+  -- wine by reference.
+  perform test_act_as('00000000-0000-0000-0000-00000000a003');
+  set local role authenticated;
+
+  select count(*) into seen from placement where vessel_id in
+    ('00000000-0000-0000-0000-000000009001','00000000-0000-0000-0000-000000009002');
+  select count(*) into mine from placement
+   where node_id = '00000000-0000-0000-0000-000000009103';
+  reset role;
+  if mine <> 1 then
+    raise exception 'FAIL: a client cannot read the placement of their own wine';
+  end if;
+  if seen <> 1 then
+    raise exception 'FAIL: a client reads % placements where one is theirs, so somebody else''s wine is in the answer', seen;
+  end if;
+  perform test_ok('a client reads the placement of their own wine and of no other');
+
+  perform test_act_as('00000000-0000-0000-0000-00000000a003');
+  set local role authenticated;
+  select count(*) into seen from event
+   where subject_id in ('00000000-0000-0000-0000-000000009102','00000000-0000-0000-0000-000000009103');
+  reset role;
+  if seen <> 1 then
+    raise exception 'FAIL: a client reads % of 2 events, and only one of them is about their wine', seen;
+  end if;
+  perform test_ok('a client reads the events on their own wine and not the events on anybody else''s');
+
+  perform test_act_as('00000000-0000-0000-0000-00000000a003');
+  set local role authenticated;
+  select count(*) into seen from lineage
+   where child_id = '00000000-0000-0000-0000-000000009102';
+  reset role;
+  if seen <> 0 then
+    raise exception 'FAIL: a client reads % lineage edge(s) of a lot that is not theirs, which is composition by reference', seen;
+  end if;
+  perform test_ok('a client cannot walk the lineage of a lot that is not theirs, which is what node_bin_shares guards');
+
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+end $$;
+
+-- The cost of AR-E10, asserted rather than described, because S-44 is the only
+-- thing 0028 made worse and a sorry nobody can see is a sorry that gets
+-- forgotten. A vessel holding wine this viewer may not see reports as empty.
+-- When AR-E11 is built this assertion should fail, and that is the point of it.
+do $$
+declare empty_to_them boolean;
+begin
+  perform test_act_as('00000000-0000-0000-0000-00000000a003');
+  set local role authenticated;
+  select is_empty into empty_to_them from vessel_state
+   where id = '00000000-0000-0000-0000-000000009001';
+  reset role;
+
+  if empty_to_them is distinct from true then
+    raise exception
+      'FAIL: S-44 says a vessel a client may not see into reports as empty, and it reported %. If AR-E11 is built, this assertion is what should have changed with it', empty_to_them;
+  end if;
+  perform test_ok('S-44, recorded as an assertion: a vessel a client may not see into says it is empty, which is false and is the narrower of the two errors');
+
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
 end $$;
 
 -- ---------------------------------------------------------------------------

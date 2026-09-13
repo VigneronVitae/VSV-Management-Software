@@ -296,6 +296,39 @@ tree's best existing contract. Everything else in core is negotiable.
 Brix, TA, pH, free SO2, soil tests, somatic cell counts, honey moisture. One contract,
 per-domain panels, lab integration as a provider.
 
+**AR-E10. Redaction is row-level. If you cannot see the lot, you do not get the row. Settled.**
+Column-level redaction was tried and it contradicts itself. `vessel_state` drew the row
+count from rows a viewer could see and the names from columns they could not, so a custom
+crush client's home screen said two of three vessels held wine while they could name one.
+That is not a bug in the view. Any column-level scheme reproduces a version of it, because
+a count and a name drawn from one row under two different rules disagree somewhere, and the
+disagreement is itself a disclosure.
+
+The barn argument does not carry. A client standing in the cellar can count barrels, so the
+objection runs that hiding a row denies them what they could see by walking in. Physical
+presence yields one snapshot for the cost of being there. The view yields a time series for
+free, and `node_id` with `current_volume_l` sampled across a season reconstructs another
+client's tonnage, their racking cadence and their losses. Those are different things and
+only one of them is a barrel.
+
+What this costs, said plainly: a vessel holding wine the viewer may not see now reports as
+empty rather than as occupied. That is a falsehood in place of a leak, it is the narrower of
+the two errors, and AR-E11 is the thing that removes it.
+
+---
+
+**AR-E11. Availability is a contract; contents are ownership. Settled in principle, unbuilt.**
+What a custom crush client legitimately needs from a vessel they do not own is whether it
+can take wine. That is a boolean over the exclusivity mechanism and it discloses neither
+whose wine is in it nor how much. It is a contract in the AR-B sense: any module that can
+hold a thing in a place answers it, and the cellar's answer happens to be
+`placement_one_lot_per_vessel`.
+
+Nothing is built for this. The exclusivity mechanism is still sketched and the magnitude
+case is unresolved: whether availability should carry remaining capacity, which is a number
+about somebody else's wine and therefore the same question again one level down. Building it
+before that is settled would ship the trade rather than make it.
+
 ---
 
 ## F. Origin and composition
