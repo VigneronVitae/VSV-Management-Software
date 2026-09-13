@@ -18,7 +18,7 @@ are corpus and are not edited; this file is the correction.
 |---|---|
 | Head when this was written | the W-6 commit that added the second review round below |
 | Branch holding it | `claude/sql-files-to-markdown-i31rob` |
-| Tracked files | 124 tracked files |
+| Tracked files | 125 tracked files |
 | Migrations | 27 migrations, `0001_core_schema.sql` through `0027_term_kind_registry.sql` |
 | Assertions | 204 from an empty database, 206 against a copy of the cellar |
 

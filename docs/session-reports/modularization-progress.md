@@ -57,6 +57,17 @@ subtracts from what the count means. W-3 wrote one for a theory about reserved w
 discovered by probe that the theory was wrong, and deleted it rather than keeping a green
 line.
 
+**A check is not done until it has been seen to fail for the reason it states.** Break-test
+every fix to a fail-open path. This is the fourth time a green check in this project was
+proven hollow only by deliberate breakage: the `tgenabled` fingerprint, the `AR-` word
+boundary, the A25 empty-row grid, and the assertion that caught its own alarm.
+
+**No path may reach a success report without having done the work the report describes.**
+Eleven fail-open paths were repaired in W-6 and every one violated that rule the same way,
+by treating the absence of a signal as the presence of a good one. When writing anything
+that decides something: what happens if the query errors, returns empty, returns a type
+needing a cast, or the database is unreachable.
+
 **A check nobody has watched fail is not a check.** The first two rules above were both
 found by break tests and neither would have been found by reading.
 
