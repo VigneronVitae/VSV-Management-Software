@@ -18,9 +18,9 @@ are corpus and are not edited; this file is the correction.
 |---|---|
 | Head when this was written | the W-7 commit that added the two gates below |
 | Branch holding it | `claude/sql-files-to-markdown-i31rob` |
-| Tracked files | 144 tracked files |
+| Tracked files | 145 tracked files |
 | Migrations | 31 migrations, `0001_core_schema.sql` through `0031_scheduling_to_core.sql` |
-| Assertions | 281 from an empty database, 283 against a copy of the cellar |
+| Assertions | 289 from an empty database, 291 against a copy of the cellar |
 
 The file and migration counts above are derived rather than typed, and `scripts/verify.sh`
 checks them against the tree on every run. If they are wrong here, `bun run verify` fails.

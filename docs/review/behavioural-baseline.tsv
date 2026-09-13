@@ -14,11 +14,17 @@
 # that turn out to be degenerate or inapplicable and are excluded from the score.
 # It is there so a class that vanishes is named in the failure message.
 #
+# Re-baselined by W-10 after 0028 and 0031. The gains are locked in rather than
+# left as headroom, which is what a ratchet is for: weaken went from 33 uncovered
+# to none and policy from 42 to 32, because narrowing three blanket reads in 0028
+# gave 33 weaken mutations something to be caught by. A baseline left at the old
+# numbers would permit losing all of that silently.
+#
 # class	enumerated	uncovered
-check	21	0
-loosen	21	0
+check	22	0
+loosen	22	0
 unique	17	10
 trigger	9	0
-policy	59	42
-weaken	59	33
+policy	59	32
+weaken	59	0
 rls	23	0
