@@ -21,7 +21,7 @@
 #
 # The mutations are enumerated from the catalog rather than listed by hand, so
 # the set grows with the schema instead of going stale the way a written list
-# does. Five classes:
+# does. Eight classes:
 #
 #   check        every check constraint, dropped
 #   loosen       every check constraint replaced with check (true)

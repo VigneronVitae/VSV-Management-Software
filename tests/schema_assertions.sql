@@ -3648,8 +3648,11 @@ begin
   end if;
   perform test_ok('there is no term_kind enum, and there is a term_kind registry');
 
-  if (select count(*) from term_kind where module <> 'core') < 5 then
-    raise exception 'FAIL: the registry does not record which module owns each kind';
+  -- X-3-22: this said six of the eight and asserted at least five, which is two
+  -- claims and one number. It asserts the count it names.
+  if (select count(*) from term_kind where module <> 'core') <> 6 then
+    raise exception 'FAIL: % of the kinds are owned by a module other than core, and the claim is six',
+      (select count(*) from term_kind where module <> 'core');
   end if;
   perform test_ok('the registry says which module owns each kind, and six of the eight are not core''s');
 end $$;

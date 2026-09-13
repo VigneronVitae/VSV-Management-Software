@@ -701,12 +701,13 @@ This matters for phase 7: moving tables into module schemas does not move functi
 unless somebody says so, and `0020`'s "every function in public" becomes "every
 function in which schema" the moment there is more than one.
 
-**The findings ledger contains one dangling cross-reference.** Entry A12 cites "E-4's
-premise", and `E-4` resolves to nothing in this repository under any reading: not a
-ruling, not a compost entry, not a finding, not a spec section, and it appears nowhere
-in the review corpus. Left as it stands rather than guessed at. Phase 1's new `AR-` check
-would have caught it had it been written as a ruling reference, and cannot catch it as
-written.
+**Resolved, and kept for the reasoning.** The findings ledger contained one dangling
+cross-reference: entry A12 cited `E-4`, which resolved to nothing in this repository under
+any reading. W-3 repointed it at `CLAUDE.md`'s append-only statement and the `R-5` report,
+because it was never a ruling reference and the `AR-` rename exposed it rather than caused
+it. This section went on reporting it as open for two sessions after it was closed, which
+is X-3-13 and is the reason a live handover file should not accumulate a history section:
+the W-3 entry below already recorded the fix.
 
 ## Predictions made, for later scoring
 

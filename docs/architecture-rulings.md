@@ -518,7 +518,7 @@ preference, and should be marked as one.
 *Cause: three documents laid claim to the same id shape, and one of them was this one.*
 
 **Renamed, every section id.** `A-1` became `AR-A1`, `J-2` became `AR-J2`, and so on for
-all seventy. Nothing else changed: no ruling was added, removed, reversed or reworded,
+all 69 of them. Nothing else changed: no ruling was added, removed, reversed or reworded,
 and the falsifiers are untouched. This is a minor rather than a patch bump because ids
 are how other documents refer to this one, so a consumer has to re-read even though no
 decision moved.

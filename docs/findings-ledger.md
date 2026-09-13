@@ -15,10 +15,11 @@ had seen, and two more, A24 and A25, by the phase B and phase 2 reads in W-3 and
 is 80.
 
 **The tree this describes has moved a long way from the tree it was written against.** It
-is now 27 migrations, `0001` through `0027`, and the head is
-`45eaed57a43f77b327674475b2b4c1c990d8bb1b` on branch `claude/sql-files-to-markdown-i31rob`.
-`docs/review/CURRENT-BASELINE.md` states the current facts and supersedes the canary block
-in every archived prompt. This ledger is still keyed by identifier rather than by line
+is 27 migrations, `0001` through `0027`. This paragraph used to name a head sha and a
+branch, and both went stale within two commits, which is X-3-8 and is exactly the mistake
+`docs/review/CURRENT-BASELINE.md` exists to correct. That file states the current facts and
+supersedes the canary block in every archived prompt; a sha does not belong in a second
+place. This ledger is still keyed by identifier rather than by line
 number precisely so it survives that, and it has: every entry below is still greppable.
 
 Seventeen entries have been closed since the review and the "What has been closed" section
@@ -62,7 +63,7 @@ editing the tables, so that a reader can still see what the reviews found.
 | C2 | `docs/status-ledger.md` | The opening sentence; no grade was touched |
 | C3 | `CLAUDE.md`, `docs/compost-ledger.md` | Eight entries, all with a reactivation condition, in numeric order |
 | C4 | `supabase/config.toml` | Postgres 17, with the tree as it stood at `0022` and 129 assertions run against it |
-| D1 | partly | A throwaway shim proved the tree as it stood at `0022` apply from empty. A committed shim is still not in the tree |
+| D1 | partly | Committed as `tests/shim.sql`, specified rather than improvised, and its header says which migration needs which part of it. Discharged, and the status ledger agrees |
 | D4 | `scripts/verify.sh` | Found forty nine broken edges on its first run |
 | D9 | `scripts/verify.sh` | Em dash rule enforced; the import rule holds vacuously and says so |
 | E6 | `0014_rack.sql` | Racking writes `placement.to_at`, which nothing previously did |
@@ -75,9 +76,12 @@ cellar user actions RLS refuses, now offers more of them, because the menu grew.
 
 ## Disposition
 
+X-3-11 found this summing to 78 against a stated count of 80, because A24 and A25
+were added to section A and the table was not moved. It sums to 80.
+
 | Lands in | Count |
 |---|---|
-| `0006`, the admission and integrity migration | 23 |
+| `0006`, the admission and integrity migration | 25 |
 | Client, independent of the migration | 19 |
 | Documents and ledgers | 12 |
 | Infrastructure: verify, doctor, CI, backup, deploy | 12 |
@@ -295,6 +299,47 @@ distinct defects is 80 rather than 78, which corrects an arithmetic slip in 1.3:
 A25 were added and the total was not moved.
 
 
+### 1.3 (2026-09-12)
+
+*Cause: W-4 phase 2, which was asked to file the null-permit shape as a class and to write
+the derived assertion that finds the fourth instance.*
+
+**Added.** A25, the null-permit class, with its three instances and its invariant. It is
+filed as a class rather than as a third unrelated defect because that is what it is: three
+mechanisms, three sessions, three routes, one cause, and nobody wrote any of them on
+purpose.
+
+**Amended.** B2, to say the class is broader than the entry had it. An effectless operation
+does not raise, it lands silently inert, which is A13's shape, a refusal indistinguishable
+from success, arriving through a check constraint rather than through row level security.
+A13 is therefore not only about RLS.
+
+**The search for a fourth instance found none, and that is the result.** A derived
+assertion now enumerates every check constraint and every boolean function from the
+catalog, exercises each against every row the table could actually hold, and fails on
+anything answering null that is not on an allow-list with a stated reason. At `0025` the
+allow-list has exactly one entry, A24, and nothing else in the schema permits on unknown.
+### 1.2 (2026-09-12)
+
+*Cause: W-3, which set out to make the assertion suite police the schema and found two
+things by writing assertions rather than by reading.*
+
+**Added.** A24, `operation_has_an_effect` passing on a missing effect because a check
+constraint passes on null. It is the third appearance of the same three-valued-logic shape
+in this schema, after A1's `coalesce(..., true)` and `may_see_all_of` returning null.
+
+**Corrected.** B2's premise. Two reports said adding an operation inline always raises. It
+does not raise; it lands, and the operation is silently inert because the kernel reads no
+effect from it. A raise would have been visible, so the real defect is worse than the one
+that was filed.
+
+**Repointed.** A12 cited `E-4`, which was never a ruling reference and dangled after the
+`AR-` rename in `docs/architecture-rulings.md` v2.1. The commitment it meant lives in
+`CLAUDE.md` and in the `R-5` report, and it now says so. That was W-3's own correction of
+its author's error rather than a defect in the tree.
+
+**Closed.** A22, by `0025`.
+
 ### 1.1 (2026-09-12)
 
 *Cause: W-2 phase 2, a read of migrations `0006` through `0022`, which no review had
@@ -322,44 +367,3 @@ Left as it stands rather than guessed at.
 Thirteen reports, three engines, roughly 200 findings deduplicated into 73 distinct
 defects against `c3eae3c`, keyed by identifier rather than by line number.
 
-### 1.2 (2026-09-12)
-
-*Cause: W-3, which set out to make the assertion suite police the schema and found two
-things by writing assertions rather than by reading.*
-
-**Added.** A24, `operation_has_an_effect` passing on a missing effect because a check
-constraint passes on null. It is the third appearance of the same three-valued-logic shape
-in this schema, after A1's `coalesce(..., true)` and `may_see_all_of` returning null.
-
-**Corrected.** B2's premise. Two reports said adding an operation inline always raises. It
-does not raise; it lands, and the operation is silently inert because the kernel reads no
-effect from it. A raise would have been visible, so the real defect is worse than the one
-that was filed.
-
-**Repointed.** A12 cited `E-4`, which was never a ruling reference and dangled after the
-`AR-` rename in `docs/architecture-rulings.md` v2.1. The commitment it meant lives in
-`CLAUDE.md` and in the `R-5` report, and it now says so. That was W-3's own correction of
-its author's error rather than a defect in the tree.
-
-**Closed.** A22, by `0025`.
-
-### 1.3 (2026-09-12)
-
-*Cause: W-4 phase 2, which was asked to file the null-permit shape as a class and to write
-the derived assertion that finds the fourth instance.*
-
-**Added.** A25, the null-permit class, with its three instances and its invariant. It is
-filed as a class rather than as a third unrelated defect because that is what it is: three
-mechanisms, three sessions, three routes, one cause, and nobody wrote any of them on
-purpose.
-
-**Amended.** B2, to say the class is broader than the entry had it. An effectless operation
-does not raise, it lands silently inert, which is A13's shape, a refusal indistinguishable
-from success, arriving through a check constraint rather than through row level security.
-A13 is therefore not only about RLS.
-
-**The search for a fourth instance found none, and that is the result.** A derived
-assertion now enumerates every check constraint and every boolean function from the
-catalog, exercises each against every row the table could actually hold, and fails on
-anything answering null that is not on an allow-list with a stated reason. At `0025` the
-allow-list has exactly one entry, A24, and nothing else in the schema permits on unknown.

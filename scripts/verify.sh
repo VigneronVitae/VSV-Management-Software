@@ -27,13 +27,22 @@ fail()  { printf 'FAIL  %s\n' "$*"; fails=$((fails + 1)); }
 pass()  { printf 'ok    %s\n' "$*"; }
 head_() { printf '\n--- %s\n' "$*"; }
 
-# The review corpus is terminal. Thirteen engines wrote it, none of them read
+# The review corpus is terminal. Three engines wrote it across nineteen runs, and
+# none of them read
 # this repository's style rule, and nothing in the tree depends on any of it.
 # Giving those files headers would enter them into the dependency graph as
 # things other documents rely on, which inverts the relationship. So they are
 # exempt from the header check and the em dash check, explicitly and here,
 # rather than by accident.
-corpus() { case "$1" in docs/review/prompts/*|docs/review/reports/*) return 0 ;; *) return 1 ;; esac; }
+# docs/work-prompts is the same kind of thing as the corpus and is exempt for the
+# same reason. Those six files are instructions that were followed, so they are
+# the reason a commit looks the way it does and never a live requirement. They
+# were cited as governing authority throughout the tree while not being in it,
+# which is X-3-7 and is why they are here now.
+corpus() { case "$1" in
+    docs/review/prompts/*|docs/review/reports/*|docs/work-prompts/*) return 0 ;;
+    *) return 1 ;;
+  esac; }
 
 tracked() { git ls-files; }
 
@@ -203,10 +212,20 @@ for id in $composts; do
 done
 
 # The status ledger's own definition of Deferred requires a compost entry.
+#
+# X-3-2: this matched `| Deferred |` exactly and has matched zero rows since the
+# only Deferred row acquired a qualifier after the word, so it has been inert.
+# A check that silently matches nothing is the shape this whole session is about.
+# It matches the grade column now rather than a fixed cell, and it says when it
+# examined nothing so the emptiness is visible rather than assumed.
+deferred_rows=$(grep -cE '^\| [^|]+ \| Deferred' docs/status-ledger.md)
+if [ "$deferred_rows" -eq 0 ]; then
+  note "no status-ledger row is graded Deferred, so that check examined nothing"
+fi
 while IFS= read -r row; do
   printf '%s' "$row" | grep -q 'C-[0-9]' \
     || fail "docs/status-ledger.md: a row graded Deferred names no compost entry: $(printf '%s' "$row" | cut -c1-60)"
-done < <(grep '| Deferred |' docs/status-ledger.md)
+done < <(grep -E '^\| [^|]+ \| Deferred' docs/status-ledger.md)
 
 [ "$fails" -eq "$before" ] && pass "every S-, C- and AR- id referenced in the tree exists, every compost entry can be revived, every Deferred row says how"
 
@@ -244,7 +263,8 @@ fi
 # in docs/review whose whole subject is now rather than then, and its counts are
 # the first thing a reviewer will trust, so they are checked like any other.
 history() { case "$1" in
-    docs/review/prompts/*|docs/review/reports/*|docs/review/README.md|docs/session-reports/*) return 0 ;;
+    docs/review/prompts/*|docs/review/reports/*|docs/review/README.md) return 0 ;;
+    docs/work-prompts/*|docs/session-reports/*) return 0 ;;
     *) return 1 ;;
   esac; }
 n_files=$(tracked | grep -c .)
