@@ -2420,37 +2420,115 @@ begin
   want := '59';
   if have <> want then
     raise exception
-      'FAIL: there are % policies in public and this suite was written against %. If that is deliberate, update this number and the list below in the same commit', have, want;
+      'FAIL: there are % policies in public and this suite was written against %. If that is deliberate, update this number, and judge the new policy in the disposition list below if it reads or writes blanket true', have, want;
   end if;
   perform test_ok('the number of policies in public is what this suite was written against');
 end $$;
 
--- The blanket reads, named. This is ledger A5's surface written down: every
--- policy whose predicate is literally true. Tightening one of these is good and
--- should still fail here, because the fix and the assertion belong in one commit.
+-- The blanket reads, named, and judged. This is ledger A5's surface.
+--
+-- It used to be a pinned string: the set of wide-open policies compared against a
+-- literal, gated behind snapshots_on() because that is what it was. Satisfying it
+-- cost one paste. W-9 phase 2 is the observation that makes that wrong. A weaken
+-- mutation against these policies has reported "degenerate, changed nothing" in
+-- every harness run for three sessions, because a policy that is already true has
+-- nothing left to weaken. The exclusion list was the finding, printed
+-- continuously in a column labelled excluded, and read past by five sessions
+-- including the one that ran the client and found it by hand.
+--
+-- So this is no longer a photograph. Every policy whose predicate is literally
+-- true carries a disposition and a reason. `permissive` means somebody decided
+-- this is reference data anybody may read. `finding` means it is open and filed.
+-- Adding a wide-open policy fails until it is judged, and the judgment costs a
+-- sentence rather than a paste, which is the whole of the difference.
+--
+-- It is not gated by snapshots_on(). It states an invariant, that nothing is
+-- blanket readable without a recorded reason, and an invariant does not need
+-- updating when the schema grows somewhere else.
 do $$
-declare have text; want text;
+declare
+  undisposed text;
+  stale      text;
+  reasonless text;
 begin
-  if not snapshots_on() then perform skip_snapshot('the wide-open policy list'); return; end if;
-  select coalesce(string_agg(tablename || '.' || policyname, ', ' order by tablename, policyname), '')
-    into have
-    from pg_policies
-   where schemaname = 'public' and (qual = 'true' or with_check = 'true');
+  create temp table w9_open (policy text, disposition text, reason text) on commit drop;
+  insert into w9_open values
+    -- Deliberately permissive. Vocabulary, structure, and the rooms the vessels
+    -- stand in. None of it says whose wine, or how much.
+    ('term.term_read', 'permissive',
+     'The vocabulary. Every picker in every client reads it, and it names varieties rather than wine.'),
+    ('term_kind.term_kind_read', 'permissive',
+     'Vocabulary about vocabulary, AR-E7. Reading it tells you what kinds of term exist.'),
+    ('template.template_read', 'permissive',
+     'Inferred history templates describe winemaking practice rather than any particular lot.'),
+    ('template_step.template_step_read', 'permissive',
+     'The steps of the above, for the same reason.'),
+    ('subject_resolver.subject_resolver_read', 'permissive',
+     'The registry naming which relation backs which subject type, AR-E5. Structure, not content.'),
+    ('location.location_read', 'permissive',
+     'Rooms and their ambient temperature. Facility infrastructure, and anybody standing in the barn can read a thermometer.'),
 
-  want := 'app_user.app_user_read, block.block_read, event.event_read, '
-       || 'lineage.lineage_insert, lineage.lineage_read, location.location_read, '
-       || 'node.node_insert, party.party_read, placement.placement_insert, '
-       || 'placement.placement_read, subject_resolver.subject_resolver_read, '
-       || 'task.task_read, task_claim_log.task_claim_log_read, template.template_read, '
-       || 'template_step.template_step_read, term.term_read, term_kind.term_kind_read, '
-       || 'vessel.vessel_read, '
-       || 'vessel_code.vessel_code_read, vessel_type_note.vessel_type_note_read';
+    -- Open findings. Everything carrying wine, ownership, movement or people.
+    ('placement.placement_read', 'finding',
+     'A5. Every placement to everybody: which vessel holds which lot, how much, and when it moved. W-8 read the facility entire movement history from a client login.'),
+    ('event.event_read', 'finding',
+     'A5. Every event to everybody, payload included. W-8 read the facility rack, its volumes and its method, from a client login.'),
+    ('lineage.lineage_read', 'finding',
+     'A5. Composition by reference. node_bin_shares guards this and the table under it does not, so the guard is walked around rather than through.'),
+    ('app_user.app_user_read', 'finding',
+     'A5. Every staff name and role to every authenticated user, a custom crush client included.'),
+    ('party.party_read', 'finding',
+     'A5. Every client sees the name of every other client of the same facility.'),
+    ('task.task_read', 'finding',
+     'A5. Who was asked to do what, to everybody.'),
+    ('task_claim_log.task_claim_log_read', 'finding',
+     'A5. Who took which task and when, to everybody.'),
+    ('vessel.vessel_read', 'finding',
+     'A5, and the one W-9 phase 3 rules on. A client needs to know whether a vessel can take wine, which is a boolean. The row carries owner, capacity and attributes instead.'),
+    ('vessel_code.vessel_code_read', 'finding',
+     'A5. The codes on the barrels, which is how a vessel is identified from a sticker.'),
+    ('vessel_type_note.vessel_type_note_read', 'finding',
+     'A23. A5 blanket read arriving on new surface seven migrations later.'),
+    ('block.block_read', 'finding',
+     'A5. Vineyard blocks, which belong to a grower. Latent while no block rows exist.'),
+    ('node.node_insert', 'finding',
+     'A7 and A11, the admission surface. Any authenticated user may insert a lot.'),
+    ('placement.placement_insert', 'finding',
+     'A7 and A11. Any authenticated user may place wine in any vessel.'),
+    ('lineage.lineage_insert', 'finding',
+     'A7 and A11. Any authenticated user may assert that one lot came out of another.');
 
-  if have <> want then
+  select string_agg(t, ', ' order by t) into undisposed from (
+    select p.tablename || '.' || p.policyname as t
+      from pg_policies p
+     where p.schemaname = 'public' and (p.qual = 'true' or p.with_check = 'true')
+       and not exists (select 1 from w9_open w where w.policy = p.tablename || '.' || p.policyname)
+  ) x;
+  if undisposed is not null then
     raise exception
-      E'FAIL: the set of wide-open policies changed.\nnow:  %\nwas:  %', have, want;
+      'FAIL: these policies read or write blanket true and nobody has said why: %. Add each to the list in this assertion with a disposition of permissive or finding, and a reason. A reason, not a name.', undisposed;
   end if;
-  perform test_ok('the twenty wide-open policies are exactly the ones ledger A5 and A23 describe, plus the term_kind registry which is vocabulary about vocabulary');
+
+  select string_agg(w.policy, ', ' order by w.policy) into stale from w9_open w
+   where not exists (
+     select 1 from pg_policies p
+      where p.schemaname = 'public' and (p.qual = 'true' or p.with_check = 'true')
+        and p.tablename || '.' || p.policyname = w.policy);
+  if stale is not null then
+    raise exception
+      'FAIL: these are recorded as blanket true and are not: %. If one was narrowed, that is good, and its entry goes in the same commit.', stale;
+  end if;
+
+  select string_agg(policy, ', ' order by policy) into reasonless from w9_open
+   where reason is null or btrim(reason) = '' or disposition not in ('permissive', 'finding');
+  if reasonless is not null then
+    raise exception 'FAIL: these carry no reason, or a disposition that is neither permissive nor finding: %', reasonless;
+  end if;
+
+  perform test_ok(
+    'every blanket-true policy carries a disposition and a reason, '
+    || (select count(*) from w9_open where disposition = 'permissive')::text || ' permissive and '
+    || (select count(*) from w9_open where disposition = 'finding')::text || ' filed as open');
 end $$;
 
 -- ---------------------------------------------------------------------------

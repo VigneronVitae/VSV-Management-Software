@@ -588,7 +588,15 @@ fi
 
 if [ "$n_degen" -gt 0 ]; then
   echo
-  echo "$n_degen mutation(s) applied and changed nothing, so they are excluded from every column:"
+  # W-9 phase 2. Excluding these from the score is right and reading past them
+  # was not: a weaken mutation that changes nothing is a policy that was already
+  # blanket true, and twenty of them printed here every run for three sessions
+  # while ledger A5 sat open and a live run found it by hand. They are judged now,
+  # in tests/schema_assertions.sql, and this line says so because the last five
+  # sessions all read this list and none of them read it as a finding.
+  echo "$n_degen mutation(s) applied and changed nothing, so they are excluded from every column."
+  echo "  A degenerate weaken is a policy with nothing left to weaken. Every one is"
+  echo "  dispositioned in tests/schema_assertions.sql; a new one fails there."
   sort "$degenerate" | awk -F'\t' '{printf "  %-8s %s\n", $1, $2}'
 fi
 
