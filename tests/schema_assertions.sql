@@ -3729,6 +3729,904 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- the refusal surface: the kernel refuses what it says it refuses'; end $$;
+
+-- W-7. scripts/guards.sh enumerates every refusal site in every function the
+-- kernel owns and scripts/mutate.sh neutralises them one at a time. 102 of 176
+-- could be removed without a single assertion in this file noticing, and the
+-- eleven functions below are where they were. The declarative layer was tested
+-- for what it refuses and the procedural layer for what it does.
+--
+-- Two rules these assertions follow that the earlier ones did not.
+--
+-- Ask for the specific refusal, not for any error. Most of these functions have
+-- several guards that decline the same call for different reasons, and "it
+-- raised" cannot tell them apart, so an assertion written that way covers the
+-- function and no individual site in it.
+--
+-- Compare with `is distinct from`. `if q <> 222 then raise` does nothing at all
+-- when q is null, and one assertion in this file had been passing that way since
+-- it was written. See the note above the racking loss assertion.
+
+-- The message a call refuses with, or null if it did not refuse. Roll back is
+-- automatic: an exception inside a plpgsql block undoes the block's writes, so a
+-- call that was supposed to be refused and was not leaves nothing behind either,
+-- because the assertion that follows aborts the run.
+create or replace function test_refusal(p_sql text)
+returns text language plpgsql set search_path = public, pg_temp as $$
+begin
+  execute p_sql;
+  return null;
+exception when others then
+  return sqlerrm;
+end $$;
+
+-- Asserts that a call refused, and refused for the stated reason.
+create or replace function test_refuses(p_sql text, p_like text, p_msg text)
+returns void language plpgsql set search_path = public, pg_temp as $$
+declare got text;
+begin
+  got := test_refusal(p_sql);
+  if got is null then
+    raise exception 'FAIL: % : the call was accepted', p_msg;
+  end if;
+  if got not like p_like then
+    raise exception 'FAIL: % : refused with "%" rather than %', p_msg, got, p_like;
+  end if;
+  perform test_ok(p_msg);
+end $$;
+
+insert into vessel (id, type_id, name, capacity_l) values
+  ('00000000-0000-0000-0000-000000007701', term_id('vessel_type','barrel'), 'W7 source',   228),
+  ('00000000-0000-0000-0000-000000007702', term_id('vessel_type','tank'),   'W7 sink',    1000),
+  ('00000000-0000-0000-0000-000000007703', term_id('vessel_type','barrel'), 'W7 reused',   228),
+  ('00000000-0000-0000-0000-000000007704', term_id('vessel_type','barrel'), 'W7 second',   228),
+  ('00000000-0000-0000-0000-000000007705', term_id('vessel_type','tank'),   'W7 blend',    500),
+  ('00000000-0000-0000-0000-000000007706', term_id('vessel_type','barrel'), 'W7 rejoin',   228),
+  ('00000000-0000-0000-0000-000000007707', term_id('vessel_type','barrel'), 'W7 small',    228),
+  ('00000000-0000-0000-0000-000000007708', term_id('vessel_type','tank'),   'W7 absorb',   500),
+  ('00000000-0000-0000-0000-000000007709', term_id('vessel_type','barrel'), 'W7 bystander', 228),
+  ('00000000-0000-0000-0000-000000007710', term_id('vessel_type','barrel'), 'W7 spare',     228),
+  ('00000000-0000-0000-0000-000000007711', term_id('vessel_type','barrel'), 'W7 losing',    228);
+
+do $$ begin perform test_act_as('00000000-0000-0000-0000-00000000a001'); end $$;
+
+-- A lot nothing below touches, so that any mutation which drops a `where`
+-- clause and writes to every row has somewhere visible to show up.
+do $$ begin
+  perform fill_vessel('00000000-0000-0000-0000-000000007709',
+    jsonb_build_object('id','00000000-0000-0000-0000-000000007809','name','W7 bystander lot',
+      'variety_id', term_id('variety','chardonnay'), 'vintage', 2025, 'quantity', 111), 111, false);
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- rack_plan refuses before anything is written'; end $$;
+
+do $$ begin
+  perform fill_vessel('00000000-0000-0000-0000-000000007701',
+    jsonb_build_object('id','00000000-0000-0000-0000-000000007801','name','W7 lot one',
+      'variety_id', term_id('variety','chardonnay'), 'vintage', 2025, 'quantity', 200), 200, false);
+end $$;
+
+do $$
+declare
+  src text := $q$jsonb_build_array(jsonb_build_object('vessel_id','00000000-0000-0000-0000-000000007701','volume_l',100))$q$;
+  dst text := $q$jsonb_build_array(jsonb_build_object('vessel_id','00000000-0000-0000-0000-000000007702','volume_l',100))$q$;
+begin
+  perform test_refuses(
+    'select rack_plan(''[]''::jsonb, ' || dst || ')',
+    '%somewhere to come from%',
+    'a rack with nothing to come out of is refused before anything is written');
+
+  perform test_refuses(
+    'select rack_plan(' || src || ', ''[]''::jsonb)',
+    '%somewhere to go%',
+    'a rack with nowhere to go is refused before anything is written');
+
+  perform test_refuses(
+    'select rack_plan(' ||
+      $q$jsonb_build_array(jsonb_build_object('vessel_id','00000000-0000-0000-0000-000000007701','volume_l',0))$q$
+      || ', ' || dst || ')',
+    '%how much came out of%is not recorded%',
+    'a source with no volume recorded is refused, rather than counted as nothing');
+
+  perform test_refuses(
+    'select rack_plan(' ||
+      $q$jsonb_build_array(jsonb_build_object('vessel_id','00000000-0000-0000-0000-000000007701','volume_l',500))$q$
+      || ', ' || dst || ')',
+    '%holds%L and this takes%',
+    'taking more out of a vessel than it holds is refused');
+
+  perform test_refuses(
+    'select rack_plan(' || src || ', ' ||
+      $q$jsonb_build_array(jsonb_build_object('vessel_id','00000000-0000-0000-0000-0000000077ff','volume_l',100))$q$
+      || ')',
+    '%no vessel with id%',
+    'a destination that is not a vessel is refused');
+
+  perform test_refuses(
+    'select rack_plan(' || src || ', ' ||
+      $q$jsonb_build_array(jsonb_build_object('vessel_id','00000000-0000-0000-0000-000000007702','volume_l',0))$q$
+      || ')',
+    '%how much went into%is not recorded%',
+    'a destination with no volume recorded is refused, rather than counted as nothing');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- racking writes where it says and nowhere else'; end $$;
+
+-- Every `where` clause in rack carries `and to_at is null`, and dropping that
+-- conjunct is a refusal that stops refusing in the A14 shape: no error, no
+-- missing row, and a placement that ended in August quietly rewritten.
+--
+-- The closed placements below are inserted with an explicit older `to_at`
+-- rather than made by racking, and that detail is the assertion. `now()` is the
+-- transaction timestamp, so inside this file a mutation that restamps an
+-- already-closed placement writes exactly the value that was there and cannot
+-- be seen. The first version of these assertions made the history by racking
+-- and proved nothing at all.
+insert into placement (node_id, vessel_id, volume_l, from_at, to_at) values
+  ('00000000-0000-0000-0000-000000007809','00000000-0000-0000-0000-000000007703',
+   100, now() - interval '9 days', now() - interval '8 days'),
+  ('00000000-0000-0000-0000-000000007809','00000000-0000-0000-0000-000000007706',
+   101, now() - interval '9 days', now() - interval '8 days'),
+  ('00000000-0000-0000-0000-000000007809','00000000-0000-0000-0000-000000007702',
+   102, now() - interval '9 days', now() - interval '8 days');
+
+-- Emptying a vessel ends the placement that is open, and only that one.
+do $$
+declare t timestamptz; v numeric;
+begin
+  perform fill_vessel('00000000-0000-0000-0000-000000007703',
+    jsonb_build_object('id','00000000-0000-0000-0000-000000007803','name','W7 second tenant',
+      'variety_id', term_id('variety','chardonnay'), 'vintage', 2025, 'quantity', 50), 50, false);
+  perform rack(
+    jsonb_build_array(jsonb_build_object('vessel_id','00000000-0000-0000-0000-000000007703','volume_l',50)),
+    jsonb_build_array(jsonb_build_object('vessel_id','00000000-0000-0000-0000-000000007705','volume_l',50)));
+
+  select to_at into t from placement
+   where vessel_id = '00000000-0000-0000-0000-000000007703'
+     and node_id = '00000000-0000-0000-0000-000000007809';
+  if t is distinct from now() - interval '8 days' then
+    raise exception 'FAIL: emptying a vessel restamped a placement that ended eight days ago, to %', t;
+  end if;
+  perform test_ok('emptying a vessel ends the placement that is open and leaves the ones that closed');
+
+  -- And the partial branch, which writes a volume rather than a to_at.
+  perform fill_vessel('00000000-0000-0000-0000-000000007703',
+    jsonb_build_object('id','00000000-0000-0000-0000-000000007804','name','W7 third tenant',
+      'variety_id', term_id('variety','chardonnay'), 'vintage', 2025, 'quantity', 80), 80, false);
+  perform rack(
+    jsonb_build_array(jsonb_build_object('vessel_id','00000000-0000-0000-0000-000000007703','volume_l',30)),
+    jsonb_build_array(jsonb_build_object('vessel_id','00000000-0000-0000-0000-000000007705','volume_l',30)));
+
+  select volume_l into v from placement
+   where vessel_id = '00000000-0000-0000-0000-000000007703'
+     and node_id = '00000000-0000-0000-0000-000000007809';
+  if v is distinct from 100 then
+    raise exception 'FAIL: drawing from a vessel rewrote a closed placement to % L', v;
+  end if;
+  perform test_ok('drawing part of a lot out of a vessel does not rewrite what was in it before');
+end $$;
+
+-- Racking a lot into a vessel it is already in adds to the placement it has,
+-- rather than making a second one, and leaves the placements that ended there.
+do $$
+declare n int; v numeric;
+begin
+  -- Lot 7804 is split so that it is in two vessels at once, then some of it is
+  -- moved from one of its own vessels into the other.
+  perform rack(
+    jsonb_build_array(jsonb_build_object('vessel_id','00000000-0000-0000-0000-000000007703','volume_l',20)),
+    jsonb_build_array(jsonb_build_object('vessel_id','00000000-0000-0000-0000-000000007706','volume_l',20)));
+  perform rack(
+    jsonb_build_array(jsonb_build_object('vessel_id','00000000-0000-0000-0000-000000007703','volume_l',10)),
+    jsonb_build_array(jsonb_build_object('vessel_id','00000000-0000-0000-0000-000000007706','volume_l',10)));
+
+  select count(*) into n from placement
+   where vessel_id = '00000000-0000-0000-0000-000000007706' and to_at is null;
+  if n <> 1 then
+    raise exception 'FAIL: a lot racked into a vessel it was already in is there % times', n;
+  end if;
+  select volume_l into v from placement
+   where vessel_id = '00000000-0000-0000-0000-000000007706' and to_at is null;
+  if v is distinct from 30 then
+    raise exception 'FAIL: 20 L then 10 L into the same vessel came to % L', v;
+  end if;
+  perform test_ok('a lot racked into a vessel it is already in adds to the placement it has');
+
+  select volume_l into v from placement
+   where vessel_id = '00000000-0000-0000-0000-000000007706'
+     and node_id = '00000000-0000-0000-0000-000000007809';
+  if v is distinct from 101 then
+    raise exception 'FAIL: topping up a placement rewrote a closed one to % L', v;
+  end if;
+  perform test_ok('adding to a placement leaves the placements that ended in that vessel alone');
+end $$;
+
+-- A blend takes its wine out of the parents it drew from, by what each of them
+-- put in, and out of nothing else.
+do $$
+declare q7804 numeric; q numeric;
+begin
+  select quantity into q7804 from node where id = '00000000-0000-0000-0000-000000007804';
+
+  perform fill_vessel('00000000-0000-0000-0000-000000007707',
+    jsonb_build_object('id','00000000-0000-0000-0000-000000007805','name','W7 other parent',
+      'variety_id', term_id('variety','riesling'), 'vintage', 2025, 'quantity', 20), 20, false);
+
+  perform rack(
+    jsonb_build_array(
+      jsonb_build_object('vessel_id','00000000-0000-0000-0000-000000007706','volume_l',10),
+      jsonb_build_object('vessel_id','00000000-0000-0000-0000-000000007707','volume_l',5)),
+    jsonb_build_array(jsonb_build_object('vessel_id','00000000-0000-0000-0000-000000007708','volume_l',15)),
+    '{}'::jsonb, false,
+    jsonb_build_object('id','00000000-0000-0000-0000-000000007806','name','W7 blend one'));
+
+  select quantity into q from node where id = '00000000-0000-0000-0000-000000007805';
+  if q is distinct from 15 then
+    raise exception 'FAIL: a parent that gave 5 L of its 20 L to a blend is now % L', coalesce(q::text,'null');
+  end if;
+  select quantity into q from node where id = '00000000-0000-0000-0000-000000007804';
+  if q is distinct from q7804 - 10 then
+    raise exception 'FAIL: the other parent gave 10 L and went from % to %', q7804, q;
+  end if;
+  perform test_ok('a blend takes out of each parent exactly what that parent put in');
+
+  select quantity into q from node where id = '00000000-0000-0000-0000-000000007809';
+  if q is distinct from 111 then
+    raise exception 'FAIL: a blend elsewhere in the winery changed an untouched lot to % L', q;
+  end if;
+  perform test_ok('a blend does not change the quantity of a lot that was not in it');
+end $$;
+
+-- Blending into a vessel that already holds a different lot absorbs that lot:
+-- its placement in that vessel ends and it loses what was in that vessel. Both
+-- of those are `where` clauses whose second conjunct is the whole of the care.
+do $$
+declare t timestamptz; q numeric;
+begin
+  -- The lot to be absorbed is in two vessels, so absorbing the one in 7702 must
+  -- take 30 L off it rather than all 60.
+  perform fill_vessel('00000000-0000-0000-0000-000000007702',
+    jsonb_build_object('id','00000000-0000-0000-0000-000000007808','name','W7 absorbed',
+      'variety_id', term_id('variety','pinot_noir'), 'vintage', 2025, 'quantity', 60), 30, false);
+  insert into placement (node_id, vessel_id, volume_l)
+    values ('00000000-0000-0000-0000-000000007808','00000000-0000-0000-0000-000000007704', 30);
+
+  perform rack(
+    jsonb_build_array(jsonb_build_object('vessel_id','00000000-0000-0000-0000-000000007703','volume_l',10)),
+    jsonb_build_array(jsonb_build_object('vessel_id','00000000-0000-0000-0000-000000007702','volume_l',10)),
+    '{}'::jsonb, false,
+    jsonb_build_object('id','00000000-0000-0000-0000-00000000780a','name','W7 blend two'));
+
+  select to_at into t from placement
+   where vessel_id = '00000000-0000-0000-0000-000000007702'
+     and node_id = '00000000-0000-0000-0000-000000007809';
+  if t is distinct from now() - interval '8 days' then
+    raise exception 'FAIL: absorbing a lot restamped a placement that had already ended, to %', t;
+  end if;
+  perform test_ok('absorbing the lot in a destination ends its open placement and no other');
+
+  select quantity into q from node where id = '00000000-0000-0000-0000-000000007808';
+  if q is distinct from 30 then
+    raise exception 'FAIL: absorbing 30 L of a 60 L lot left it at % L', coalesce(q::text,'null');
+  end if;
+  perform test_ok('a lot absorbed out of one of its vessels loses what was in that vessel, not all of it');
+
+  select quantity into q from node where id = '00000000-0000-0000-0000-000000007809';
+  if q is distinct from 111 then
+    raise exception 'FAIL: absorbing a lot changed an unrelated lot to % L', q;
+  end if;
+  perform test_ok('absorbing a lot does not reach any other lot');
+end $$;
+
+-- The loss on a move comes off the lot. This assertion existed already, as
+-- `if q <> 222 then raise`, against a lot whose quantity was null because the
+-- fixture passed 225 as the placement volume and never set one. Null is not
+-- unequal to 222, so it passed without checking anything, and removing the
+-- update it was written to protect changed nothing. Fifth time in this project
+-- that a green check has turned out to be hollow, and the first one found by
+-- mutating the code the check was pointing at rather than by breaking the check.
+do $$
+declare q numeric;
+begin
+  perform fill_vessel('00000000-0000-0000-0000-000000007711',
+    jsonb_build_object('id','00000000-0000-0000-0000-00000000780b','name','W7 losing lot',
+      'variety_id', term_id('variety','chardonnay'), 'vintage', 2025, 'quantity', 90), 90, false);
+  perform rack(
+    jsonb_build_array(jsonb_build_object('vessel_id','00000000-0000-0000-0000-000000007711','volume_l',90)),
+    jsonb_build_array(jsonb_build_object('vessel_id','00000000-0000-0000-0000-000000007710','volume_l',85)));
+
+  select quantity into q from node where id = '00000000-0000-0000-0000-00000000780b';
+  if q is distinct from 85 then
+    raise exception 'FAIL: after a 5 L loss a 90 L lot is % L', coalesce(q::text, 'null');
+  end if;
+  perform test_ok('moving a lot takes the loss off it, and a lot with no quantity is not a pass');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- forking takes the vessels it was given and no others'; end $$;
+
+insert into vessel (id, type_id, name, capacity_l) values
+  ('00000000-0000-0000-0000-000000007712', term_id('vessel_type','barrel'), 'W7 fork one', 228),
+  ('00000000-0000-0000-0000-000000007713', term_id('vessel_type','barrel'), 'W7 fork two', 228),
+  ('00000000-0000-0000-0000-000000007714', term_id('vessel_type','barrel'), 'W7 fork not', 228),
+  ('00000000-0000-0000-0000-000000007715', term_id('vessel_type','barrel'), 'W7 empty',    228);
+
+do $$ begin
+  perform fill_vessel('00000000-0000-0000-0000-000000007712',
+    jsonb_build_object('id','00000000-0000-0000-0000-00000000780c','name','W7 forkable',
+      'variety_id', term_id('variety','chardonnay'), 'vintage', 2025, 'quantity', 100), 60, false);
+  insert into placement (node_id, vessel_id, volume_l)
+    values ('00000000-0000-0000-0000-00000000780c','00000000-0000-0000-0000-000000007713', 40);
+end $$;
+
+do $$ begin
+  perform test_refuses(
+    $q$select fork_lot('00000000-0000-0000-0000-0000000077fe',
+                       array['00000000-0000-0000-0000-000000007712']::uuid[])$q$,
+    '%no lot with id%',
+    'forking a lot that does not exist is refused');
+
+  perform test_refuses(
+    $q$select fork_lot('00000000-0000-0000-0000-00000000780c',
+                       array['00000000-0000-0000-0000-000000007714']::uuid[])$q$,
+    '%none of those vessels hold that lot%',
+    'forking off a vessel that does not hold the lot is refused');
+
+  perform test_refuses(
+    $q$select fork_lot('00000000-0000-0000-0000-00000000780c',
+                       array['00000000-0000-0000-0000-000000007712',
+                             '00000000-0000-0000-0000-000000007714']::uuid[])$q$,
+    '%some of those vessels do not hold that lot%',
+    'forking off a set where only some vessels hold the lot is refused, rather than the rest ignored');
+end $$;
+
+do $$
+declare child uuid; n int; q numeric;
+begin
+  child := fork_lot('00000000-0000-0000-0000-00000000780c',
+                    array['00000000-0000-0000-0000-000000007712']::uuid[]);
+
+  select count(*) into n from placement
+   where node_id = '00000000-0000-0000-0000-00000000780c' and to_at is null;
+  if n <> 1 then
+    raise exception 'FAIL: forking one of two vessels left the parent in % of them', n;
+  end if;
+  perform test_ok('forking moves the placements it was given and leaves the parent in the rest');
+
+  select count(*) into n from placement where node_id = child and to_at is null;
+  if n <> 1 then
+    raise exception 'FAIL: the child came out in % vessels', n;
+  end if;
+
+  select quantity into q from node where id = '00000000-0000-0000-0000-00000000780c';
+  if q is distinct from 40 then
+    raise exception 'FAIL: forking 60 L out of a 100 L lot left it at % L', coalesce(q::text,'null');
+  end if;
+  perform test_ok('forking takes what moved off the parent, and the parent is smaller rather than spent');
+
+  select quantity into q from node where id = '00000000-0000-0000-0000-000000007809';
+  if q is distinct from 111 then
+    raise exception 'FAIL: forking a lot changed an unrelated lot to % L', q;
+  end if;
+  perform test_ok('forking does not reach the quantity of any other lot');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- an operation nobody registered is refused by name'; end $$;
+
+-- A lot in no vessel at all, which is what makes the vessel guard below the only
+-- thing that can refuse.
+insert into node (id, stage, status, name, owner_id, created_by)
+values ('00000000-0000-0000-0000-00000000780e', 'bin', 'open', 'W7 bin',
+        '00000000-0000-0000-0000-00000000f001', '00000000-0000-0000-0000-00000000a001');
+
+do $$ begin
+  perform test_refuses(
+    $q$select record_event('00000000-0000-0000-0000-00000000780b', 'no_such_operation')$q$,
+    '%there is no operation called%',
+    'recording an event under an unknown operation is refused, not written with a null operation');
+
+  -- Against a lot that is in no vessel at all. Aimed at a lot that is in one,
+  -- removing this guard falls through to fork_lot, which refuses in the same
+  -- words, and the assertion passes while the guard is gone.
+  perform test_refuses(
+    $q$select record_event('00000000-0000-0000-0000-00000000780e', 'punchdown', '{}'::jsonb,
+                           array['00000000-0000-0000-0000-000000007715']::uuid[])$q$,
+    '%none of those vessels hold that lot%',
+    'recording an event against vessels that do not hold the lot is refused by the caller''s own guard');
+
+  perform test_refuses(
+    $q$select record_vessel_note('00000000-0000-0000-0000-000000007715', 'no_such_operation')$q$,
+    '%there is no operation called%',
+    'a vessel note under an unknown operation is refused, not written with a null operation');
+
+  perform test_refuses(
+    $q$select generate_inferred_history('00000000-0000-0000-0000-0000000077fd')$q$,
+    '%no such node%',
+    'inferring history for a lot that does not exist is refused');
+
+  perform test_refuses(
+    $q$select update_vessel('00000000-0000-0000-0000-0000000077fc', '{}'::jsonb)$q$,
+    '%no vessel with id%',
+    'editing a vessel that does not exist is refused rather than reported as done');
+
+  perform test_refuses(
+    $q$select finish_run('00000000-0000-0000-0000-0000000077fb')$q$,
+    '%no such run%',
+    'finishing a run that does not exist is refused rather than writing against a null vessel');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- procedure runs are timed one step at a time'; end $$;
+
+do $$
+declare proc uuid; s1 uuid; s2 uuid; sess uuid; run uuid; other timestamptz;
+begin
+  insert into procedure (id, name, subject_type) values (gen_random_uuid(), 'W7 Procedure', 'vessel')
+    returning id into proc;
+  insert into procedure_step (id, procedure_id, step_order, label, kind)
+    values (gen_random_uuid(), proc, 1, 'first', 'note') returning id into s1;
+  insert into procedure_step (id, procedure_id, step_order, label, kind)
+    values (gen_random_uuid(), proc, 2, 'second', 'note') returning id into s2;
+
+  perform test_refuses(
+    format($q$select start_procedure_session(%L, '{}'::uuid[])$q$, proc),
+    '%at least one vessel%',
+    'a procedure session with no vessels is refused rather than started empty');
+
+  sess := start_procedure_session(proc, array['00000000-0000-0000-0000-000000007715']::uuid[]);
+  select id into run from procedure_run where session_id = sess;
+
+  perform test_refuses(
+    format($q$select end_run_step(%L, %L)$q$, run, s1),
+    '%never started%',
+    'ending a step that was never started is refused rather than timed from nothing');
+
+  perform begin_run_step(run, s1);
+  perform begin_run_step(run, s2);
+  perform end_run_step(run, s2);
+
+  select ended_at into other from procedure_run_step where run_id = run and step_id = s1;
+  if other is not null then
+    raise exception 'FAIL: ending one step of a run ended another one as well';
+  end if;
+  perform test_ok('ending a step ends that step, and leaves the other steps of the run running');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- a cap sequence that is empty still names an action'; end $$;
+
+do $$
+declare n int; v text;
+begin
+  update node set attributes = jsonb_build_object('cap_rule', jsonb_build_object('sequence', '[]'::jsonb))
+   where id = '00000000-0000-0000-0000-000000007809';
+
+  select count(*), min(value) into n, v
+    from next_cap_action('00000000-0000-0000-0000-000000007809');
+  if n <> 1 or v is distinct from 'punchdown' then
+    raise exception 'FAIL: a lot with an empty cap sequence offered % action(s), %', n, coalesce(v,'none');
+  end if;
+  perform test_ok('a cap rule with an empty sequence falls back to punchdown rather than offering nothing');
+
+  update node set attributes = '{}'::jsonb where id = '00000000-0000-0000-0000-000000007809';
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- claiming a task, the three refusals that were not asserted'; end $$;
+
+insert into task (id, operation_id, status, subject_type, subject_id) values
+  ('00000000-0000-0000-0000-000000007e01', term_id('operation','punchdown'), 'done',
+   'node', '00000000-0000-0000-0000-000000007809'),
+  ('00000000-0000-0000-0000-000000007e02', term_id('operation','punchdown'), 'open',
+   'node', '00000000-0000-0000-0000-000000007809');
+update task set claimed_by = '00000000-0000-0000-0000-00000000a002', claimed_at = now()
+ where id = '00000000-0000-0000-0000-000000007e02';
+
+do $$ begin
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+  perform test_refuses(
+    $q$select claim_task('00000000-0000-0000-0000-000000007e01')$q$,
+    '%not available to you%',
+    'a task that is already done cannot be claimed');
+
+  perform test_refuses(
+    $q$select claim_task('00000000-0000-0000-0000-000000007e02')$q$,
+    '%not available to you%',
+    'a task somebody already holds cannot be taken from them');
+
+  perform test_act_as('00000000-0000-0000-0000-00000000a003');   -- the client login
+  perform test_refuses(
+    $q$select claim_task('00000000-0000-0000-0000-000000007e02')$q$,
+    '%only somebody who works here%',
+    'a client login may not claim a cellar task, and is told which rule it broke');
+
+  perform test_act_as(null);
+  perform test_refuses(
+    $q$select claim_task('00000000-0000-0000-0000-000000007e02')$q$,
+    '%nobody to claim this task for%',
+    'claiming with no identity is refused for want of an identity, not for want of an entitlement');
+
+  perform test_refuses(
+    $q$select claim_account('W7 nobody')$q$,
+    '%not signed in%',
+    'claiming an account with no identity is refused rather than writing a null user');
+
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- confirming, and who decides what a party hides'; end $$;
+
+do $$
+declare ev uuid;
+begin
+  ev := record_vessel_note('00000000-0000-0000-0000-000000007715', 'topping', 'W7 note');
+  perform test_refuses(
+    format($q$select confirm_event(%L)$q$, ev),
+    '%not an inferred event awaiting confirmation%',
+    'confirming an event that was observed rather than inferred is refused');
+
+  perform test_refuses(
+    $q$select confirm_event('00000000-0000-0000-0000-0000000077fa')$q$,
+    '%not an inferred event awaiting confirmation%',
+    'confirming an event that does not exist is refused rather than reported as confirmed');
+end $$;
+
+do $$ begin
+  perform test_act_as('00000000-0000-0000-0000-00000000a003');   -- the client's own login
+  perform test_refuses(
+    $q$select set_party_default_hidden('00000000-0000-0000-0000-00000000f001', '{}'::text[])$q$,
+    '%only that party decides%',
+    'a client login may not set what the facility hides by default');
+
+  perform test_act_as('00000000-0000-0000-0000-00000000a003');   -- that party's own login
+  perform test_refuses(
+    $q$select set_party_default_hidden('00000000-0000-0000-0000-00000000f002',
+                                       array['not_a_field']::text[])$q$,
+    '%not something the kernel knows how to hide%',
+    'a party may not hide a field the kernel has never heard of');
+
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- privacy: what a definer function hands back'; end $$;
+
+insert into node (id, stage, status, name, variety_id, vintage, attributes, owner_id, created_by, hidden)
+values ('00000000-0000-0000-0000-00000000780d', 'maturation', 'open', 'W7 private lot',
+        term_id('variety','riesling'), 2024, '{"note":"private"}'::jsonb,
+        '00000000-0000-0000-0000-00000000f002', '00000000-0000-0000-0000-00000000a001',
+        array['name','owner','variety','vintage','attributes']);
+
+-- A lot the facility owns, with a bin behind it and an event on it, for the two
+-- definer functions that answer about somebody else's wine. The bin itself is
+-- created earlier, because record_event is asked about it there.
+insert into node (id, stage, status, name, variety_id, vintage, owner_id, created_by)
+values ('00000000-0000-0000-0000-000000007810', 'maturation', 'open', 'W7 facility lot',
+        term_id('variety','riesling'), 2024,
+        '00000000-0000-0000-0000-00000000f001', '00000000-0000-0000-0000-00000000a001');
+insert into lineage (parent_id, child_id, fraction)
+values ('00000000-0000-0000-0000-00000000780e','00000000-0000-0000-0000-000000007810', 1.0);
+insert into event (operation_id, subject_type, subject_id, by_user, provenance)
+values (term_id('operation','punchdown'), 'node', '00000000-0000-0000-0000-000000007810',
+        '00000000-0000-0000-0000-00000000a001', 'observed');
+
+-- A lot the client owns whose composition it has hidden, for the second gate.
+insert into node (id, stage, status, name, owner_id, created_by, hidden)
+values ('00000000-0000-0000-0000-00000000780f', 'maturation', 'open', 'W7 client lot',
+        '00000000-0000-0000-0000-00000000f002', '00000000-0000-0000-0000-00000000a001',
+        array['composition','history']);
+insert into lineage (parent_id, child_id, fraction)
+values ('00000000-0000-0000-0000-00000000780e','00000000-0000-0000-0000-00000000780f', 1.0);
+insert into event (operation_id, subject_type, subject_id, by_user, provenance)
+values (term_id('operation','punchdown'), 'node', '00000000-0000-0000-0000-00000000780f',
+        '00000000-0000-0000-0000-00000000a001', 'observed');
+
+do $$
+declare n node; j json; c int;
+begin
+  -- A lot that does not exist comes back as nothing rather than as a row of
+  -- nulls. `is null` cannot tell those two apart, because a composite whose
+  -- every field is null is itself null by that test; row_to_json can.
+  j := row_to_json(visible_node('00000000-0000-0000-0000-0000000077f9'));
+  if j is not null then
+    raise exception 'FAIL: asking for a lot that does not exist returned a row: %', j;
+  end if;
+  perform test_ok('asking for a lot that does not exist returns nothing, not a lot with no fields');
+
+  -- The owner and an admin see the whole thing. Without this the redaction below
+  -- would pass just as well if everything were always redacted.
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+  n := visible_node('00000000-0000-0000-0000-00000000780d');
+  if n.name is distinct from 'W7 private lot' then
+    raise exception 'FAIL: an admin saw the hidden name as %', coalesce(n.name,'null');
+  end if;
+  if n.variety_id is null or n.vintage is null then
+    raise exception 'FAIL: an admin saw a redacted variety or vintage';
+  end if;
+  perform test_ok('somebody entitled to the whole lot gets the whole lot, and is not redacted anyway');
+
+  -- A facility hand who is neither the owner nor an admin sees the edges and
+  -- nothing the owner named.
+  perform test_act_as('00000000-0000-0000-0000-00000000a002');
+  n := visible_node('00000000-0000-0000-0000-00000000780d');
+  if n.id is distinct from '00000000-0000-0000-0000-00000000780d' then
+    raise exception 'FAIL: a facility hand could not see the lot at all';
+  end if;
+  if n.variety_id is not null then
+    raise exception 'FAIL: a hidden variety was disclosed';
+  end if;
+  if n.vintage is not null then
+    raise exception 'FAIL: a hidden vintage was disclosed';
+  end if;
+  if n.attributes is distinct from '{}'::jsonb then
+    raise exception 'FAIL: hidden attributes were disclosed as %', n.attributes;
+  end if;
+  perform test_ok('variety, vintage and attributes are each redacted by name for somebody not entitled');
+
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+end $$;
+
+do $$
+declare c int;
+begin
+  -- Composition. A facility user sees it, a client who does not own the lot sees
+  -- nothing, and a lot whose owner hid its composition discloses none of it.
+  perform test_act_as('00000000-0000-0000-0000-00000000a002');
+  select count(*) into c from node_bin_shares('00000000-0000-0000-0000-000000007810');
+  if c <> 1 then
+    raise exception 'FAIL: a facility hand got % bins for a facility lot, so the checks below are blind', c;
+  end if;
+
+  perform test_act_as('00000000-0000-0000-0000-00000000a003');   -- a client, not the owner
+  select count(*) into c from node_bin_shares('00000000-0000-0000-0000-000000007810');
+  if c <> 0 then
+    raise exception 'FAIL: a client read the composition of somebody else''s lot, % row(s)', c;
+  end if;
+  perform test_ok('a client cannot read the composition of a lot that is not theirs');
+
+  perform test_act_as('00000000-0000-0000-0000-00000000a002');
+  select count(*) into c from node_bin_shares('00000000-0000-0000-0000-00000000780f');
+  if c <> 0 then
+    raise exception 'FAIL: a lot whose composition is hidden disclosed % bin(s)', c;
+  end if;
+  perform test_ok('a lot whose owner hid its composition discloses none of it to a facility hand');
+
+  -- History, through the same two gates.
+  perform test_act_as('00000000-0000-0000-0000-00000000a002');
+  select count(*) into c from node_history('00000000-0000-0000-0000-000000007810');
+  if c < 1 then
+    raise exception 'FAIL: a facility hand got no history for a facility lot, so the check below is blind';
+  end if;
+
+  perform test_act_as('00000000-0000-0000-0000-00000000a003');
+  select count(*) into c from node_history('00000000-0000-0000-0000-000000007810');
+  if c <> 0 then
+    raise exception 'FAIL: a client read the history of somebody else''s lot, % row(s)', c;
+  end if;
+  perform test_ok('a client cannot read the history of a lot that is not theirs');
+
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- topping check answers once'; end $$;
+
+do $$
+declare c int; r record;
+begin
+  select count(*) into c from topping_check(
+    '00000000-0000-0000-0000-00000000780b', '00000000-0000-0000-0000-000000007715');
+  if c <> 1 then
+    raise exception 'FAIL: topping into an empty vessel gave % answers', c;
+  end if;
+  select * into r from topping_check(
+    '00000000-0000-0000-0000-00000000780b', '00000000-0000-0000-0000-000000007715');
+  if r.ok or r.reason is distinct from 'vessel is empty' then
+    raise exception 'FAIL: topping into an empty vessel said % / %', r.ok, r.reason;
+  end if;
+  perform test_ok('topping into an empty vessel is one answer, and the answer is that it is empty');
+
+  -- 780b is chardonnay and 7805 is riesling, so the seeded predicate finds a
+  -- variety mismatch and stops there.
+  select count(*) into c from topping_check(
+    '00000000-0000-0000-0000-000000007805', '00000000-0000-0000-0000-000000007710');
+  if c <> 1 then
+    raise exception 'FAIL: a topping mismatch gave % answers rather than one', c;
+  end if;
+  select * into r from topping_check(
+    '00000000-0000-0000-0000-000000007805', '00000000-0000-0000-0000-000000007710');
+  if r.ok then
+    raise exception 'FAIL: topping riesling onto chardonnay was allowed';
+  end if;
+  perform test_ok('a topping mismatch is one answer naming the field, not a list ending in ok');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- a vessel type declares its fields, and the declaration is checked'; end $$;
+
+do $$ begin
+  -- The validator is about vessel types. A term of another kind may carry an
+  -- attributes.fields that would be nonsense for a vessel type, because it is
+  -- not one, and that is the whole content of the first guard.
+  insert into term (kind, value, label, attributes)
+  values ('variety', 'w7_not_a_vessel_type', 'W7 not a vessel type',
+          '{"fields": [{"key": "x", "kind": "nonsense"}]}'::jsonb);
+  perform test_ok('the vessel type field validator does not run against terms of other kinds');
+
+  perform test_refuses(
+    $q$insert into term (kind, value, label, attributes)
+       values ('vessel_type','w7_bad_list','W7 bad list', '{"fields": "not a list"}'::jsonb)$q$,
+    '%fields must be a list%',
+    'a vessel type whose fields are not a list is refused');
+
+  perform test_refuses(
+    $q$insert into term (kind, value, label, attributes)
+       values ('vessel_type','w7_dupe','W7 duplicate key',
+               '{"fields": [{"key":"a","kind":"text"},{"key":"a","kind":"text"}]}'::jsonb)$q$,
+    '%two fields share the key%',
+    'a vessel type with two fields under one key is refused');
+
+  perform test_refuses(
+    $q$insert into term (kind, value, label, attributes)
+       values ('vessel_type','w7_badkind','W7 bad kind',
+               '{"fields": [{"key":"a","kind":"colour"}]}'::jsonb)$q$,
+    '%which is not term, number or text%',
+    'a vessel type field of an unknown kind is refused');
+
+  perform test_refuses(
+    $q$insert into term (kind, value, label, attributes)
+       values ('vessel_type','w7_nokind','W7 picker with no list',
+               '{"fields": [{"key":"a","kind":"term"}]}'::jsonb)$q$,
+    '%is a picker and names no vocabulary%',
+    'a vessel type field that is a picker and names no vocabulary is refused');
+end $$;
+
+insert into term (id, kind, value, label, attributes)
+values ('00000000-0000-0000-0000-000000007f01', 'vessel_type', 'w7_type', 'W7 type',
+        '{"fields": [{"key":"w7num","label":"W7 number","kind":"number",
+                      "required":true,"min":1,"max":10}]}'::jsonb);
+
+do $$ begin
+  perform test_refuses(
+    $q$select validate_vessel_attributes('00000000-0000-0000-0000-000000007f01', '{}'::jsonb)$q$,
+    '%is required for this vessel type%',
+    'a required vessel field left empty is refused');
+
+  perform test_refuses(
+    $q$select validate_vessel_attributes('00000000-0000-0000-0000-000000007f01',
+                                         '{"w7num": "not a number"}'::jsonb)$q$,
+    '%must be a number%',
+    'a number field given something that is not a number is refused');
+
+  perform test_refuses(
+    $q$select validate_vessel_attributes('00000000-0000-0000-0000-000000007f01',
+                                         '{"w7num": 99}'::jsonb)$q$,
+    '%must be at most%',
+    'a number field above its maximum is refused');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- the defaults a create path supplies'; end $$;
+
+do $$
+declare r jsonb; g boolean; ev int;
+begin
+  r := create_vessel_with_wine(
+    jsonb_build_object('id','00000000-0000-0000-0000-000000007716',
+      'type_id', term_id('vessel_type','barrel'), 'name','W7 no jacket', 'capacity_l', 228),
+    jsonb_build_object('id','00000000-0000-0000-0000-000000007811','name','W7 plain lot',
+      'variety_id', term_id('variety','chardonnay'), 'vintage', 2025),
+    200, '[]', false);
+
+  select has_glycol into g from vessel where id = '00000000-0000-0000-0000-000000007716';
+  if g is distinct from false then
+    raise exception 'FAIL: a vessel created without a jacket came out has_glycol %', coalesce(g::text,'null');
+  end if;
+  perform test_ok('a vessel created without saying anything about glycol does not have any');
+
+  -- And the history switch is a switch. pinot_gris has a two step template.
+  r := fill_vessel('00000000-0000-0000-0000-000000007715',
+    jsonb_build_object('id','00000000-0000-0000-0000-000000007812','name','W7 inferred lot',
+      'variety_id', term_id('variety','pinot_gris'), 'vintage', 2025, 'quantity', 100), 100);
+  ev := (r ->> 'events_generated')::int;
+  if ev is distinct from 2 then
+    raise exception 'FAIL: filling a vessel with history asked for generated % events', coalesce(ev::text,'null');
+  end if;
+  perform test_ok('filling a vessel generates the inferred history when it is asked to');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- a lot with no quantity recorded does not acquire one'; end $$;
+
+-- `where id = p_node_id and quantity is not null` appears twice in the write
+-- paths, once when a fork shrinks its parent and once when a blend absorbs the
+-- lot already sitting in the destination. The conjunct that matters is the
+-- second one. A lot whose quantity was never recorded is a real thing here,
+-- because volume lives on the placement and the lot-level number is optional,
+-- and subtracting from a number nobody wrote would invent one: `coalesce(null,0)
+-- - 30` is a confident zero, and zero closes lots.
+--
+-- Neither of these could be seen until now, because every fixture in this file
+-- either set a quantity or never checked it. This is the A25 null-permit shape
+-- arriving in the write paths rather than in a check constraint.
+insert into vessel (id, type_id, name, capacity_l) values
+  ('00000000-0000-0000-0000-000000007717', term_id('vessel_type','tank'),   'W7 absorb two', 500),
+  ('00000000-0000-0000-0000-000000007718', term_id('vessel_type','barrel'), 'W7 elsewhere',  228),
+  ('00000000-0000-0000-0000-000000007719', term_id('vessel_type','barrel'), 'W7 blender',    228),
+  ('00000000-0000-0000-0000-000000007720', term_id('vessel_type','barrel'), 'W7 fork null',  228),
+  ('00000000-0000-0000-0000-000000007721', term_id('vessel_type','barrel'), 'W7 fork rest',  228);
+
+do $$
+declare q numeric; child uuid;
+begin
+  -- Forking a lot that has no quantity.
+  perform fill_vessel('00000000-0000-0000-0000-000000007720',
+    jsonb_build_object('id','00000000-0000-0000-0000-000000007813','name','W7 unmeasured',
+      'variety_id', term_id('variety','chardonnay'), 'vintage', 2025), 30, false);
+  insert into placement (node_id, vessel_id, volume_l)
+    values ('00000000-0000-0000-0000-000000007813','00000000-0000-0000-0000-000000007721', 30);
+
+  select quantity into q from node where id = '00000000-0000-0000-0000-000000007813';
+  if q is not null then
+    raise exception 'FAIL: the fixture recorded a quantity, so this proves nothing';
+  end if;
+
+  child := fork_lot('00000000-0000-0000-0000-000000007813',
+                    array['00000000-0000-0000-0000-000000007720']::uuid[]);
+
+  select quantity into q from node where id = '00000000-0000-0000-0000-000000007813';
+  if q is not null then
+    raise exception 'FAIL: forking gave a lot with no recorded quantity a quantity of %', q;
+  end if;
+  perform test_ok('forking a lot whose quantity was never recorded does not invent one for it');
+end $$;
+
+do $$
+declare q numeric; open_now int;
+begin
+  -- And absorbing one into a blend.
+  perform fill_vessel('00000000-0000-0000-0000-000000007717',
+    jsonb_build_object('id','00000000-0000-0000-0000-000000007814','name','W7 unmeasured two',
+      'variety_id', term_id('variety','riesling'), 'vintage', 2025), 30, false);
+  insert into placement (node_id, vessel_id, volume_l)
+    values ('00000000-0000-0000-0000-000000007814','00000000-0000-0000-0000-000000007718', 30);
+  perform fill_vessel('00000000-0000-0000-0000-000000007719',
+    jsonb_build_object('id','00000000-0000-0000-0000-000000007815','name','W7 blender lot',
+      'variety_id', term_id('variety','pinot_noir'), 'vintage', 2025, 'quantity', 20), 20, false);
+
+  select quantity into q from node where id = '00000000-0000-0000-0000-000000007814';
+  if q is not null then
+    raise exception 'FAIL: the fixture recorded a quantity, so this proves nothing';
+  end if;
+
+  perform rack(
+    jsonb_build_array(jsonb_build_object('vessel_id','00000000-0000-0000-0000-000000007719','volume_l',20)),
+    jsonb_build_array(jsonb_build_object('vessel_id','00000000-0000-0000-0000-000000007717','volume_l',20)),
+    '{}'::jsonb, false,
+    jsonb_build_object('id','00000000-0000-0000-0000-000000007816','name','W7 blend three'));
+
+  select quantity into q from node where id = '00000000-0000-0000-0000-000000007814';
+  if q is not null then
+    raise exception 'FAIL: absorbing a lot with no recorded quantity gave it one, of %', q;
+  end if;
+  perform test_ok('absorbing a lot whose quantity was never recorded does not invent one for it');
+
+  -- And the lot is still in the vessel it was not absorbed out of, which is what
+  -- keeps a zero from closing it.
+  select count(*) into open_now from placement
+   where node_id = '00000000-0000-0000-0000-000000007814' and to_at is null;
+  if open_now <> 1 then
+    raise exception 'FAIL: absorbing one of two placements left the lot in % vessels', open_now;
+  end if;
+  perform test_ok('a lot absorbed out of one vessel is still in the other, and is not closed');
+end $$;
+
+-- ---------------------------------------------------------------------------
 do $$ begin raise notice '--- functions survive a restore'; end $$;
 
 -- pg_dump sets search_path to empty at the top of every dump, on purpose, so a

@@ -1,0 +1,32 @@
+# Refusal sites that scripts/ratchet.sh does not require an assertion for, and
+# the reason for each. Three columns: the site id from docs/review/refusal-sites.tsv,
+# the disposition, and the reason. Only "unreachable" is accepted; every other
+# site has to be behaviourally covered.
+#
+# Every one of these was checked rather than argued. The check applies that one
+# mutation to a clone of the base database, calls the function on an input that
+# reaches the guard, and compares the answer with the unmutated answer. All
+# eleven give the same answer, which is what "unreachable" means here: the guard
+# is reached, it is removed, and no caller can tell.
+#
+# That is not the same as dead code and it is not a path nobody found. It is a
+# function with more than one way to say the same thing. Worth knowing, because
+# a reader of the source would count eleven refusals that are not there.
+#
+# The first version of this check reported the two generate_inferred_history
+# rows as equivalent because both the mutated and the unmutated call returned
+# the same error, which came from a fixture that had never been created. Two
+# runs agreeing is not evidence when they agree on having failed.
+#
+# id	disposition	reason
+resolve_subject_name:notfound:1	unreachable	The fall-through gives the same answer. With the guard removed the resolver row is all nulls, quote_ident(null) is null, to_regclass(null) is null, and the next guard returns the same null.
+resolve_subject_name:earlyreturn:1	unreachable	Same as the guard above it: this is the return that guard performs, and the path it would have skipped returns null as well.
+resolve_subject_name:guard:1	unreachable	Removing it lets execute run against a relation that does not exist, which raises, which the function's own exception handler turns into the same null.
+resolve_subject_name:earlyreturn:2	unreachable	Same as the guard above it.
+resolve_subject_name:earlyreturn:3	unreachable	This is the return inside the exception handler. Removing it falls through to the final return of a variable that was never assigned, which is null.
+node_bin_shares:notfound:1	unreachable	A lot that does not exist has no lineage, so the recursive term finds no bins and the function returns the empty set either way.
+node_bin_shares:permissive:1	unreachable	may_see_all_of coalesces to false inside itself and can never return null, so the outer default is never the value that is used. Changing false to true there changes nothing.
+node_history:notfound:1	unreachable	A lot that does not exist has no events, so the query returns the empty set either way.
+node_history:permissive:1	unreachable	Same as node_bin_shares:permissive:1. may_see_all_of never returns null.
+generate_inferred_history:guard:2	unreachable	Removing it looks up a template by a null variety, which matches nothing, so the next guard returns the same zero.
+generate_inferred_history:guard:3	unreachable	Removing it loops over the steps of a null template, which is no rows, so the count returned is the same zero.

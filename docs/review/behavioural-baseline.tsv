@@ -1,0 +1,24 @@
+# The uncovered count per declarative class that scripts/ratchet.sh will not let
+# grow. Uncovered is scored minus behavioural: a mutation caught only by a pinned
+# snapshot is uncovered, because the snapshot noticed the catalog move and nothing
+# refused anything.
+#
+# Not a percentage. A percentage rises when the denominator grows, so a phase that
+# added thirty uncovered policies to a class holding two would improve its score.
+#
+# The logic class is not here. It is gated site by site instead, against
+# docs/review/refusal-sites.tsv and docs/review/refusal-dispositions.tsv, because a
+# count would let a covered site be traded for an uncovered one.
+#
+# The middle column is what the enumeration produced, including the mutations
+# that turn out to be degenerate or inapplicable and are excluded from the score.
+# It is there so a class that vanishes is named in the failure message.
+#
+# class	enumerated	uncovered
+check	21	0
+loosen	21	0
+unique	17	10
+trigger	9	0
+policy	59	42
+weaken	59	33
+rls	23	0

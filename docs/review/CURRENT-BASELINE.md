@@ -1,7 +1,7 @@
 ---
 Type: reference
 Purpose: "States what this tree currently is, for a reviewer arriving with the archived prompts in hand. Every canary block in docs/review/prompts/ names a commit, a file count and a file set that are all now wrong, and this file supersedes them."
-Depends on: []
+Depends on: [scripts/ratchet.sh]
 Depended on by: [docs/review/README.md]
 ---
 
@@ -16,11 +16,11 @@ are corpus and are not edited; this file is the correction.
 
 | | |
 |---|---|
-| Head when this was written | the W-6 commit that added the second review round below |
+| Head when this was written | the W-7 commit that added the two gates below |
 | Branch holding it | `claude/sql-files-to-markdown-i31rob` |
-| Tracked files | 125 tracked files |
+| Tracked files | 130 tracked files |
 | Migrations | 27 migrations, `0001_core_schema.sql` through `0027_term_kind_registry.sql` |
-| Assertions | 204 from an empty database, 206 against a copy of the cellar |
+| Assertions | 267 from an empty database, 269 against a copy of the cellar |
 
 The file and migration counts above are derived rather than typed, and `scripts/verify.sh`
 checks them against the tree on every run. If they are wrong here, `bun run verify` fails.
@@ -55,7 +55,7 @@ replacement canaries below are chosen on that principle.
 
 ## Replacement canaries
 
-Six files, none of which exists at `c3eae3c`. At the reviewed baseline the only file under
+Eight files, none of which exists at `c3eae3c`. At the reviewed baseline the only file under
 `scripts/` or `tests/` was `tests/schema_assertions.sql`, so the instruments are the
 clearest signal that you have the current tree.
 
@@ -67,6 +67,8 @@ clearest signal that you have the current tree.
 | `scripts/mutate.sh` | The mutation harness is committed and its number is reproducible |
 | `scripts/green.sh` | The six-gate definition of green exists as one command |
 | `docs/findings-ledger.md` | The deduplicated result of the last review is present and has been acted on |
+| `scripts/guards.sh` | The refusal surface is enumerated rather than sampled. If absent you are before W-7 |
+| `scripts/ratchet.sh` | The two gates are enforced by a script rather than described in a document |
 
 And one negative check, which is the fastest of all: **if `git ls-files | wc -l` returns
 the number the archived prompts name, which is forty two, you are on the reviewed baseline
@@ -97,14 +99,42 @@ security off per table. The pairs are deliberate: the first of each catches an o
 disappears and only the second catches one that is still there and has stopped refusing
 anything.
 
-**The eighth class, `logic`, is substitutions against function bodies, chosen by hand.**
-It does not grow with the schema and it does not systematically cover branches.
+**The eighth class, `logic`, is the whole refusal surface of the kernel.** It used to be a
+list of substitutions written by hand, and that list is the thing two review rounds broke.
+X-1 chose nine substitutions independently and six were caught, against ten of ten on the
+author's own list; W-6 chose sixteen more by reading guards out of `pg_proc` and five were
+caught. The three figures are ordered by how far each chooser stood from the code and
+ordered equally well by how hard each was looking for gaps, and nothing separates those two
+explanations. W-6 proposed fixing it by requiring the chooser to be independent. **That
+constrains the chooser and not the choice**, and a later session wanting a number above the
+bar satisfies it and picks the way the original ten were picked.
 
-**And the second review round measured what that is worth.** X-1 chose nine substitutions
-independently and six were caught, against ten of ten on the author's own list. W-6 chose
-sixteen more the same way, by reading guards out of `pg_proc`, and **five were caught.**
-The list is now reported split by who chose it, and the two figures are printed separately
-for that reason. Whoever chose the sample decides the number.
+So there is no sample any more. **`scripts/guards.sh` enumerates the population**: every
+path in every function the kernel owns that declines to do what the caller asked. 176 of
+them, committed at `docs/review/refusal-sites.tsv` so that the count is script output
+rather than an estimate and so that a guard disappearing shows up as a diff. Seven shapes,
+and the quiet ones matter more than the loud one:
+
+| Shape | Count | What it looks like |
+|---|---|---|
+| `guard` | 79 | a conditional whose head finishes on its line |
+| `raise` | 49 | `raise exception`, the only loud form |
+| `silent` | 14 | a conjunct on an update or a delete, which refuses by matching nothing |
+| `earlyreturn` | 13 | a return that reports success |
+| `head` | 11 | a conditional whose head runs over several lines |
+| `notfound` | 7 | `if not found` that does not raise |
+| `permissive` | 3 | a `coalesce` supplying a default that permits |
+
+The enumeration was wrong four times before it was right, and every one of the four was
+silent. It could not see refusals expressed as a `where` conjunct, which is ledger A14 and
+is how six kernel write paths did nothing for four days. It could not see anything on a
+line ending in a carriage return, and 249 of the kernel's 1459 source lines end in one, so
+the guard count was 61 when it was 79. It replaced whole lines, which turns
+`if not found then return; end if;` into a function that will not compile, and reported
+three sites as inapplicable in a way that reads like a fact about the schema. And it left
+multi-line conditional heads out, because prefixing a condition with `false and` is wrong
+wherever the condition is an `or`: `and` binds tighter, half the guard survives, and a
+half-neutralised guard is worse than an omitted one because it still scores.
 
 ## The score is two numbers now, and only one of them is a gate
 
@@ -139,6 +169,44 @@ setting, which is how the two passes are separated.
 **A snapshot assertion's failure message must not offer the fix.** The three X-1 broke all
 said, in effect, update this list. A message that tells you how to make it pass is a check
 that instructs its own defeat.
+
+## The two gates, and why they are shaped differently
+
+W-6 proposed these and deliberately did not adopt them. W-7 adopted them, amended, and
+`scripts/ratchet.sh` enforces them. **The reason a gate is shaped the way it is decays
+faster than the gate**, so the reasoning is here rather than only in the script.
+
+**A phase that moves declarative objects requires that no class gain an uncovered
+mutation.** Uncovered means scored minus behavioural: a mutation caught only by a pinned
+snapshot is uncovered, because the snapshot noticed the catalog move and nothing refused
+anything.
+
+Not a percentage. A percentage rises when the denominator grows, so a phase that added
+thirty uncovered policies to a class holding two would improve its score. The count of
+uncovered mutations is the thing that must not grow, and "must not grow" is the same
+sentence as "every new object has to be covered". W-4 already demonstrated the ratchet
+working, when three new bare-name checks dropped the score and were closed in the same
+session.
+
+**A phase that rewrites a function body requires that every enumerated refusal site be
+behaviourally covered or filed as unreachable with a reason.** Not a percentage, and not a
+sample.
+
+W-6 proposed a threshold of 80 percent on independently chosen substitutions. A percentage
+invites the question of which substitutions, and that question is what produced two entire
+sessions. There is no sample here to argue about, so a threshold would have nothing left to
+do except permit a known gap without naming it. The filings live at
+`docs/review/refusal-dispositions.tsv`, one line each, and `scripts/ratchet.sh` fails on a
+filing for a site that no longer exists and on a filing for a site the suite now catches,
+because a reason recorded against code that has changed is worse than no reason.
+
+**Neither gate is a single number over all eight classes.** That is what produced W-6.
+
+**`scripts/ratchet.sh` is not in `bun run green`.** It runs 385 mutations twice and takes
+about thirty five minutes, and a gate that slow inside the loop is a gate people learn to
+skip. Green carries the cheap half instead, as gate 6: that the committed enumeration still
+describes the kernel, and that every filing resolves to a site that exists. If that gate
+fails, every coverage figure on this page is about code that is no longer here.
 
 **`bun run green`** is the gate every phase has to pass: `verify`, `typecheck`, `lint`,
 every migration applied from empty into a scratch database, the assertion suite there, and

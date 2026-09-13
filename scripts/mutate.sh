@@ -5,7 +5,7 @@
 #           assertion suite catches. A suite that passes tells you it ran; a
 #           mutation score tells you whether it would have noticed."
 # Depends on: [tests/shim.sql, tests/schema_assertions.sql, scripts/guards.sh]
-# Depended on by: [docs/session-reports/modularization-progress.md]
+# Depended on by: [docs/session-reports/modularization-progress.md, scripts/ratchet.sh]
 # ---------------------------------------------------------------------------
 #
 # The G-5 review run measured 42 percent against 28 assertions and did not commit

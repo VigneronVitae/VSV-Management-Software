@@ -5,7 +5,8 @@
 #           that the coverage of the procedural layer is measured over the whole
 #           population rather than over a sample somebody chose."
 # Depends on: [tests/shim.sql]
-# Depended on by: [scripts/mutate.sh, docs/session-reports/modularization-progress.md]
+# Depended on by: [scripts/mutate.sh, scripts/ratchet.sh, scripts/green.sh,
+#                  docs/session-reports/modularization-progress.md]
 # ---------------------------------------------------------------------------
 #
 # W-6 measured the procedural surface three times, at 10 of 10, 6 of 9 and 5 of

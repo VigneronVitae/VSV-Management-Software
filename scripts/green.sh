@@ -6,7 +6,8 @@
 #           database, and the assertion suite against both that scratch database
 #           and a copy of the cellar. Every phase of the modularization has to
 #           end green and this is what says whether it did."
-# Depends on: [scripts/verify.sh, tests/shim.sql, tests/schema_assertions.sql]
+# Depends on: [scripts/verify.sh, tests/shim.sql, tests/schema_assertions.sql,
+#              scripts/guards.sh]
 # Depended on by: [docs/session-reports/modularization-progress.md, docs/status-ledger.md]
 # ---------------------------------------------------------------------------
 #
@@ -224,6 +225,49 @@ if [ "$scratch_n" -gt 0 ] && [ "$copy_n" -gt 0 ]; then
   fi
 elif [ "$scratch_ok" = yes ] && [ "$copy_ok" = yes ]; then
   bad "one of the two assertion runs reported zero, so the reconciliation could not be done"
+fi
+
+# ---------------------------------------------------------------------------
+step "6. the refusal surface is still the one that was measured"
+# ---------------------------------------------------------------------------
+# The expensive half of this gate is scripts/ratchet.sh, which runs the whole
+# mutation harness and takes about twenty five minutes. This is the cheap half,
+# and all it asks is whether the committed enumeration still describes the
+# kernel. If a function gained a guard, or lost one, or was reformatted so that a
+# site identifier moved, then every coverage figure in CURRENT-BASELINE.md is
+# about code that is no longer here, and the ratchet is being asked to hold a
+# line drawn somewhere else.
+# Read from the scratch database rather than the cellar, because that is what
+# the harness builds its base from and a gate should look at the same schema the
+# measurement did.
+if [ "$db_up" != yes ] || [ "$scratch_ok" != yes ]; then
+  bad "no scratch database, so the refusal surface was not checked"
+else
+  if bash scripts/guards.sh "$SCRATCH" > /tmp/green-guards.tsv 2>/tmp/green-guards.err; then
+    n_live=$(grep -c . /tmp/green-guards.tsv)
+    n_committed=$(grep -vc '^#' docs/review/refusal-sites.tsv)
+    if [ -s /tmp/green-guards.err ]; then
+      bad "$(head -1 /tmp/green-guards.err)"
+    elif ! diff -q <(grep -v '^#' docs/review/refusal-sites.tsv) /tmp/green-guards.tsv >/dev/null; then
+      bad "the refusal surface has $n_live sites and docs/review/refusal-sites.tsv records $n_committed;"
+      echo "      regenerate it with scripts/guards.sh, then run scripts/ratchet.sh before landing"
+      diff <(grep -v '^#' docs/review/refusal-sites.tsv) /tmp/green-guards.tsv | head -6 | sed 's/^/      /'
+    else
+      # A disposition naming a site that no longer exists is a reason recorded
+      # against code that has gone. The ratchet checks this too; it is here as
+      # well because it costs nothing and the ratchet is not run every phase.
+      orphans=$(comm -23         <(awk -F'	' '$0 !~ /^#/ && NF >= 2 { print $1 }' docs/review/refusal-dispositions.tsv | sort -u)         <(cut -f1 /tmp/green-guards.tsv | sort -u))
+      if [ -n "$orphans" ]; then
+        bad "docs/review/refusal-dispositions.tsv files sites that are no longer enumerated:"
+        printf '%s
+' "$orphans" | head -5 | sed 's/^/      /'
+      else
+        ok "$n_live refusal sites, matching the committed enumeration, every filing resolving"
+      fi
+    fi
+  else
+    bad "the refusal enumeration did not run: $(head -1 /tmp/green-guards.err)"
+  fi
 fi
 
 admin -c "drop database if exists $SCRATCH;" >/dev/null 2>&1
