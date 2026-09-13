@@ -190,13 +190,17 @@ independently chosen substitutions; W-7 is right that this constrains the choose
 the choice, and with no sample left there is nothing for a threshold to do except permit a
 known gap without naming it.
 
-Runtime is about thirty five minutes for 385 mutations run twice, which is why it is not in
+Runtime is thirty three minutes, measured, for 385 mutations run twice, which is why it is not in
 `bun run green`. Green carries the cheap half as gate 6: the committed enumeration still
 describes the kernel, and every filing resolves to a site that exists.
 
 **All four ways the gate can fail were break-tested**: a site neither covered nor filed, a
 filing for a site that no longer exists, a filing for a site the suite now catches, and a
-declarative class losing coverage. Each was seen to fail naming the right thing.
+declarative class losing coverage. Each was seen to fail naming the right thing. Those four
+were run against the gate's logic with the measurement already in hand rather than through
+a fresh thirty five minute run each; **the script itself was then run once end to end, from
+its own harness run, and held.** Saying which of the two a check got is the point of saying
+it was checked.
 
 ## What I got wrong
 

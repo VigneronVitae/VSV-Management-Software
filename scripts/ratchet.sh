@@ -14,8 +14,8 @@
 # ---------------------------------------------------------------------------
 #
 # This is not in green.sh. It runs the whole mutation harness twice over 385
-# mutations and takes about twenty five minutes, and a gate that slow inside the
-# loop would be a gate people learn to skip. W-7 phase 2 says as much: split it
+# mutations and takes thirty three minutes, measured, and a gate that slow
+# inside the loop would be a gate people learn to skip. W-7 phase 2 says as much: split it
 # out and state the runtime rather than reducing it to a sample.
 #
 # Run it before a phase that moves declarative objects or rewrites a function
@@ -54,7 +54,7 @@ for f in "$DISPOSITIONS" "$BASELINE"; do
 done
 
 # ---------------------------------------------------------------------------
-echo "running the mutation harness. This takes about twenty five minutes."
+echo "running the mutation harness. This takes about half an hour."
 # ---------------------------------------------------------------------------
 rm -rf "$REPORT"
 if ! MUT_REPORT="$REPORT" bash scripts/mutate.sh > /tmp/.ratchet-mutate.log 2>&1; then

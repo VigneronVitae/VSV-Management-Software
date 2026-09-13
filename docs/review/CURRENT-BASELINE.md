@@ -203,7 +203,7 @@ because a reason recorded against code that has changed is worse than no reason.
 **Neither gate is a single number over all eight classes.** That is what produced W-6.
 
 **`scripts/ratchet.sh` is not in `bun run green`.** It runs 385 mutations twice and takes
-about thirty five minutes, and a gate that slow inside the loop is a gate people learn to
+thirty three minutes, measured, and a gate that slow inside the loop is a gate people learn to
 skip. Green carries the cheap half instead, as gate 6: that the committed enumeration still
 describes the kernel, and that every filing resolves to a site that exists. If that gate
 fails, every coverage figure on this page is about code that is no longer here.
