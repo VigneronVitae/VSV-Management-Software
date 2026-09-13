@@ -1,7 +1,7 @@
 ---
 Type: record
 Purpose: "The file a fresh session with no memory reads first before continuing the W-2 modularization. Holds the phase list and its state, the last green commit, the current migration number, every decision made and why, and everything discovered that changes a later phase."
-Depends on: [docs/architecture-rulings.md, docs/findings-ledger.md, docs/session-reports/2026-09-11-verification-surface.md, scripts/green.sh, scripts/mutate.sh, scripts/guards.sh, scripts/ratchet.sh]
+Depends on: [docs/architecture-rulings.md, docs/findings-ledger.md, docs/session-reports/2026-09-11-verification-surface.md, scripts/green.sh, scripts/mutate.sh, scripts/guards.sh, scripts/ratchet.sh, scripts/undefined-sites.sh]
 Depended on by: [docs/session-reports/index.md]
 ---
 

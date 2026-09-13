@@ -1,7 +1,7 @@
 ---
 Type: record
 Purpose: "Indexes the session reports, and states the convention they follow, so a report added later is findable rather than orphaned."
-Depends on: [docs/session-reports/2026-09-08-scaffold.md, docs/session-reports/2026-09-08-walk.md, docs/session-reports/2026-09-10-wire.md, docs/session-reports/2026-09-11-verification-surface.md, docs/methodology-lineage.md, docs/session-reports/modularization-progress.md, docs/session-reports/2026-09-12-modularization-1.md, docs/session-reports/2026-09-12-assertion-suite.md, docs/session-reports/2026-09-12-harness-and-enums.md, docs/session-reports/2026-09-12-repair-the-instrument.md, docs/session-reports/2026-09-12-refusal-surface.md]
+Depends on: [docs/session-reports/2026-09-08-scaffold.md, docs/session-reports/2026-09-08-walk.md, docs/session-reports/2026-09-10-wire.md, docs/session-reports/2026-09-11-verification-surface.md, docs/methodology-lineage.md, docs/session-reports/modularization-progress.md, docs/session-reports/2026-09-12-modularization-1.md, docs/session-reports/2026-09-12-assertion-suite.md, docs/session-reports/2026-09-12-harness-and-enums.md, docs/session-reports/2026-09-12-repair-the-instrument.md, docs/session-reports/2026-09-12-refusal-surface.md, docs/first-run.md]
 Depended on by: [README.md]
 ---
 

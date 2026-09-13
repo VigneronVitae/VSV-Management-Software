@@ -1,0 +1,67 @@
+# Every place in the client where an absent value meets a comparison or a
+# default, as enumerated by scripts/undefined-sites.sh. Not a gate and not a
+# score: W-8 says to build neither before the surface is known.
+#
+# 61 sites over 3629 lines. The W-8 session report says which ones are real.
+# file	line	kind	text
+packages/cellar/src/pickers.ts	140	optional	label: () => select.selectedOptions[0]?.text ?? "",
+packages/cellar/src/pickers.ts	146	optional	?.replaceChildren(document.createTextNode(`New ${text.toLowerCase()}`));
+packages/cellar/src/pickers.ts	237	optional	label: () => select.selectedOptions[0]?.text ?? "",
+packages/cellar/src/pickers.ts	314	optional	label: () => select.selectedOptions[0]?.text ?? "",
+packages/cellar/src/scan.ts	65	optional	await options.onCode?.(trimmed);
+packages/cellar/src/scan.ts	99	optional	reader?.reset();
+packages/cellar/src/walk.ts	315	optional	item.go?.();
+packages/cellar/src/walk.ts	716	optional	const bag = (chosen?.attributes ?? {}) as Record<string, unknown>;
+packages/cellar/src/walk.ts	848	optional	photoFile: () => photo.files?.[0] ?? null,
+packages/cellar/src/walk.ts	1030	optional	note.textContent = skins.find((s) => s.name === select.value)?.note ?? "";
+packages/cellar/src/walk.ts	1098	optional	el("span", { class: "code-value", text: v?.name ?? leg.vessel_id }),
+packages/cellar/src/walk.ts	1219	optional	? `a move: ${plan.parents[0]?.name ?? "one lot"} stays the same lot`
+packages/cellar/src/walk.ts	1287	optional	d[0]?.vessel_id ?? "",
+packages/cellar/src/walk.ts	2016	optional	const photoPath = vessel?.attributes?.photo_path;
+packages/cellar/src/walk.ts	2037	optional	summaryRow("Location", vessel?.location_name ?? "unassigned"),
+packages/cellar/src/walk.ts	2038	optional	summaryRow("Lot", vessel?.lot_name ?? "unknown"),
+packages/cellar/src/walk.ts	2041	optional	[vessel?.variety, vessel?.vintage].filter(Boolean).join(" ") || "unspecified",
+packages/cellar/src/walk.ts	2045	optional	vessel?.current_volume_l ? `${vessel.current_volume_l} L` : "unrecorded",
+packages/cellar/src/walk.ts	2055	optional	summaryRow("Whose wine", vessel?.lot_owner_name ?? "unrecorded"),
+packages/cellar/src/walk.ts	2064	optional	summaryRow("Codes", (vessel?.codes ?? []).join(", ") || "none bound"),
+packages/core/src/kernel.ts	61	optional	const user = data.session?.user;
+packages/core/src/kernel.ts	300	optional	created_by: session?.userId ?? null,
+packages/core/src/kernel.ts	311	optional	resolved_by: session?.userId ?? null,
+packages/core/src/kernel.ts	535	optional	const suffix = file.name.split(".").pop()?.toLowerCase() ?? "jpg";
+packages/core/src/kernel.ts	552	optional	return data?.signedUrl ?? null;
+packages/cellar/src/pickers.ts	184	or-default	kind_id: kind.value() || null,
+packages/cellar/src/pickers.ts	208	or-default	...(options.allowEmpty || rows.length === 0
+packages/cellar/src/scan.ts	53	or-default	collected.push({ code: trimmed, label: labelField.value() || null });
+packages/cellar/src/scan.ts	59	or-default	el("span", { class: "code-label", text: labelField.value() || "no label" }),
+packages/cellar/src/ui.ts	15	or-default	if (value === null || value === undefined || value === false) continue;
+packages/cellar/src/ui.ts	21	or-default	if (child === null || child === undefined || child === false) continue;
+packages/cellar/src/walk.ts	313	or-default	if (ev.key === "Enter" || ev.key === " ") {
+packages/cellar/src/walk.ts	488	or-default	text: (v.codes ?? []).join(", ") || "no codes",
+packages/cellar/src/walk.ts	506	or-default	if (ev.key === "Enter" || ev.key === " ") {
+packages/cellar/src/walk.ts	552	or-default	kind_id: kind.value() || null,
+packages/cellar/src/walk.ts	665	or-default	read: () => picker.value() || null,
+packages/cellar/src/walk.ts	666	or-default	label: () => picker.label() || null,
+packages/cellar/src/walk.ts	825	or-default	location_id: place.value() || null,
+packages/cellar/src/walk.ts	826	or-default	owner_id: owner.value || null,
+packages/cellar/src/walk.ts	957	or-default	.filter((a) => !taken.has(a.id) || a.id === p.app_user_id)
+packages/cellar/src/walk.ts	965	or-default	await setPartyLogin(p.id, link.value || null);
+packages/cellar/src/walk.ts	1130	or-default	if (!id || !litres || litres <= 0) {
+packages/cellar/src/walk.ts	1203	or-default	if (s.length === 0 || d.length === 0) {
+packages/cellar/src/walk.ts	1267	or-default	if (s.length === 0 || d.length === 0) {
+packages/cellar/src/walk.ts	1279	or-default	gas_source: gasSource.value() || null,
+packages/cellar/src/walk.ts	1280	or-default	gas_line: gasLine.value() || null,
+packages/cellar/src/walk.ts	1281	or-default	method: method.value() || null,
+packages/cellar/src/walk.ts	1428	or-default	spec.unit = unit.value() || null;
+packages/cellar/src/walk.ts	1463	or-default	spec.contract = contract.value() || null;
+packages/cellar/src/walk.ts	1853	or-default	variety_id: variety.value() || null,
+packages/cellar/src/walk.ts	1855	or-default	product_type_id: productType.value() || null,
+packages/cellar/src/walk.ts	1859	or-default	owner_id: owner.value() || null,
+packages/cellar/src/walk.ts	2041	or-default	[vessel?.variety, vessel?.vintage].filter(Boolean).join(" ") || "unspecified",
+packages/cellar/src/walk.ts	2064	or-default	summaryRow("Codes", (vessel?.codes ?? []).join(", ") || "none bound"),
+packages/cellar/src/walk.ts	2119	or-default	[vessel.variety, vessel.vintage].filter(Boolean).join(" ") ||
+packages/core/src/env.ts	20	or-default	if (!url || !anonKey) {
+packages/core/src/kernel.ts	539	or-default	.upload(path, file, { upsert: true, contentType: file.type || "image/jpeg" });
+packages/cellar/src/walk.ts	459	ordering	class: `vessel-row vessel-row-tappable${fill !== null && fill > 1 ? " over" : ""}`,
+packages/cellar/src/walk.ts	933	ordering	unlinked.length > 0
+packages/cellar/src/walk.ts	1130	ordering	if (!id || !litres || litres <= 0) {
+packages/cellar/src/walk.ts	1242	ordering	if (plan.overfill.length > 0) {
