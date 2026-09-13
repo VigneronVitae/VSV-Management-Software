@@ -94,6 +94,60 @@ at all when `q` is null. One assertion in the suite had been passing that way si
 written, and the update it was written to protect could be deleted without it noticing. This
 is A25, the null-permit class, arriving inside the instrument that was built to find A25.
 
+## Predictions for W-8, recorded before measuring
+
+W-8 is the client's first run. Nothing in this project has ever measured the client, so
+there is no prior figure to anchor on and the anchoring correction that has now fired three
+times has nothing to attach to. W-4 was optimistic by thirty points, W-6 by twenty four, and
+W-7, having corrected for exactly that, was pessimistic by fourteen. **A blanket correction
+applied to an unfamiliar quantity is a third error, not a fix.** So these are predicted from
+the mechanism in each case and the reasoning is written down so that a wrong prediction says
+which belief was wrong.
+
+One honesty note before the count. **I am not a stranger to this tree** and phase 1 asks me
+to be one. What I can do is follow `README.md` literally and treat every point where I know
+something it does not say as the finding. What I cannot do is fail to notice a step, which
+is the failure mode a real stranger has. **The count below is therefore a lower bound.**
+
+1. **A stranger following `README.md` stops before the client renders a single row, and
+   stops at configuration.** The mechanism is specific: the client has been typechecked and
+   built and never run, so the path from `supabase start` to the client knowing a URL and an
+   anon key is the one link in the chain that has never carried traffic. Everything before it
+   has been exercised every session. **Between five and ten distinct points where the
+   documented path does not work**, most of them clustered at that link.
+
+2. **A refusal is indistinguishable from emptiness, and there is no code in the client that
+   tries to tell them apart.** Predicted as zero occurrences, not as few. The reason to
+   expect zero rather than a handful is that PostgREST returns 200 with `[]` for a denied
+   read, so distinguishing them requires having had the thought, and nobody who wrote this
+   client had run it against policies.
+
+   **The corollary, and the sharper half: reads and updates are silent, inserts are loud.**
+   An insert refused by RLS raises. A select refused by RLS returns no rows and an update
+   refused by RLS reports success having matched nothing. So the client will look most
+   correct exactly where it is least trustworthy.
+
+3. **Section B, nineteen entries produced by reading: nine to thirteen reproduce, three to
+   six do not, one to four are unreachable.** The mechanism for the ones that will not
+   reproduce is that a reader of TypeScript cannot see which branches the running client
+   takes, and a client written against an imagined API surface has dead paths in it.
+
+   **The run finds twelve to twenty five defects that reading did not**, counting only ones
+   actually reproduced rather than everything that looks wrong, per W-7's finding that a
+   catch rate carries about a third padding over a detection rate.
+
+4. **The undefined enumeration finds twenty to forty sites and fewer than a third of them
+   are real.** Ordering comparisons eight to twenty, `||` where `??` was meant four to
+   twelve, optional chaining feeding a comparison three to ten. The reason most will not be
+   real is that TypeScript proves a great many of these values non-nullable already, which is
+   the one respect in which this layer is better defended than the SQL was. **That is also
+   the prediction I am least confident in**, because `strict` settings and `any` at the
+   PostgREST boundary decide it and I have not looked.
+
+5. **At least one step in the end-to-end walk appears to succeed and writes nothing.** W-8
+   names this as the most important possible observation, and the base rate in this project
+   for that specific shape is four for four.
+
 ## Predictions for W-7, recorded before measuring, and scored after
 
 Anchored on 31 percent, per W-7 phase 5, which is the least flattering figure available
