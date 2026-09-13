@@ -499,8 +499,11 @@ function vesselList(kit: VesselState[]): HTMLElement {
       // the jacket is wrong. A row is a way into the thing it names.
       // How full it is, published whether or not the skin draws it. Markup
       // carries the fact; presentation is the skin's business.
+      // B11 again, in the shape that matters least and reads worst: a vessel
+      // holding zero litres had no fill fraction at all rather than a fill of
+      // zero, so an emptied barrel drew like one nobody had measured.
       const fill =
-        v.capacity_l && v.current_volume_l
+        v.capacity_l !== null && v.current_volume_l !== null
           ? Number(v.current_volume_l) / Number(v.capacity_l)
           : null;
       const row = el(
@@ -2061,9 +2064,40 @@ async function resultScreen(
 ): Promise<HTMLElement> {
   const kit = await vessels();
   const vessel = kit.find((v) => v.id === vesselId);
+
+  // Ledger B20. Everything below reads `vessel?.` with a sensible fallback, and
+  // seven sensible fallbacks compose into a complete, plausible, entirely
+  // fabricated success page: "Saved. Vessel unknown, Lot unknown, Wine
+  // unspecified, Volume unrecorded", over rows that are really in the database.
+  // No single one of those expressions is wrong. The defect is the density.
+  //
+  // The read throwing is already handled by the caller. What was not handled is
+  // the read succeeding and not containing the row, which happens when a policy
+  // filters it, when the write went somewhere this session cannot see, or when
+  // the response is empty for any reason at all. **That is an outcome and not a
+  // rendering condition**, and the repair is to stop rendering rather than to
+  // improve the fallbacks.
+  if (!vessel) {
+    return screen(
+      "Saved, and this screen cannot show it",
+      lede(
+        "The write went through. Reading it back did not, so anything shown here " +
+          "would be this page guessing rather than the cellar answering.",
+      ),
+      summaryRow("Vessel", vesselId),
+      summaryRow("Lot", nodeId),
+      banner(
+        "Those two identifiers are the record. Nothing is lost, and the vessel " +
+          "list will show it once the read works.",
+        "note",
+      ),
+      button("Back to the cellar", () => route()),
+    );
+  }
+
   const events = await nodeHistory(nodeId);
 
-  const photoPath = vessel?.attributes?.photo_path;
+  const photoPath = vessel.attributes?.photo_path;
   const photo = el("div", {});
   if (typeof photoPath === "string") {
     const url = await vesselPhotoUrl(photoPath);
@@ -2071,7 +2105,7 @@ async function resultScreen(
   }
 
   return screen(
-    vessel ? `${vessel.name} is on the books` : "Saved",
+    `${vessel.name} is on the books`,
     lede(
       note ??
         (generated === 0
@@ -2084,15 +2118,17 @@ async function resultScreen(
       "div",
       { class: "summary" },
       summaryRow("Vessel", vessel ? `${vessel.name} (${vessel.type})` : "unknown"),
-      summaryRow("Location", vessel?.location_name ?? "unassigned"),
-      summaryRow("Lot", vessel?.lot_name ?? "unknown"),
+      summaryRow("Location", vessel.location_name ?? "unassigned"),
+      summaryRow("Lot", vessel.lot_name ?? "unknown"),
       summaryRow(
         "Wine",
-        [vessel?.variety, vessel?.vintage].filter(Boolean).join(" ") || "unspecified",
+        [vessel.variety, vessel.vintage].filter(Boolean).join(" ") || "unspecified",
       ),
       summaryRow(
         "Volume",
-        vessel?.current_volume_l ? `${vessel.current_volume_l} L` : "unrecorded",
+        vessel.current_volume_l === null
+          ? "unrecorded"
+          : `${vessel.current_volume_l} L`,
       ),
       // Two independent facts. Our barrel holds a client's wine as often as
       // their barrel holds ours, and nothing in the schema ties the two
@@ -2102,7 +2138,7 @@ async function resultScreen(
       // exactly when it carries information. Showing it only for a
       // client-owned vessel left our barrel full of their wine reading as
       // though the barrel were theirs too.
-      summaryRow("Whose wine", vessel?.lot_owner_name ?? "unrecorded"),
+      summaryRow("Whose wine", vessel.lot_owner_name ?? "unrecorded"),
       ...(vessel && !sameOwner(vessel)
         ? [
             summaryRow(
@@ -2111,7 +2147,7 @@ async function resultScreen(
             ),
           ]
         : []),
-      summaryRow("Codes", (vessel?.codes ?? []).join(", ") || "none bound"),
+      summaryRow("Codes", (vessel.codes ?? []).join(", ") || "none bound"),
     ),
     events.length === 0
       ? empty("No history on this lot.")
@@ -2171,9 +2207,12 @@ function scanScreen(): HTMLElement {
                 ),
                 summaryRow(
                   "Volume",
-                  vessel.current_volume_l
-                    ? `${vessel.current_volume_l} L`
-                    : "unrecorded",
+                  // B11, the other one. A volume of zero is a real reading and
+                  // an emptied vessel is a real state; only null means nobody
+                  // wrote it down.
+                  vessel.current_volume_l === null
+                    ? "unrecorded"
+                    : `${vessel.current_volume_l} L`,
                 ),
                 summaryRow("Every code on it", (vessel.codes ?? []).join(", ")),
               )

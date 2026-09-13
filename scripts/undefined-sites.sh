@@ -52,6 +52,41 @@ if [ -z "$files" ]; then
   exit 2
 fi
 
+# --- density ----------------------------------------------------------------
+#
+# W-9 phase 5. B20 is seven `vessel?.` expressions on one screen, each with a
+# sensible fallback, which together render a complete and entirely fabricated
+# success page for a request that returned nothing. No single expression is
+# wrong. **The defect is a density and not a site**, so the enumeration above
+# cannot find it: it counts sites, and sites are exactly what B20 is not made of.
+#
+# This counts per function instead. A function that builds a screen and carries
+# many absent-value fallbacks can compose a coherent page out of an absent
+# response, and that is the property worth looking at. It is a shortlist for
+# reading, not a verdict: a high count is normal in a form builder and alarming
+# in a summary.
+#
+# The unit is a `function` at the start of a line, which is how this client is
+# written throughout. An arrow function assigned to a const would be missed and
+# there are none that render screens.
+if [ "${1:-}" = "--density" ]; then
+  # shellcheck disable=SC2086
+  awk '
+    /^(export )?(async )?function [A-Za-z_]/ {
+      if (fn != "") print file "\t" fn "\t" falls "\t" lines
+      fn = $0; sub(/^(export )?(async )?function /, "", fn); sub(/[(<].*$/, "", fn)
+      file = FILENAME; falls = 0; lines = 0; next
+    }
+    fn != "" {
+      lines++
+      falls += gsub(/\?\?/, "&") + gsub(/\?\./, "&") + gsub(/\|\|/, "&")
+    }
+    END { if (fn != "") print file "\t" fn "\t" falls "\t" lines }
+  ' $files | sort -t"$(printf '\t')" -k3,3nr \
+    | awk -F'\t' '$3 > 0 { printf "%-30s %-26s %5d fallbacks %5d lines\n", $1, $2, $3, $4 }'
+  exit 0
+fi
+
 emit() {   # $1 kind, $2 grep -E pattern, $3 optional exclude pattern
   local kind="$1" pat="$2" excl="${3:-}"
   # shellcheck disable=SC2086
