@@ -18,7 +18,7 @@ are corpus and are not edited; this file is the correction.
 |---|---|
 | Head when this was written | the W-7 commit that added the two gates below |
 | Branch holding it | `claude/sql-files-to-markdown-i31rob` |
-| Tracked files | 130 tracked files |
+| Tracked files | 131 tracked files |
 | Migrations | 27 migrations, `0001_core_schema.sql` through `0027_term_kind_registry.sql` |
 | Assertions | 267 from an empty database, 269 against a copy of the cellar |
 

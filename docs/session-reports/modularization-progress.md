@@ -20,15 +20,15 @@ otherwise have to derive again.
    migration number.
 3. Run `bun run green`. If it is not green, the tree does not match this file and
    that is the first thing to resolve.
-4. Continue at the first phase marked not-started, which is phase 5.
+4. Continue at the first phase marked not-started, which is phase 6. Before it, read
+   **the gate**, below the phase table.
 
-**Before starting phase 5, read this.** `term_kind` appears in nine generated columns, in
-a composite foreign key, and in the signature of most functions that touch vocabulary.
-Converting it to rows is a large migration whose failure modes are exactly the classes the
-mutation score is worst at: check constraints at 13 percent, unique constraints at 12. W-2
-gates only phase 7 on that number and phase 5 is not blocked, but the same argument applies
-to it in weaker form, and somebody should decide that deliberately rather than by not
-noticing. The session report for 2026-09-12 says the same thing at more length.
+**Phase 5 is done**, as W-4 phase 3. The warning that stood here, that `term_kind` touches
+nine generated columns and a composite foreign key and that its failure modes are the
+classes the score is worst at, was right and the migration is `0027`. What survives of it is
+general and applies to phase 6 as well: the classes this suite is weakest at are `weaken` at
+6 of 39 and `policy` at 17 of 59, both of which are a policy that is still present and has
+stopped refusing anything, and both of which are what a schema move produces.
 
 Do not start a phase you cannot finish. Finishing means green and committed.
 
@@ -71,7 +71,30 @@ needing a cast, or the database is unreachable.
 **A check nobody has watched fail is not a check.** The first two rules above were both
 found by break tests and neither would have been found by reading.
 
-## Predictions for W-7, recorded before measuring
+**Never edit a script while it is running.** Bash reads a script incrementally rather than
+loading it, so shifting the byte offsets under a running interpreter makes it misparse the
+part it has not reached yet. W-7 edited a comment in `scripts/mutate.sh` during a run, and
+the run completed all 385 mutations and then failed to parse its own scoring section.
+Thirty minutes of measurement discarded, two hours after writing this rule down.
+
+**No backtick inside a double-quoted shell string.** The SQL in `scripts/guards.sh` lives
+inside `psql -c "..."`, and a backtick in a comment there is command substitution: bash ran
+`return;` and an `if` fragment as commands, and the comment that reached the database was
+not the comment in the file. It happened twice in one session. Use no quoting for code in a
+SQL comment, or move the comment outside the string.
+
+**Ask an assertion for the specific refusal, not for any error.** Most kernel functions
+decline the same call at several guards for different reasons, and "it raised" cannot tell
+them apart, so an assertion written that way covers the function and no individual guard in
+it. W-7's `record_event` assertion passed with the guard it was written for deleted, because
+`fork_lot` further down refuses in the same sentence.
+
+**Compare with `is distinct from`, never with `<>`.** `if q <> 222 then raise` does nothing
+at all when `q` is null. One assertion in the suite had been passing that way since it was
+written, and the update it was written to protect could be deleted without it noticing. This
+is A25, the null-permit class, arriving inside the instrument that was built to find A25.
+
+## Predictions for W-7, recorded before measuring, and scored after
 
 Anchored on 31 percent, per W-7 phase 5, which is the least flattering figure available
 rather than the most recent. W-4's coverage prediction was optimistic by thirty points and
@@ -79,21 +102,34 @@ W-6's by twenty four, both because each anchored on the least adversarial sample
 available while predicting a more adversarial one. Anchoring low is a correction for a bias
 that has fired twice in the same direction, not a hedge.
 
-1. **The enumeration finds between 90 and 140 refusal sites.** There are 50 functions and a
+1. **The enumeration finds between 90 and 140 refusal sites.** **Wrong, low by 36: it is 176.**
+   The first pass found 134, which is inside the range, and every correction to the
+   instrument afterwards pushed the number up. A prediction that scores correct against a
+   broken instrument is worth noticing. There are 50 functions and a
    crude count says 49 `raise exception` occurrences, so the loud form is about fifty. W-7's
    point is that the quiet forms are where this class hides, and I expect roughly as many
    again: early returns that report success, `if not found` that does not raise, `coalesce`
    supplying a permissive default.
-2. **The catch rate over the full population lands between 15 and 28 percent.** Below the 31
+2. **The catch rate over the full population lands between 15 and 28 percent.** **Wrong,
+   high by 14: it was 74 of 176, which is 42 percent.** 19 of those 74 are fixture breakage
+   rather than detection, and detection alone is 55 of 176, which is 31 percent, the anchor
+   to the point. The anchor was right about the quantity it was measured on and I applied it
+   to a different one. Below the 31
    percent anchor, because 31 was measured on sites I chose by reading guards, and every
    site I chose that way was a loud one. The quiet forms are less likely to be covered, not
    more, and adding them to the denominator should pull the figure down.
-3. **The first pass of the enumeration will be wrong**, because W-7 says to expect it and
+3. **The first pass of the enumeration will be wrong**, **correct, and the only prediction
+   in four sessions that named its own failure mode and hit it.** Also incomplete: there
+   were four such failures and the predicted one was the first of them. Because W-7 says to expect it and
    because it has been true every time. My specific guess is that it will miss refusals
    expressed as a `where` clause that matches nothing, since those have no keyword to grep
    for and are the shape that produced A14.
-4. **Between five and fifteen sites will be unreachable.** Mostly defensive `if not found`
-   guards behind a foreign key that already makes the case impossible.
+4. **Between five and fifteen sites will be unreachable.** **Correct on the number, eleven,
+   and wrong on the reason.** Four of the eleven are `if not found` and not one is behind a
+   foreign key. They are equivalent mutants: functions with more than one way to return the
+   same answer, so the guard is reached, removed, and no caller can tell. Guessed as: mostly
+   defensive `if not found` guards behind a foreign key that already makes the case
+   impossible.
 
 ## Predictions for W-6, recorded before measuring
 
@@ -154,9 +190,11 @@ build on top of it. Halting with a clear write-up is a good outcome.
 
 | | |
 |---|---|
-| Last green commit | `f9c9f79`, W-5 handoff, pushed to `main` and to the branch |
+| Last green commit | the W-7 commit adopting the two gates |
 | Current migration number | `0027`, so the next one is `0028` |
-| Assertions | 204 from empty, 206 against the cellar copy, reproduced from a clean clone |
+| Assertions | 267 from empty, 269 against the cellar copy |
+| Behavioural mutation score | 268 of 364, of which 34 are fixture breakage. Snapshot 85, reported separately and not a gate |
+| The refusal surface | 176 sites, 165 behaviourally covered, 11 filed at `docs/review/refusal-dispositions.tsv` |
 | Module migration numbering | not yet designed, phase 6 designs it |
 
 ## Phases
@@ -181,6 +219,23 @@ is 188 of 188. The gate is met, so W-2 phases 5 through 8 resume as written.
 The gate was not lowered and the number is not a trend. It is a threshold, and the
 threshold is cleared on a mutation set that is four times the size of the one that failed
 it.
+
+**That 188 of 188 was mostly a change detector, and the gate is a different one now.** W-6
+split the score and W-7 replaced the threshold with two ratchets, written up in
+`docs/review/CURRENT-BASELINE.md` and enforced by `scripts/ratchet.sh`. Before starting
+phase 6, 7 or 8:
+
+1. Run `bash scripts/ratchet.sh`. About thirty five minutes. It must say RATCHET HELD.
+2. Do the phase.
+3. Run it again. A declarative phase must not raise any class's uncovered count; a phase
+   that rewrites a function body must leave every enumerated refusal site covered or filed.
+4. If a phase adds a refusal site, it adds the assertion in the same phase. If it removes
+   one, `docs/review/refusal-sites.tsv` is regenerated with `bash scripts/guards.sh` in the
+   same commit, or `bun run green` gate 6 fails.
+
+`bun run green` is still the per-phase gate and now carries the cheap half of this as gate
+6: that the committed enumeration still describes the kernel, and that every filing resolves
+to a site that exists.
 
 ## Phase 0: reach green at all
 
