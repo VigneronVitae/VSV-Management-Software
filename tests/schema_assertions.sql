@@ -4446,6 +4446,30 @@ begin
   end if;
   perform test_ok('variety, vintage and attributes are each redacted by name for somebody not entitled');
 
+  -- The gate above the redaction, which is a different question and was covered
+  -- by nothing. W-10's ratchet caught it: `visible_node` can have its whole
+  -- row-visibility check replaced by `if false then` and all 287 assertions pass.
+  --
+  -- The two assertions above ask an admin and a facility hand, and both of them
+  -- pass that gate, so neither can see it removed. What was catching it until this
+  -- session was fixture breakage somewhere else, which moved when 0031 moved, and
+  -- fixture breakage is not coverage. **Redaction is the second question. The
+  -- first is whether you get the row at all**, and a client who does not own the
+  -- lot does not.
+  perform test_act_as('00000000-0000-0000-0000-00000000a003');   -- a client, not the owner
+  if row_to_json(visible_node('00000000-0000-0000-0000-000000007810')) is not null then
+    raise exception 'FAIL: a client read a lot that is not theirs, redacted or otherwise';
+  end if;
+  perform test_ok('a client asking for a lot that is not theirs gets nothing, before any question of redaction');
+
+  -- And the blindness guard on that, because a visible_node that returned null to
+  -- everybody would satisfy it.
+  perform test_act_as('00000000-0000-0000-0000-00000000a002');
+  if row_to_json(visible_node('00000000-0000-0000-0000-000000007810')) is null then
+    raise exception 'FAIL: a facility hand got nothing for a facility lot, so the check above is blind';
+  end if;
+  perform test_ok('a facility hand does get the lot, so the refusal above is a refusal rather than a silence');
+
   perform test_act_as('00000000-0000-0000-0000-00000000a001');
 end $$;
 
