@@ -245,22 +245,32 @@ select 'rls' || chr(9) || t.relname || chr(9) ||
 # independently score 6 of 9. The class samples the procedural surface; it does
 # not cover it.
 LOGIC_SUBS="
-  ('is_admin',                   'and active',                      '',                     'drops the active conjunct, which is ledger B10 in the client'),
-  ('is_facility_user',           'is_admin() or (',                 'true or (',            'everyone becomes staff'),
-  ('claim_account',              'when is_first then',              'when true then',       'every claimant becomes admin'),
-  ('close_node_when_empty',      'new.quantity <= 0',               'new.quantity < 0',     'a lot at exactly zero never closes'),
-  ('bind_vessel_code',           'existing.vessel_id = p_vessel_id','true',                 'the cross-vessel guard goes, so a rebind returns silently'),
-  ('cellar_writable_columns',    'if not (changed = any(tg_argv))', 'if false',             'the column allow-list stops refusing anything'),
-  ('rack',                       'nullif(contributed, 0)',          'nullif(total_in, 0)',  'lineage shares divided by arrival rather than contribution, the wire session bug'),
-  ('update_vessel',              'is distinct from',                'is not distinct from', 'a thermal change records only when nothing changed'),
-  ('resolve_subject_name',       'is null then',                    'is not null then',     'the deflation inverts, so a present module resolves to null and an absent one is queried'),
-  ('confirm_event',              'is_admin()',                      'true',                 'anyone may confirm, which is T0-4'),
-  ('claim_task',                 'and status = ''open''',           'and status is not null','X-1-5: a task already claimed by somebody else can be taken from them'),
-  ('validate_vessel_attributes', 'if coalesce((f ->> ''required'')::boolean, false) then', 'if false then', 'X-1-5: a vessel type''s required fields stop being required'),
-  ('finish_run',                 'raise exception ''no such run''', 'null',                 'X-1-5: finishing a run that does not exist writes an event against a null vessel'),
-  ('visible_node',               'may_see_all_of',                  'true or may_see_all_of','a client sees every field of every lot'),
-  ('set_lot_hidden',             'if not may_set_privacy(p_node_id)','if false',            'anyone may set what is hidden about anyone else''s wine'),
-  ('validate_vessel_type_fields','not in (''term'', ''number'', ''text'')', 'is null and false', 'a field of any kind at all is accepted')
+  ('is_admin',                   'and active',                      '',                     'author: drops the active conjunct, ledger B10 in the client'),
+  ('is_facility_user',           'is_admin() or (',                 'true or (',            'author: everyone becomes staff'),
+  ('claim_account',              'when is_first then',              'when true then',       'author: every claimant becomes admin'),
+  ('close_node_when_empty',      'new.quantity <= 0',               'new.quantity < 0',     'author: a lot at exactly zero never closes'),
+  ('bind_vessel_code',           'existing.vessel_id = p_vessel_id','true',                 'author: the cross-vessel guard goes, a rebind returns silently'),
+  ('cellar_writable_columns',    'if not (changed = any(tg_argv))', 'if false',             'author: the column allow-list stops refusing'),
+  ('rack',                       'nullif(contributed, 0)',          'nullif(total_in, 0)',  'author: shares divided by arrival not contribution, the wire session bug'),
+  ('update_vessel',              'is distinct from',                'is not distinct from', 'author: a thermal change records only when nothing changed'),
+  ('resolve_subject_name',       'is null then',                    'is not null then',     'author: the deflation inverts'),
+  ('confirm_event',              'is_admin()',                      'true',                 'author: anyone may confirm, T0-4'),
+  ('claim_task',                 'and status = ''open''',           'and status is not null', 'independent: a claimed task can be taken from whoever holds it'),
+  ('validate_vessel_attributes', 'if coalesce((f ->> ''required'')::boolean, false) then', 'if false then', 'independent: required fields stop being required'),
+  ('finish_run',                 'raise exception ''no such run''', 'null',                 'independent: finishing a run that does not exist writes against a null vessel'),
+  ('visible_node',               'may_see_all_of',                  'true or may_see_all_of', 'independent: a client sees every field of every lot'),
+  ('set_lot_hidden',             'if not may_set_privacy(p_node_id)', 'if false',           'independent: anyone sets what is hidden about another party''s wine'),
+  ('validate_vessel_type_fields', 'not in (''term'', ''number'', ''text'')', 'is null and false', 'independent: a field of any kind at all is accepted'),
+  ('record_event',               'if op_id is null then',           'if false then',        'independent: an unknown operation writes an event with a null operation'),
+  ('fill_vessel',                'if occupied is not null then',    'if false then',        'independent: wine goes into a vessel that already holds some'),
+  ('update_vessel',              'if not found then',               'if false then',        'independent: editing a vessel that does not exist reports success'),
+  ('fork_lot',                   'if n_here = 0 then',              'if false then',        'independent: forking zero vessels off a lot'),
+  ('register_subject_resolver',  'if not is_admin() then',          'if false then',        'independent: anyone registers a resolver, which reaches dynamic SQL'),
+  ('rack',                       'and not p_allow_overfill',        'and false',            'independent: overfilling a vessel stops needing confirmation'),
+  ('node_bin_shares',            '''composition'' = any(n.hidden)', 'false',                'independent: a hidden composition is disclosed anyway'),
+  ('topping_check',              'if tgt is null then',             'if false then',        'independent: topping into a vessel with nothing in it'),
+  ('claim_task',                 'and claimed_by is null',          'and true',             'independent: the second half of the claim guard'),
+  ('fill_vessel',                'and active',                      '',                     'independent: wine goes into a deactivated vessel')
 "
 
 # X-1-7: this list is hand-maintained, and a substitution whose target string no
@@ -463,7 +473,7 @@ while IFS=$'\t' read -r class label sql; do
       caught_b[$class]=$(( ${caught_b[$class]:-0} + 1 ))
       fixture[$class]=$(( ${fixture[$class]:-0} + 1 ))
       printf '%s\t%s\t%s\n' "$class" "$label" \
-        "$(grep -m1 -iE '(ERROR|FATAL)' /tmp/.mutate-run.log | cut -c1-90)" >> "$fixtures"
+        "$(grep -m1 -E '^(ERROR|FATAL|psql:)' /tmp/.mutate-run.log | cut -c1-90)" >> "$fixtures"
       printf '  %3d/%d  %-8s %-44s caught, by breaking a fixture\n' "$i" "$total" "$class" "$label"
     fi
   else
@@ -518,6 +528,28 @@ if [ "$n_snap" -gt 0 ]; then
   echo "$n_snap caught only by a snapshot. A pinned catalog comparison noticed the catalog"
   echo "moved. Nothing refused anything, and these are not evidence about behaviour:"
   sort "$snaponly" | awk -F'\t' '{printf "  %-8s %s\n", $1, $2}'
+fi
+
+# The logic class is the only sampled class, and the whole point of X-1-5 is that
+# who chose the sample decides the number. Reported split by provenance.
+if [ "${seen[logic]:-0}" -gt 0 ]; then
+  la=0; lai=0; li=0; lii=0
+  while IFS=$'	' read -r cls lbl _; do
+    [ "$cls" = logic ] || continue
+    case "$lbl" in *"author:"*) la=$((la+1));; *) li=$((li+1));; esac
+  done < "$muts"
+  for f in "$survivors" "$snaponly"; do
+    while IFS=$'	' read -r cls lbl _; do
+      [ "$cls" = logic ] || continue
+      case "$lbl" in *"author:"*) lai=$((lai+1));; *) lii=$((lii+1));; esac
+    done < "$f"
+  done
+  echo
+  echo "the logic class by who chose the substitution, which is X-1-5's point:"
+  [ "$la" -gt 0 ] && printf '  author       %d of %d caught behaviourally
+' "$((la-lai))" "$la"
+  [ "$li" -gt 0 ] && printf '  independent  %d of %d caught behaviourally
+' "$((li-lii))" "$li"
 fi
 
 if [ "$n_fix" -gt 0 ]; then
