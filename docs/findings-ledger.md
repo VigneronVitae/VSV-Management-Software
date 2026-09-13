@@ -161,8 +161,34 @@ admission.
 | B23 | `update_vessel` patch construction | The client sends every key on save, and `update_vessel` treats a present key as "set this", so every save writes every column. A cellar user changing a capacity is refused with "may not change vessel.attributes", naming a field they did not touch | 1 (r) | MAJOR |
 | B24 | `README.md` "Running locally" | Three steps. The CLI it names is not installed and three definition-of-done commands need it; step three is `bun run db:reset`, which destroys every row with no warning and, because `project_id` is fixed, resets a second clone's database as well; and nothing tells you to write `.env.local` or run `bun run dev`, so the documented path never starts the client. Fixed in W-8 | 1 (r) | MAJOR |
 | B25 | the client-login exposure window | A custom crush client's account is staff until an administrator attaches it to their party, and a login cannot be attached before it exists, so the window is structural. The Clients screen says so in as many words, which is the honest version and not a fix | 1 (r) | MAJOR |
+| B26 | token refresh with no network | An expired token on an unreachable network puts the client into a silent refresh retry loop against `/auth/v1/token`, five attempts and counting, while the button reads "Working" and nothing times out. Found while failing to reproduce B17, which predicted the opposite: a sign-out and a write carrying the anon key. Neither happens | 1 (r) | MAJOR |
 
 ---
+
+### Section B, run against the client
+
+W-8 reached five of seventeen. W-9 phase 1 finished it. Every verdict below is from the
+client running in a browser against a live Supabase instance with policies on, except where
+it says otherwise.
+
+| | Verdict | What running showed that reading had not |
+|---|---|---|
+| B2 | **unreachable** | No screen adds an operation term inline. The inline pickers are variety, product type, vessel type, location kind, cooper and wood. `addTerm` is generic and nothing calls it with `operation`, so the path exists in the kernel and not in the client |
+| B3 | **reproduces, worse** | All six `keep` boxes stay ticked after Add another and every value resets. The interface asserts the carry-over it did not perform, which is worse than losing it quietly |
+| B4 | **reproduces, partly** | The error is surfaced, which the entry does not credit. The vessel is still left in the database with one of two codes bound, and retrying mints a new id per B5, so the retry duplicates the vessel rather than completing it |
+| B5 | **reproduces** | First attempt sent node `d6c8fcef` and vessel `41c0524a`; the retry sent `8bc0df50` and `2f1b9824`. This breaks the hard rule in `CLAUDE.md` that an offline write must have identity before the server sees it, so a lost response means a duplicate rather than an idempotent retry |
+| B6 | **reproduces, both screens** | A failed initial load renders a heading, one paragraph, and zero buttons. No error, no Back, no retry |
+| B8 | **unreachable here** | Needs a camera decoding frames. Not simulated, because a simulated decode loop would be a reproduction of my own harness |
+| B12 | **mechanism confirmed, not reproduced** | `validity` and `badInput` appear zero times in the whole client, and every numeric read is `value() ? Number(value()) : null`, so rejected text and an empty field are both `""` and both write null. Producing a real `badInput` needs a keystroke and the browser pane would not accept one |
+| B13 | **reproduces** | An object at `<uuid>/photo.jpg` in `vessel-photos` with no vessel of that id. Nothing will ever find it: `doctor` is S-4 and unimplemented. With B5, every retry orphans another |
+| B16 | **reproduces, worse for reads** | Twenty seconds and counting on a hung read, with no timeout and no progress indicator at all. The entry describes a write hanging on "Working"; a read hangs on a blank screen |
+| B17 | **does not reproduce** | No write went out as the anon key and the client did not sign out. An expired token with a reachable network refreshes silently; with an unreachable one the client retries the refresh in a loop and the button says "Working" for ever. The failure the entry names is not there and the failure underneath it is B16 with an auth retry loop on top, filed as B26 |
+| B18 | **reproduces, measured** | 3.52:1 in light and 4.29:1 in dark, against AA's 4.5:1 for normal text. It carries the field hints and the code labels |
+| B19 | **reproduces** | An inline variety lands at `sort_order` 0 and sorts above all six seeded ones, which are 10 to 60 |
+
+**Thirteen of seventeen reproduce, one does not, two are unreachable, one is confirmed in
+mechanism only.** Reading was right about the existence of a defect in 13 of 17 cases it
+called, which is a precision of 76 percent.
 
 ## C. Documents and ledgers
 
