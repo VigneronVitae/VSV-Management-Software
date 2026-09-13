@@ -32,9 +32,16 @@ canaries below are the durable check and the sha is a convenience.**
 
 ## The trap that was open until this file was written
 
-**`main` now carries this work.** It was fast-forwarded from
-`c3eae3c7c262544e4b2e29526b513c964c6852fe` to the head named above during the session that
-wrote this file, and that is worth recording rather than quietly fixing.
+**`main` carries this work up to the end of W-6.** It was fast-forwarded from
+`c3eae3c7c262544e4b2e29526b513c964c6852fe` to `0e3514c` during W-5, and that is worth
+recording rather than quietly fixing.
+
+**It is behind again.** W-7's four commits are on `claude/sql-files-to-markdown-i31rob`
+only, because moving the default branch is a decision rather than a chore and the last one
+was made out loud. A reviewer cloning this repository gets a tree with `scripts/guards.sh`
+absent and no enumeration of the refusal surface, which the canary table below will tell
+them. That is the trap this section is about, arriving again in a smaller form, and it is
+recorded here for the same reason as the first one.
 
 Until then, `main` was still at `c3eae3c`: forty two files, five migrations, the exact
 commit the thirteen-report corpus reviewed. Twenty six migrations of work sat on
