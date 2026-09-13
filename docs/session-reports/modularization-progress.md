@@ -94,6 +94,43 @@ at all when `q` is null. One assertion in the suite had been passing that way si
 written, and the update it was written to protect could be deleted without it noticing. This
 is A25, the null-permit class, arriving inside the instrument that was built to find A25.
 
+## Predictions for W-10, recorded before measuring
+
+Anchored on detection figures. The relevant prior is W-9's, where reading called the
+existence of a defect right 76 percent of the time and running added about half as much
+again. This session measures documents against a tree rather than a client against
+policies, and I expect documents to be worse than code, because nothing has ever failed a
+build over them.
+
+1. **The three counts land at roughly eight to fourteen built and asserted, four to six
+   claimed and unverified, and fifty or more ruled and unbuilt.** The middle column is the
+   client and I can almost enumerate it now: the end-to-end walk, `viewer_scope`, the
+   writable-columns derivation, and the B20 repair. The left column is small because most
+   rulings are about a modular system that does not exist yet.
+
+2. **Four to nine places where a session report and the tree disagree.** The mechanism is
+   that a report is written at the end of a session and describes a state later sessions
+   change, and nothing re-reads it. **The commonest kind will be a blocker that has been
+   removed**, because a blocking relationship is the one fact in these documents that
+   depends on work done somewhere else. `AR-E6` is already one before I have counted
+   anything: its entry still says it is blocked by `task_board`, which `0024` fixed four
+   sessions ago.
+
+3. **The ratchet does not hold on the first attempt at phase 6, and that is it working.**
+   A structural move creates objects, an object starts uncovered, and the ratchet ratchets
+   on the uncovered count. Predicting a red run is predicting the gate does its job; what
+   would worry me is a green one, which would mean the move created nothing worth covering.
+
+4. **Two to four of X-2's six EXPLOITABLE findings turn out not to need supervision.**
+   "Supervised" was assigned to all six as a class rather than one at a time. A finding
+   that needs a data migration or a domain judgment needs the winemaker; one that is a
+   policy edit or a constraint does not, and W-9 has just done two of those unsupervised.
+
+5. **At least one ruling I mark `built` will turn out to have no assertion citing it.** The
+   citation convention does not exist yet, so I will be attaching `-- AR-` comments to
+   existing assertions from my own reading of what each one does, and that reading is the
+   same instrument that produced the drift this phase is measuring.
+
 ## Predictions for W-9, recorded before measuring
 
 Anchored on detection figures, per W-9. W-8's running produced ten findings reading had not,
