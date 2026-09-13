@@ -15,7 +15,7 @@ had seen, and two more, A24 and A25, by the phase B and phase 2 reads in W-3 and
 is 80.
 
 **The tree this describes has moved a long way from the tree it was written against.** It
-is 29 migrations, `0001` through `0029`. This paragraph used to name a head sha and a
+is 30 migrations, `0001` through `0030`. This paragraph used to name a head sha and a
 branch, and both went stale within two commits, which is X-3-8 and is exactly the mistake
 `docs/review/CURRENT-BASELINE.md` exists to correct. That file states the current facts and
 supersedes the canary block in every archived prompt; a sha does not belong in a second
@@ -158,7 +158,7 @@ admission.
 | B20 | `walk.ts`, `resultScreen` | Seven `vessel?.` expressions with sensible fallbacks. When the read after a successful write fails, the screen renders a complete success page reading "Saved / Vessel unknown / Lot unknown / Wine unspecified / Volume unrecorded", over rows that are really in the database. Reproduced by failing one GET. B7 predicted the opposite direction. **Closed by W-9 phase 5**: a row missing from a successful read is an outcome and not a rendering condition, so the screen says the write went through, gives the two identifiers, and renders no summary at all | 1 (r) | closed |
 | B21 | `vessel_state` for a viewer who may not read the lot | The view redacts `lot_name`, `lot_owner_id` and `lot_owner_name` and does not redact `node_id` or `current_volume_l`, which come from `placement` and are open per A5. A custom crush client reads the facility's lot ids and volumes through a view built to hide them | 1 (r) | EXPLOITABLE |
 | B22 | the home screen vessel count | Counts vessels whose `current_volume_l` is non-null, so a client login is told "2 of 3 have wine in them" while able to name one. The count and the list disagree for the same user in the same session | 1 (r) | MAJOR |
-| B23 | `update_vessel` patch construction | The client sends every key on save, and `update_vessel` treats a present key as "set this", so every save writes every column. A cellar user changing a capacity is refused with "may not change vessel.attributes", naming a field they did not touch | 1 (r) | MAJOR |
+| B23 | `update_vessel` patch construction | The client sends every key on save, and `update_vessel` treats a present key as "set this", so every save writes every column. A cellar user changing a capacity is refused with "may not change vessel.attributes", naming a field they did not touch. **Closed by W-9 phase 6**: the patch carries only the columns `writable_columns()` says this caller may write, and the controls for the rest render as the values they hold | 1 (r) | closed |
 | B24 | `README.md` "Running locally" | Three steps. The CLI it names is not installed and three definition-of-done commands need it; step three is `bun run db:reset`, which destroys every row with no warning and, because `project_id` is fixed, resets a second clone's database as well; and nothing tells you to write `.env.local` or run `bun run dev`, so the documented path never starts the client. Fixed in W-8 | 1 (r) | MAJOR |
 | B25 | the client-login exposure window | A custom crush client's account is staff until an administrator attaches it to their party, and a login cannot be attached before it exists, so the window is structural. The Clients screen says so in as many words, which is the honest version and not a fix | 1 (r) | MAJOR |
 | B26 | token refresh with no network | An expired token on an unreachable network puts the client into a silent refresh retry loop against `/auth/v1/token`, five attempts and counting, while the button reads "Working" and nothing times out. Found while failing to reproduce B17, which predicted the opposite: a sign-out and a write carrying the anon key. Neither happens | 1 (r) | MAJOR |
@@ -325,7 +325,7 @@ forty two files and five migrations, which is the tree it was written against an
 tree it now governs.*
 
 **Front matter corrected only.** The entries are not re-derived. What changed is the
-statement of what this document is about: 29 migrations rather than five, the current head
+statement of what this document is about: 30 migrations rather than five, the current head
 named, and a pointer to `docs/review/CURRENT-BASELINE.md` for the rest. The count of
 distinct defects is 80 rather than 78, which corrects an arithmetic slip in 1.3: A24 and
 A25 were added and the total was not moved.

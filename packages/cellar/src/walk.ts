@@ -43,6 +43,7 @@ import {
   vessels,
   vesselTypeNotes,
   viewerScope,
+  writableColumns,
 } from "core";
 import { locationPicker, partyPicker, termPicker } from "./pickers.ts";
 import { describeEmpty, describeRefusal, mayEnter } from "./refusal.ts";
@@ -634,6 +635,9 @@ type VesselForm = {
   };
   photoFile: () => File | null;
   ready: () => string | null;
+  // Renders every control this caller may not write as the value it holds.
+  // `null` is no restriction. See 0030 and W-9 phase 6.
+  lockTo: (writable: string[] | null) => void;
   reload: () => Promise<void>;
   // Fills the form from a vessel that already exists. Loads the pickers with
   // the current value preselected, so an edit screen opens showing what is
@@ -791,6 +795,7 @@ function vesselFields(partyRows: Party[]): VesselForm {
     );
     // No point offering a disclosure with nothing behind it.
     more.hidden = moreSlot.children.length === 0;
+    applyAttributeLock();
   }
 
   on(type.root, "change", () => {
@@ -860,6 +865,95 @@ function vesselFields(partyRows: Party[]): VesselForm {
 
   on(capacity.input, "change", () => remember("capacity", capacity.value()));
 
+  // W-9 phase 6. Which of these a given caller may write is the kernel's rule,
+  // enforced by the cellar_writable_columns trigger, and the client asks rather
+  // than remembering. Hardcoding the three would be R-4 and would drift the day
+  // somebody edits the trigger; column privileges cannot answer it, because the
+  // distinction between admin and cellar is a row in app_user and not a database
+  // role, which is S-45.
+  //
+  // The pairing of a column to the control that writes it is unavoidably here,
+  // because only this function knows which control that is. What is not here is
+  // the list of which ones are allowed.
+  const guarded: Array<{
+    column: string;
+    node: HTMLElement;
+    label: string;
+    show: () => string;
+  }> = [
+    {
+      column: "type_id",
+      node: type.root,
+      label: "Type",
+      show: () => type.label() || "not set",
+    },
+    {
+      column: "name",
+      node: name.root,
+      label: "Name",
+      show: () => name.value() || "not set",
+    },
+    {
+      column: "capacity_l",
+      node: capacity.root,
+      label: "Capacity",
+      show: () => (capacity.value() ? `${capacity.value()} L` : "not recorded"),
+    },
+    {
+      column: "location_id",
+      node: place.root,
+      label: "Location",
+      // Not place.label(): with no locations yet that is the placeholder option's
+      // own text, "Nothing here yet, tap Add one", which is an instruction and
+      // not a value. A display row has to say what is true, and the truth when
+      // nothing is selected is that the vessel is unassigned.
+      show: () => (place.value() ? place.label() || "unassigned" : "unassigned"),
+    },
+    {
+      column: "owner_id",
+      node: ownerField,
+      label: "Whose vessel",
+      show: () => owner.selectedOptions[0]?.text.trim() || "Facility owned",
+    },
+    {
+      // A photo is stored in the bucket and remembered in attributes.photo_path,
+      // so picking one is a write to a column a cellar hand may not write. Left
+      // as an input it would upload the file, be refused on the row, and orphan
+      // the object, which is B13 with B23 on top of it.
+      column: "attributes",
+      node: photoField,
+      label: "Photo",
+      show: () => "an administrator changes this",
+    },
+  ];
+
+  // The attributes block is the one that matters and it is the one W-8 met: a
+  // cellar hand changed a capacity and was refused with "may not change
+  // vessel.attributes".
+  //
+  // It cannot be locked by container. `openSlot` and `moreSlot` hold the vessel
+  // type's own fields **and** the glycol block, and glycol, setpoint and mode are
+  // exactly the three columns a cellar hand may write. Replacing either container
+  // would take away the only thing they are allowed to do, which is worse than
+  // the defect it fixes. So this locks the built fields one at a time and leaves
+  // the glycol block where it is.
+  //
+  // Re-applied from applyTypeShape, which rebuilds `built` from scratch on every
+  // type change and would otherwise hand the controls back.
+  let lockedColumns: Set<string> | null = null;
+  function applyAttributeLock(): void {
+    if (!lockedColumns || lockedColumns.has("attributes")) return;
+    for (const b of built) {
+      const shown = b.label() ?? b.read();
+      b.root.replaceChildren(
+        summaryRow(
+          String(b.spec.label ?? b.spec.key),
+          shown === null || shown === "" ? "not set" : String(shown),
+        ),
+      );
+    }
+  }
+
   return {
     nodes: [
       type.root,
@@ -871,6 +965,26 @@ function vesselFields(partyRows: Party[]): VesselForm {
       photoField,
       more,
     ],
+    /**
+     * Replace every control this caller may not write with the value it holds.
+     * A cellar hand needs to read the capacity and the type to do the work, so
+     * hiding them is wrong; offering them as inputs that cannot be saved is
+     * worse, which is what W-8 found. Showing them is the third option.
+     *
+     * `null` means no restriction and is what an administrator gets.
+     */
+    lockTo: (writable) => {
+      if (writable === null) {
+        lockedColumns = null;
+        return;
+      }
+      lockedColumns = new Set(writable);
+      for (const g of guarded) {
+        if (lockedColumns.has(g.column)) continue;
+        g.node.replaceChildren(summaryRow(g.label, g.show()));
+      }
+      applyAttributeLock();
+    },
     read: () => ({
       type_id: type.value(),
       name: name.value(),
@@ -1721,9 +1835,15 @@ function vesselEditScreen(vesselId: string, title: string): HTMLElement {
 
   void (async () => {
     try {
-      const [partyRows, row] = await Promise.all([parties(), vesselById(vesselId)]);
+      const [partyRows, row, writable] = await Promise.all([
+        parties(),
+        vesselById(vesselId),
+        writableColumns("vessel"),
+      ]);
       const form = vesselFields(partyRows);
       await form.preset(row);
+      // After preset, so the locked fields show what is there rather than blanks.
+      form.lockTo(scope?.may_admin ? null : writable);
 
       body.replaceChildren(
         rows(
@@ -1744,7 +1864,20 @@ function vesselEditScreen(vesselId: string, title: string): HTMLElement {
                 ? await uploadVesselPhoto(vesselId, file)
                 : (existing.photo_path ?? null);
 
-              const result = await updateVessel(vesselId, { ...values, attributes });
+              // B23. update_vessel treats a present key as "set this", so
+              // sending the whole form makes every save a write to every column,
+              // and the trigger refuses on whichever disallowed one it reaches
+              // first. That is why W-8 changed a capacity and was told it may not
+              // change vessel.attributes. Locking the controls is cosmetic on its
+              // own; the patch has to carry only what this caller may write.
+              const patch: Record<string, unknown> = { ...values, attributes };
+              if (!scope?.may_admin) {
+                for (const key of Object.keys(patch)) {
+                  if (!writable.includes(key)) delete patch[key];
+                }
+              }
+
+              const result = await updateVessel(vesselId, patch);
               message.replaceChildren(
                 banner(
                   result.thermal_change

@@ -514,6 +514,24 @@ number about somebody else's wine and therefore the same question one level down
 a vessel list is showing them something false until AR-E11 exists.
 
 
+**S-45. Column privileges cannot express who may write which column, so nothing checks the answer twice.**
+`cellar_writable_columns` is a `before update` trigger carrying its allow-list in its own
+trigger arguments, and `0030` reads that list back so the client can ask which fields to
+render as inputs. That is one mechanism and it cannot drift. The obvious alternative,
+`grant update (has_glycol, setpoint_c, mode)`, **cannot express this rule at all**: grants are
+per database role and admin and cellar are both `authenticated` here, with the distinction
+living in a row in `app_user`. Today `information_schema.column_privileges` reports every
+column of `vessel` as updatable by `authenticated` and by `anon`, which is true of the grants
+and false of the system, so anything that trusted that view would be wrong. *Resolves when:*
+either two database roles exist with a mapping from `app_user.role` onto them, at which point
+grants become expressive and there are two mechanisms to keep in step rather than one, or
+somebody decides the trigger is the only enforcement and this entry records that the grant
+route was considered and refused. **The second is the current position** and this is filed so
+that the next person to notice the grants are wide open finds the reasoning rather than
+repeating it. *Load-bearing:* no. It is load-bearing only for whoever reads
+`column_privileges` and believes it.
+
+
 ## Discharged
 
 **S-25. An account belonging to no party is staff, so a client who signs up

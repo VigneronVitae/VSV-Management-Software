@@ -31,7 +31,8 @@
 --              supabase/migrations/0026_subject_type_registry.sql,
 --              supabase/migrations/0027_term_kind_registry.sql,
 --              supabase/migrations/0028_redaction_is_row_level.sql,
---              supabase/migrations/0029_viewer_scope.sql]
+--              supabase/migrations/0029_viewer_scope.sql,
+--              supabase/migrations/0030_writable_columns.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
 -- Open sorries: S-7 (what this exercises is Postgres policy evaluation, not
@@ -4867,6 +4868,61 @@ begin
     raise exception 'FAIL: nobody is scoped signed_in=% sees=%', v.signed_in, v.sees;
   end if;
   perform test_ok('nobody at all is scoped to nothing, without raising');
+
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- which columns this caller may write'; end $$;
+
+-- 0030. A cellar hand saw fifteen fields on the vessel edit screen and could
+-- write three, and the form did not know which three. Hardcoding them in the
+-- client is R-4. Column privileges cannot say, because admin and cellar are the
+-- same database role and the distinction is a row in app_user, which is S-45.
+-- The trigger carries its own allow-list, so the kernel answers from the place
+-- it enforces.
+do $$
+declare got text[];
+begin
+  perform test_act_as('00000000-0000-0000-0000-00000000a002');   -- a cellar hand
+  got := writable_columns('vessel');
+  if not (got @> array['has_glycol','setpoint_c','mode'] and array_length(got,1) = 3) then
+    raise exception 'FAIL: a cellar hand may write %, and the trigger says three', got;
+  end if;
+  perform test_ok('a cellar hand is told the three vessel columns the trigger lets them write');
+
+  -- The answer has to come from the trigger and not from a list. If somebody
+  -- edits the allow-list, this follows; if somebody wrote the three names into
+  -- the function, it does not, and that is the drift this exists to prevent.
+  if got::text <> (
+    select array(select btrim(x, chr(32) || chr(39))
+                   from unnest(string_to_array(
+                     (regexp_match(pg_get_triggerdef(t.oid),
+                                   'cellar_writable_columns' || chr(92) || '((.*)' || chr(92) || ')'))[1], ','
+                   )) as x)::text
+      from pg_trigger t
+     where t.tgrelid = 'vessel'::regclass and not t.tgisinternal
+       and pg_get_triggerdef(t.oid) like '%cellar_writable_columns%'
+  ) then
+    raise exception 'FAIL: the answer % is not what the trigger says, so it is a copy', got;
+  end if;
+  perform test_ok('the answer is read out of the trigger rather than kept beside it');
+
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');   -- an admin
+  got := writable_columns('vessel');
+  if array_length(got, 1) < 10 then
+    raise exception 'FAIL: an admin may write only % columns of vessel', array_length(got,1);
+  end if;
+  perform test_ok('an administrator is told they may write every column, rather than the client assuming it');
+
+  -- A table with no such trigger has no cellar allow-list, and the honest answer
+  -- is none rather than all. Getting this backwards would open every form.
+  perform test_act_as('00000000-0000-0000-0000-00000000a002');
+  got := writable_columns('term');
+  if coalesce(array_length(got, 1), 0) <> 0 then
+    raise exception 'FAIL: a table with no cellar trigger reported % writable columns', got;
+  end if;
+  perform test_ok('a table with no cellar allow-list answers none, not all');
 
   perform test_act_as('00000000-0000-0000-0000-00000000a001');
 end $$;

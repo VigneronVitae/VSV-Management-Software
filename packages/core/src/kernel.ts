@@ -123,6 +123,17 @@ export async function viewerScope(): Promise<ViewerScope> {
   }) as ViewerScope;
 }
 
+/** Which columns of a table this caller may write, from the trigger that
+ * enforces it. See 0030: hardcoding the list is R-4, and column privileges
+ * cannot express the rule because admin and cellar are the same database role. */
+export async function writableColumns(table: string): Promise<string[]> {
+  const { data, error } = await kernel().rpc("writable_columns", {
+    p_table: table,
+  });
+  if (error) throw new KernelError(error);
+  return (data ?? []) as string[];
+}
+
 export async function currentAppUser(): Promise<AppUser | null> {
   const session = await currentSession();
   if (!session) return null;

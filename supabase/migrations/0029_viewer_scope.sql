@@ -5,7 +5,8 @@
 --           deciding for itself who is staff."
 -- Depends on: [supabase/migrations/0003_parties_and_products.sql,
 --              supabase/migrations/0005_account_and_walk.sql]
--- Depended on by: [tests/schema_assertions.sql]
+-- Depended on by: [tests/schema_assertions.sql,
+--                  supabase/migrations/0030_writable_columns.sql]
 -- Axioms enforced: R-4, a client may not encode a business rule. AR-E10, in the
 --                  sense that this reports standing and never existence.
 -- Open sorries: none.
