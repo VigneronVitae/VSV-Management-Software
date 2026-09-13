@@ -190,6 +190,43 @@ it says otherwise.
 mechanism only.** Reading was right about the existence of a defect in 13 of 17 cases it
 called, which is a precision of 76 percent.
 
+### X-2's six EXPLOITABLE findings, decided rather than excluded a fifth time
+
+W-6, W-7, W-8 and W-9 each excluded these by name as "a supervised migration session". That
+is four consecutive prompts and it stopped being deferral somewhere around the second, so
+W-10 phase 4 decides instead.
+
+**The reclassification: what needs supervision is not a finding, it is a question, and only
+two of the six contain one.**
+
+Supervision was assigned to all six as a class because they arrived together in one report.
+Read one at a time, four contain no question at all. They are null-logic in validators, the
+A25 class, and the correct behaviour is not a matter of winery practice: a guard that a
+missing key walks around should refuse, and nobody needs asking whether that is right.
+
+| | What it is | Needs the winemaker |
+|---|---|---|
+| X-2-1 | `validate_vessel_type_fields` accepts a field whose `kind` is absent, because `null not in (...)` is null, so the registry lookup never runs | **No.** A missing kind should refuse |
+| X-2-2 | `terms_for_vessel_field` casts `term_kind` to text, which always succeeds, so a field naming a vocabulary that does not exist offers an empty list rather than raising | **No.** The proof by cast was the mechanism and rewriting it to text removed it |
+| X-2-3 | `validate_vessel_attributes` validates nothing for a field with no `kind`, so any value enters `vessel.attributes` | **No.** Same shape as X-2-1, same answer |
+| X-2-6 | A field spec the write-time validator accepts can make its vessel type unsaveable, with an error naming neither the field nor the type | **No.** Refusing it at write time is what the write-time validator is for |
+| X-2-4 | An admin rebind leaves `added_at` and `label` from the previous binding, so the row answers a question it was not asked, with the wrong answer | **Half.** Removing the falsehood needs no judgment: a rebind stamps its own time and takes its own label. Whether the row should also carry who did it, or whether a rebind should be an event, is a decision about what the record is for |
+| X-2-5 | `bind_vessel_code`'s idempotent branch returns success for a deactivated code and does not reactivate it | **Half.** That it must not report success is not a question. Whether re-binding should reactivate the code, or refuse and tell you to ask an admin, is winery practice |
+
+So the two questions, stated so they can be answered in thirty seconds at the press:
+
+**Should re-scanning and re-binding a sticker that somebody deactivated bring it back, or should
+it refuse and say who to ask?** Reactivating is fewer taps in the barn. Refusing means a
+deactivation is a decision that stays made.
+
+**When an admin moves a sticker from one barrel to another, should that be an event on the
+vessel?** It is the only vessel change that currently leaves no history at all, and the
+alternative is that the row simply stops lying about when it was bound.
+
+*Named trigger:* the next session that touches `bind_vessel_code` for any reason, or the first
+time a sticker is actually moved in the cellar, whichever comes first. Not a date. The point of
+writing the trigger down is that the fifth exclusion would have to be somebody choosing it.
+
 ## C. Documents and ledgers
 
 Cheap, and every remaining report would have found them again.
