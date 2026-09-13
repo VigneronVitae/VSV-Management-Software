@@ -155,6 +155,12 @@ admission.
 | B17 | session expiry offline | Indistinguishable from sign-out, and the next write goes out as the anon key | 1 | MAJOR |
 | B18 | `--ink-faint` | Below 4.5:1 in both themes, and it carries the codes and volumes | 2 | MINOR |
 | B19 | `addTerm` sort_order | Inline terms sort above every seeded term; the client owns picker ordering and never sets it | 1 | MINOR |
+| B20 | `walk.ts:2016-2064`, the confirmation screen | Seven `vessel?.` expressions with sensible fallbacks. When the read after a successful write fails, the screen renders a complete success page reading "Saved / Vessel unknown / Lot unknown / Wine unspecified / Volume unrecorded", over rows that are really in the database. Reproduced by failing one GET. B7 predicted the opposite direction | 1 (r) | BLOCKER |
+| B21 | `vessel_state` for a viewer who may not read the lot | The view redacts `lot_name`, `lot_owner_id` and `lot_owner_name` and does not redact `node_id` or `current_volume_l`, which come from `placement` and are open per A5. A custom crush client reads the facility's lot ids and volumes through a view built to hide them | 1 (r) | EXPLOITABLE |
+| B22 | the home screen vessel count | Counts vessels whose `current_volume_l` is non-null, so a client login is told "2 of 3 have wine in them" while able to name one. The count and the list disagree for the same user in the same session | 1 (r) | MAJOR |
+| B23 | `update_vessel` patch construction | The client sends every key on save, and `update_vessel` treats a present key as "set this", so every save writes every column. A cellar user changing a capacity is refused with "may not change vessel.attributes", naming a field they did not touch | 1 (r) | MAJOR |
+| B24 | `README.md` "Running locally" | Three steps. The CLI it names is not installed and three definition-of-done commands need it; step three is `bun run db:reset`, which destroys every row with no warning and, because `project_id` is fixed, resets a second clone's database as well; and nothing tells you to write `.env.local` or run `bun run dev`, so the documented path never starts the client. Fixed in W-8 | 1 (r) | MAJOR |
+| B25 | the client-login exposure window | A custom crush client's account is staff until an administrator attaches it to their party, and a login cannot be attached before it exists, so the window is structural. The Clients screen says so in as many words, which is the honest version and not a fix | 1 (r) | MAJOR |
 
 ---
 

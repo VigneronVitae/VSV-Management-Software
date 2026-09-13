@@ -1,7 +1,7 @@
 ---
 Type: record
 Purpose: "Indexes the session reports, and states the convention they follow, so a report added later is findable rather than orphaned."
-Depends on: [docs/session-reports/2026-09-08-scaffold.md, docs/session-reports/2026-09-08-walk.md, docs/session-reports/2026-09-10-wire.md, docs/session-reports/2026-09-11-verification-surface.md, docs/methodology-lineage.md, docs/session-reports/modularization-progress.md, docs/session-reports/2026-09-12-modularization-1.md, docs/session-reports/2026-09-12-assertion-suite.md, docs/session-reports/2026-09-12-harness-and-enums.md, docs/session-reports/2026-09-12-repair-the-instrument.md, docs/session-reports/2026-09-12-refusal-surface.md, docs/first-run.md]
+Depends on: [docs/session-reports/2026-09-08-scaffold.md, docs/session-reports/2026-09-08-walk.md, docs/session-reports/2026-09-10-wire.md, docs/session-reports/2026-09-11-verification-surface.md, docs/methodology-lineage.md, docs/session-reports/modularization-progress.md, docs/session-reports/2026-09-12-modularization-1.md, docs/session-reports/2026-09-12-assertion-suite.md, docs/session-reports/2026-09-12-harness-and-enums.md, docs/session-reports/2026-09-12-repair-the-instrument.md, docs/session-reports/2026-09-12-refusal-surface.md, docs/first-run.md, docs/session-reports/2026-09-13-first-run.md]
 Depended on by: [README.md]
 ---
 
@@ -38,3 +38,4 @@ correction in a later report, not an edit.
 | 2026-09-12 | [The instrument, the class, and both enums](2026-09-12-harness-and-enums.md) | W-4: the harness taught to report what it excluded, the null-permit shape filed as class A25 with no fourth instance found, and `subject_type` and `term_kind` turned into registry rows |
 | 2026-09-12 | [Repair the instrument](2026-09-12-repair-the-instrument.md) | W-6, after the second review round: eleven fail-open paths closed, the mutation score split into a behavioural gate of 117 of 214 and a snapshot change detector of 86, and the procedural surface measured at five of sixteen by somebody who did not write the list |
 | 2026-09-12 | [The refusal surface](2026-09-12-refusal-surface.md) | W-7: the kernel's 176 refusal sites enumerated rather than sampled, 91 of them closed with assertions and 11 filed as equivalent mutants, the behavioural score from 166 of 343 to 268 of 364, and the two gates adopted and enforced by a script |
+| 2026-09-13 | [The first run](2026-09-13-first-run.md) | W-8: the client run against a live instance for the first time, the three shapes a refusal takes in front of a person, a client login reading the facility's movements through a view built to hide them, and a confirmation screen that renders a fabricated success over a write that really happened |
