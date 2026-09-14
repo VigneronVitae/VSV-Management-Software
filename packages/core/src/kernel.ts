@@ -2,6 +2,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { readConfig } from "./env.ts";
 import type {
   AppUser,
+  Attachment,
   BinToReturn,
   Block,
   CodePayload,
@@ -13,6 +14,7 @@ import type {
   NodePayload,
   PaperRecord,
   Party,
+  PastWeighing,
   Pick,
   PlantingDetail,
   PressResult,
@@ -31,6 +33,7 @@ import type {
   Vineyard,
   WalkResult,
   Weighing,
+  WeighingWithoutPhoto,
 } from "./types.ts";
 
 // Everything here is a thin pass through to the database. No rule is computed
@@ -684,6 +687,120 @@ export async function vesselPhotoUrl(path: string): Promise<string | null> {
   return data?.signedUrl ?? null;
 }
 
+// Every photograph in this system lives in the same bucket, which is named
+// `vessel-photos` because in 0005 vessels were the only thing anybody
+// photographed. The name is now wrong and renaming it would orphan every path
+// already stored, so it stays and this is the general way to read one.
+export const photoUrl = vesselPhotoUrl;
+
+// Uploads a photograph without attaching it to anything. Two steps rather than
+// one, because the file goes to storage and the record goes to the database,
+// and a phone in a barn loses signal between them often enough that the error
+// has to be able to say which half failed.
+//
+// The path carries the subject and a timestamp so that two photographs of the
+// same thing do not overwrite one another. That is the whole of what was wrong
+// with `uploadVesselPhoto`, which writes `<id>/photo.<ext>` and so has only ever
+// been able to hold one.
+export async function uploadPhoto(
+  subjectType: string,
+  subjectId: Uuid,
+  file: File,
+): Promise<string> {
+  const suffix = file.name.split(".").pop()?.toLowerCase() ?? "jpg";
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const path = `${subjectType}/${subjectId}/${stamp}.${suffix}`;
+  const { error } = await kernel()
+    .storage.from(PHOTO_BUCKET)
+    .upload(path, file, { upsert: false, contentType: file.type || "image/jpeg" });
+  if (error) throw new KernelError(error);
+  return path;
+}
+
+// `takenAt` is when the photograph was taken, which during harvest is hours
+// before it is attached. Passing it is how the morning survives.
+export async function attachPhoto(args: {
+  subjectType: string;
+  subjectId: Uuid;
+  path: string;
+  caption?: string | null;
+  aboutEvent?: Uuid | null;
+  takenAt?: string | null;
+}): Promise<{ id: Uuid; already: boolean }> {
+  const { data, error } = await kernel().rpc("attach_photo", {
+    p_subject_type: args.subjectType,
+    p_subject_id: args.subjectId,
+    p_path: args.path,
+    p_caption: args.caption ?? null,
+    p_about_event: args.aboutEvent ?? null,
+    p_taken_at: args.takenAt ?? null,
+  });
+  if (error) throw new KernelError(error);
+  return data as { id: Uuid; already: boolean };
+}
+
+// Upload and attach as one call, for the ordinary case where both happen at
+// once. The two halves stay separately callable because a retry after a lost
+// connection needs to redo one of them and not the other.
+export async function addPhoto(args: {
+  subjectType: string;
+  subjectId: Uuid;
+  file: File;
+  caption?: string | null;
+  aboutEvent?: Uuid | null;
+  takenAt?: string | null;
+}): Promise<{ id: Uuid; already: boolean; path: string }> {
+  const path = await uploadPhoto(args.subjectType, args.subjectId, args.file);
+  const out = await attachPhoto({ ...args, path });
+  return { ...out, path };
+}
+
+export async function attachmentsFor(
+  subjectType: string,
+  subjectId: Uuid,
+): Promise<Attachment[]> {
+  const { data, error } = await kernel()
+    .from("attachment")
+    .select("id,subject_type,subject_id,about_event,path,caption,by_user,at,created_at")
+    .eq("subject_type", subjectType)
+    .eq("subject_id", subjectId)
+    .order("at", { ascending: false });
+  if (error) throw new KernelError(error);
+  return (data ?? []) as Attachment[];
+}
+
+// A caption can be corrected by whoever wrote it. Nothing else about a
+// photograph can move; the kernel refuses that rather than this.
+export async function captionPhoto(id: Uuid, caption: string): Promise<void> {
+  const { error } = await kernel()
+    .from("attachment")
+    .update({ caption: caption.trim() === "" ? null : caption.trim() })
+    .eq("id", id);
+  if (error) throw new KernelError(error);
+}
+
+export async function weighingsWithoutPhoto(): Promise<WeighingWithoutPhoto[]> {
+  const { data, error } = await kernel()
+    .from("weighing_without_photo")
+    .select("event_id,node_id,pick_name,at,net_lbs")
+    .order("at", { ascending: false });
+  if (error) throw new KernelError(error);
+  return (data ?? []) as WeighingWithoutPhoto[];
+}
+
+// Which reading is live is the kernel's answer, computed by the `pick_weighing`
+// view, because a screen working it out from a list of events would be a client
+// encoding a kernel rule and the next client would encode it differently.
+export async function pickWeighings(nodeId: Uuid): Promise<PastWeighing[]> {
+  const { data, error } = await kernel()
+    .from("pick_weighing")
+    .select("event_id,at,gross_lbs,tare_lbs,net_lbs,bins,note,superseded,photos")
+    .eq("node_id", nodeId)
+    .order("at");
+  if (error) throw new KernelError(error);
+  return (data ?? []) as PastWeighing[];
+}
+
 // --- intake ----------------------------------------------------------------
 
 // Build order 2, and the one where a missed record cannot be reconstructed. See
@@ -794,6 +911,19 @@ export async function openPicks(): Promise<Pick[]> {
   return (data ?? []) as Pick[];
 }
 
+// Any pick, open or closed. `openPicks` is the work list and correctly hides a
+// pick that has been pressed; a photograph of that pick's scale is still worth
+// attaching the week after, which is why this does not filter on status.
+export async function pickById(id: Uuid): Promise<Pick | null> {
+  const { data, error } = await kernel()
+    .from("node")
+    .select("id,name,stage,status,vintage,block_id,variety_id,quantity,unit,created_at")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw new KernelError(error);
+  return (data ?? null) as Pick | null;
+}
+
 // One tap in a vineyard. Safe to repeat: the pick id is generated here, so a
 // phone that is unsure whether the call landed can send it again and find the
 // bin already recorded rather than creating a second pick.
@@ -827,6 +957,10 @@ export async function weighBins(args: {
   grossLbs: number;
   note?: string | null;
   supersedes?: Uuid | null;
+  // Wanted, not required. `0042` put this in the kernel and nothing passed it
+  // for two days, which is how a photograph nobody could upload became three
+  // photographs sitting on a phone.
+  photoPath?: string | null;
 }): Promise<Weighing> {
   const { data, error } = await kernel().rpc("weigh_bins", {
     p_node_id: args.nodeId,
@@ -834,6 +968,7 @@ export async function weighBins(args: {
     p_gross_lbs: args.grossLbs,
     p_note: args.note ?? null,
     p_supersedes: args.supersedes ?? null,
+    p_photo_path: args.photoPath ?? null,
   });
   if (error) throw new KernelError(error);
   return data as Weighing;

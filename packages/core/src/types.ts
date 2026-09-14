@@ -275,7 +275,55 @@ export type Weighing = {
   tare_lbs: number;
   net_lbs: number;
   total_lbs: number;
+  // Whether anybody photographed the scale. Said back rather than assumed,
+  // because wanting a photograph and requiring one differ in what happens next,
+  // not in whether anybody mentions it. See 0042.
+  photographed: boolean;
   unweighed: number;
+};
+
+// --- photographs -----------------------------------------------------------
+
+// A photograph of anything the subject resolver knows about. See migration
+// 0047: `about_event` is set when the photograph is evidence for one particular
+// thing that happened, such as the reading on a scale, and null when it is
+// simply a picture of the subject.
+export type Attachment = {
+  id: Uuid;
+  subject_type: string;
+  subject_id: Uuid;
+  about_event: Uuid | null;
+  path: string;
+  caption: string | null;
+  by_user: Uuid | null;
+  at: string;
+  created_at: string;
+};
+
+// A live weighing carrying no photograph. Weaker evidence rather than
+// unfinished work, which is why nothing counts this anywhere that nags.
+export type WeighingWithoutPhoto = {
+  event_id: Uuid;
+  node_id: Uuid;
+  pick_name: string;
+  at: string;
+  net_lbs: number | null;
+};
+
+// One weighing of a pick, as it is read back rather than as it was returned.
+// `weigh_bins` answers the caller who made it; this is how the same reading
+// looks to somebody arriving that evening with three photographs and no memory
+// of which was which.
+export type PastWeighing = {
+  event_id: Uuid;
+  at: string;
+  gross_lbs: number | null;
+  tare_lbs: number | null;
+  net_lbs: number | null;
+  bins: string[];
+  note: string | null;
+  superseded: boolean;
+  photos: number;
 };
 
 // --- press -----------------------------------------------------------------

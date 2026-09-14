@@ -34,7 +34,7 @@
 --              supabase/migrations/0029_viewer_scope.sql,
 --              supabase/migrations/0030_writable_columns.sql,
 --              supabase/migrations/0031_scheduling_to_core.sql,
---              supabase/migrations/0032_vessel_maker_and_room_temperature.sql, supabase/migrations/0033_intake.sql, supabase/migrations/0034_press.sql, supabase/migrations/0035_bins_in_bulk.sql, supabase/migrations/0036_bins_on_loan.sql, supabase/migrations/0037_export.sql, supabase/migrations/0038_cancel_a_pick.sql, supabase/migrations/0039_vineyard.sql, supabase/migrations/0040_block_variety_is_history.sql, supabase/migrations/0041_daily_log.sql, supabase/migrations/0042_weighing_photo.sql, supabase/migrations/0043_record_propagation.sql, supabase/migrations/0044_finishing_a_pick.sql, supabase/migrations/0045_press_detail.sql, supabase/migrations/0046_supply_inventory.sql]
+--              supabase/migrations/0032_vessel_maker_and_room_temperature.sql, supabase/migrations/0033_intake.sql, supabase/migrations/0034_press.sql, supabase/migrations/0035_bins_in_bulk.sql, supabase/migrations/0036_bins_on_loan.sql, supabase/migrations/0037_export.sql, supabase/migrations/0038_cancel_a_pick.sql, supabase/migrations/0039_vineyard.sql, supabase/migrations/0040_block_variety_is_history.sql, supabase/migrations/0041_daily_log.sql, supabase/migrations/0042_weighing_photo.sql, supabase/migrations/0043_record_propagation.sql, supabase/migrations/0044_finishing_a_pick.sql, supabase/migrations/0045_press_detail.sql, supabase/migrations/0046_supply_inventory.sql, supabase/migrations/0047_attachments.sql, supabase/migrations/0048_pick_weighing.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -2446,7 +2446,10 @@ begin
   -- 74 before 0046, which added nine across supply, its sorts, supply_movement
   -- and shopping_item. None reads blanket true: the stores are the facility's
   -- business and a client has no reason to know what is on its shelves.
-  want := '83';
+  -- 83 before 0047, which added four on attachment: read, insert, a caption-only
+  -- update and an admin delete. None reads blanket true, and the read is in fact
+  -- narrower than it should be, which is filed as S-65.
+  want := '87';
   if have <> want then
     raise exception
       'FAIL: there are % policies in public and this suite was written against %. If that is deliberate, update this number, and judge the new policy in the disposition list below if it reads or writes blanket true', have, want;
@@ -2710,7 +2713,13 @@ begin
   -- The sorts of a supply are a join table of their own, which is what lets a
   -- hose head be two things at once: its composite primary key and the
   -- composite foreign key pinning a sort to the material vocabulary.
-  want := 'c=30 f=59 p=33 u=19';
+  -- c=30 f=59 p=33 u=19 before 0047, which added one table. `attachment`
+  -- brings its primary key, the check that a path is not blank, the unique
+  -- that makes a double tap one photograph rather than two, and three
+  -- foreign keys: the subject type into the resolver, whoever attached it,
+  -- and the event it is evidence of. That last one is a real foreign key
+  -- where `subject_id` cannot be, which is the whole reason it exists.
+  want := 'c=31 f=62 p=34 u=20';
   if have <> want then
     raise exception
       E'FAIL: the constraint inventory changed.\nnow:  %\nwas:  %\nIf that is deliberate, update this line in the same commit that changed the schema.', have, want;
@@ -2894,7 +2903,13 @@ begin
   -- no-actions are who recorded each of the three, which outlive their accounts.
   -- The extra cascade is a supply's sorts to the supply: what something is, is
   -- meaningless without the something.
-  want := 'a=35 c=14 n=2 r=8';
+  -- a=35 c=14 n=2 r=8 before 0047. The two new restricts are an attachment's
+  -- subject type into the resolver and the event it is evidence of: a
+  -- photograph that has lost what it was a photograph of is worse than a
+  -- refusal, because it is still in the record and no longer says anything.
+  -- The new no-action is whoever attached it, which outlives their account
+  -- for the same reason a note does.
+  want := 'a=36 c=14 n=2 r=10';
   if have <> want then
     raise exception
       E'FAIL: foreign key delete behaviour changed.\nnow:  %\nwas:  %\na is no action, c is cascade, n is set null, r is restrict.', have, want;
@@ -2916,7 +2931,15 @@ begin
     join pg_namespace n on n.oid = t.relnamespace
    where n.nspname = 'public' and c.contype = 'f' and c.confdeltype = 'r';
 
-  want := 'event.event_subject_type_is_registered, '
+  -- 0047 added the two on `attachment`. The subject type is a registry pin like
+  -- the other four. The event one is the interesting one: it is the only place
+  -- in this schema where a restrict guards evidence rather than structure, and
+  -- it says that a photograph may not be left pointing at a reading that no
+  -- longer exists. Events are never deleted, so it should never fire; the point
+  -- is what happens if somebody writes the code that would.
+  want := 'attachment.attachment_about_event_fkey, '
+       || 'attachment.attachment_subject_type_fkey, '
+       || 'event.event_subject_type_is_registered, '
        || 'lineage.lineage_child_id_fkey, lineage.lineage_parent_id_fkey, '
        || 'placement.placement_node_id_fkey, placement.placement_vessel_id_fkey, '
        || 'procedure.procedure_subject_type_is_registered, '
@@ -2925,7 +2948,7 @@ begin
   if have <> want then
     raise exception E'FAIL: the restrict keys changed.\nnow:  %\nwas:  %', have, want;
   end if;
-  perform test_ok('the eight ON DELETE RESTRICT keys are the lineage and placement ones ledger A20 names, plus the four registry ones');
+  perform test_ok('the ten ON DELETE RESTRICT keys are the lineage and placement ones ledger A20 names, the five registry ones, and the one holding a photograph to the reading it is evidence of');
 end $$;
 
 -- ---------------------------------------------------------------------------
@@ -3708,6 +3731,26 @@ declare
     -- exists to refuse, which is why the reason is written down rather than the
     -- conclusion. Asserted in the intake block below.
     'refuse_forking_a_pick',
+    -- 0047's two, and they are opposite cases worth keeping apart.
+    --
+    -- `attachment_event_matches_subject` opens with `if new.about_event is null
+    -- then return new`, which is literally A25's shape: a null permits. Here the
+    -- null is the meaning rather than a gap. A photograph of the fruit on the
+    -- sorting table is about the pick and about no particular reading, and there
+    -- is nothing for the check to compare. Everything it does compare is `not
+    -- null` on both sides by column definition, so `<>` cannot go null and
+    -- quietly permit. Exercised both ways in the attachment block below: a
+    -- photograph naming no event is kept and does not clear a weighing, and one
+    -- naming an event about another subject is refused.
+    'attachment_event_matches_subject',
+    -- `attachment_is_not_rewritten` is the case where the null was designed
+    -- against. `about_event` and `by_user` are the two nullable columns it
+    -- guards, and both are compared with `is distinct from` rather than `<>`
+    -- exactly so that attaching an event to a photograph that had none, or
+    -- clearing one, is a refusal rather than a comparison that evaluates to null
+    -- and falls through. The rest are `not null` columns. Exercised below by the
+    -- refused refile and by the caption that is allowed through.
+    'attachment_is_not_rewritten',
     -- NOT covered, and filed as ledger A26. The `required` guard reads
     -- `coalesce((f ->> 'required')::boolean, false)`, which is the defensive
     -- form, but the `kind` guard above it is `(f ->> 'kind') not in (...)`,
@@ -6210,6 +6253,10 @@ begin
   end if;
   perform test_ok('weighing has exactly one signature, so adding the photograph did not fork it');
 
+  -- 0047 gave the photograph a real foreign key onto the event it is evidence
+  -- of, and refuses a delete that would leave it pointing at nothing. Nothing in
+  -- the cellar ever deletes an event; this fixture does, so it tidies in order.
+  delete from attachment where subject_type = 'node' and subject_id = pick_id;
   delete from event where subject_type = 'node' and subject_id = pick_id;
   delete from placement where node_id = pick_id;
   delete from node where id = pick_id;
@@ -6954,6 +7001,231 @@ begin
 
   perform test_act_as('00000000-0000-0000-0000-00000000a001');
   delete from supply where id = dap;
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- a photograph of anything, attached whenever somebody gets to it'; end $$;
+
+-- 0047. The winemaker weighed three loads, photographed the scale three times,
+-- and had nowhere to put the photographs. Attaching one later has to count for
+-- exactly as much as attaching one at the scale, or the list of unphotographed
+-- weighings never empties and stops being read.
+do $$
+declare
+  pick_id uuid := '00000000-0000-0000-0000-00000000ca01';
+  ev_at   uuid;
+  ev_late uuid;
+  out_js  jsonb;
+  n       int;
+  who     uuid;
+begin
+  update term set attributes = attributes || '{"tare_lbs": 50}'::jsonb
+   where kind = 'vessel_type' and value = 'picking_bin';
+
+  perform add_bins_to_pick(
+    jsonb_build_object('id', pick_id, 'variety_id', term_id('variety', 'riesling'),
+                       'vintage', 2026),
+    null, 2, term_id('vessel_type', 'picking_bin'), 'ASRTATTACH', 100);
+
+  -- One weighing photographed at the scale, one not. The first is the path that
+  -- already worked; the second is the one he actually had.
+  out_js := weigh_bins(pick_id,
+    array(select vessel_id from unweighed_bin where node_id = pick_id limit 1),
+    400, null, null, 'weighing/at-the-scale.jpg');
+  ev_at := (out_js ->> 'event_id')::uuid;
+
+  out_js := weigh_bins(pick_id,
+    array(select vessel_id from unweighed_bin where node_id = pick_id),
+    300);
+  ev_late := (out_js ->> 'event_id')::uuid;
+
+  -- A path handed to `weigh_bins` has to become an attachment, or the answer to
+  -- "is there a photograph of this" lives in two places and they disagree.
+  select count(*) into n from attachment where about_event = ev_at;
+  if n <> 1 then
+    raise exception 'FAIL: a weighing photographed at the scale produced % attachments', n;
+  end if;
+  perform test_ok('a photograph taken at the scale is filed the same way as one attached afterwards, so one question has one answer');
+
+  select count(*) into n from weighing_without_photo where event_id = ev_late;
+  if n <> 1 then
+    raise exception 'FAIL: the unphotographed weighing is not listed as one';
+  end if;
+
+  -- The whole point. Before this, a photograph attached in the evening left the
+  -- weighing on the list of weighings nobody photographed.
+  perform attach_photo('node', pick_id, 'weighing/from-my-camera-roll.jpg',
+                       'the second load', ev_late, now() - interval '9 hours');
+  select count(*) into n from weighing_without_photo where event_id = ev_late;
+  if n <> 0 then
+    raise exception 'FAIL: a weighing photographed after the fact is still listed as unphotographed';
+  end if;
+  perform test_ok('a photograph attached hours later clears the weighing it names, because later is when photographs actually get attached');
+
+  -- Taken this morning, attached tonight. Throwing the stated time away would
+  -- lose the only fact the file itself carried.
+  select count(*) into n from attachment
+   where path = 'weighing/from-my-camera-roll.jpg' and at < created_at;
+  if n <> 1 then
+    raise exception 'FAIL: a photograph taken this morning and attached tonight records one time, not two';
+  end if;
+  perform test_ok('when a photograph was taken and when it arrived are kept apart, because during harvest they are hours apart');
+
+  -- A picture of the fruit is about the pick and about no reading. Letting it
+  -- clear one would be a claim nobody made.
+  perform attach_photo('node', pick_id, 'fruit/sorting-table.jpg');
+  select count(*) into n from weighing_without_photo where node_id = pick_id;
+  if n <> 0 then
+    raise exception 'FAIL: % weighing(s) unaccounted for, and both were photographed', n;
+  end if;
+  perform attach_photo('node', pick_id, 'fruit/second-load.jpg');
+  perform test_ok('a photograph of the pick that names no reading is kept without pretending to be evidence of one');
+
+  -- The person holding the phone, not whoever is named. T0-3.
+  select by_user into who from attachment where path = 'fruit/sorting-table.jpg';
+  if who <> '00000000-0000-0000-0000-00000000a001' then
+    raise exception 'FAIL: a photograph was filed under % rather than whoever attached it', who;
+  end if;
+  perform test_ok('a photograph carries whoever attached it, taken from the login rather than from an argument');
+
+  -- A double tap with gloves on is not a second photograph, and must not read
+  -- like a failure either. A13.
+  out_js := attach_photo('node', pick_id, 'fruit/sorting-table.jpg');
+  if (out_js ->> 'already')::boolean is not true then
+    raise exception 'FAIL: attaching the same photograph twice did not say it was already there';
+  end if;
+  select count(*) into n from attachment
+   where subject_type = 'node' and subject_id = pick_id and path = 'fruit/sorting-table.jpg';
+  if n <> 1 then
+    raise exception 'FAIL: the same photograph is attached % times', n;
+  end if;
+  perform test_ok('attaching the same photograph twice says so and changes nothing, rather than failing or duplicating');
+
+  -- The morning's other request: a vessel holds more than one photograph, where
+  -- before it held one path that the next one overwrote.
+  perform attach_photo('vessel', '00000000-0000-0000-0000-0000000000c2', 'vessel/gauge.jpg');
+  perform attach_photo('vessel', '00000000-0000-0000-0000-0000000000c2', 'vessel/valve.jpg');
+  select count(*) into n from attachment
+   where subject_type = 'vessel' and subject_id = '00000000-0000-0000-0000-0000000000c2';
+  if n <> 2 then
+    raise exception 'FAIL: a vessel holds % photographs and two were attached', n;
+  end if;
+  perform test_ok('a vessel holds as many photographs as somebody takes of it, where it used to hold the last one only');
+
+  -- The refusals.
+  begin
+    perform attach_photo('barrel_rack', pick_id, 'anything.jpg');
+    raise exception 'FAIL: a photograph was attached to a kind of thing that does not exist';
+  exception when others then
+    if position('nothing in this system is a' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a photograph of a kind of thing nothing in this system knows about is refused, rather than filed where nothing will find it');
+  end;
+
+  -- Evidence has to be evidence of the thing it is filed under. Otherwise a
+  -- photograph can claim one pick's weighing while sitting in another's record,
+  -- and both screens show it correctly.
+  begin
+    insert into attachment (subject_type, subject_id, path, about_event, by_user)
+    values ('vessel', '00000000-0000-0000-0000-0000000000c2', 'mismatch.jpg', ev_at,
+            '00000000-0000-0000-0000-00000000a001');
+    raise exception 'FAIL: a photograph of a vessel claims to be evidence of a weighing of a pick';
+  exception when others then
+    if position('so one of the two is wrong' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a photograph that names an event must be filed under what that event was about');
+  end;
+
+  -- Append-only in the sense that matters: the label can be fixed, the evidence
+  -- cannot be moved. T0-5.
+  update attachment set caption = 'the sorting table, second load'
+   where path = 'fruit/sorting-table.jpg';
+  perform test_ok('a caption can be corrected by whoever wrote it, because a label is not evidence');
+
+  begin
+    update attachment set subject_id = '00000000-0000-0000-0000-00000000ca02'
+     where path = 'fruit/sorting-table.jpg';
+    raise exception 'FAIL: a photograph was refiled under a different subject';
+  exception when others then
+    if position('captioned but not moved' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a photograph cannot be moved to another subject or another event, because that is rewriting evidence rather than labelling it');
+  end;
+
+  -- 0048. The list somebody reads that evening, holding three photographs and
+  -- no memory of which was which. `weigh_bins` answers the person who made the
+  -- reading; this answers the person who comes back.
+  select count(*) into n from pick_weighing where node_id = pick_id;
+  if n <> 2 then
+    raise exception 'FAIL: two weighings were made and the list shows %', n;
+  end if;
+  select count(*) into n from pick_weighing
+   where node_id = pick_id and event_id = ev_at
+     and gross_lbs = 400 and net_lbs = 350 and array_length(bins, 1) = 1;
+  if n <> 1 then
+    raise exception 'FAIL: a weighing reads back without the figures and bins that made it';
+  end if;
+  perform test_ok('a weighing reads back with the bins that were on the scale, because 747 identifies nothing and 747 on PB1 and PB2 identifies a photograph');
+
+  select photos into n from pick_weighing where event_id = ev_late;
+  if n <> 1 then
+    raise exception 'FAIL: the reading photographed after the fact says it has % photographs', n;
+  end if;
+  perform test_ok('a reading says how many photographs name it, so the one already done is visible before another is taken');
+
+  -- Which reading is live is the kernel's answer. A screen working it out from
+  -- the events would be a client encoding a kernel rule, and the second client
+  -- would encode it differently.
+  perform weigh_bins(pick_id,
+    array(select vessel_id::uuid from jsonb_array_elements_text(
+            (select data -> 'bins' from event where id = ev_late)) as x(vessel_id)),
+    320, 'misread the display', ev_late);
+  select count(*) into n from pick_weighing where node_id = pick_id and superseded;
+  if n <> 1 then
+    raise exception 'FAIL: % of three readings are marked corrected, and exactly one was', n;
+  end if;
+  select count(*) into n from pick_weighing where node_id = pick_id;
+  if n <> 3 then
+    raise exception 'FAIL: a corrected reading was dropped from the list rather than marked';
+  end if;
+  perform test_ok('a corrected reading stays in the list and is marked rather than hidden, because it is part of the record of the day and its total is not');
+
+  -- The weighing kept its own path too, and nothing reads it to decide whether
+  -- a photograph exists. Both sources agreeing is the thing being checked.
+  select count(*) into n from event e
+   where e.id = ev_at and e.data ->> 'photo_path' = 'weighing/at-the-scale.jpg';
+  if n <> 1 then
+    raise exception 'FAIL: the weighing no longer carries the path it was given';
+  end if;
+  perform test_ok('the path the weighing was given stays in the weighing, because removing it would rewrite history for no gain');
+
+  -- Removing evidence is a decision, not a stray tap.
+  perform test_act_as('00000000-0000-0000-0000-00000000a002');
+  set local role authenticated;
+  delete from attachment where path = 'fruit/second-load.jpg';
+  reset role;
+  select count(*) into n from attachment where path = 'fruit/second-load.jpg';
+  if n <> 1 then
+    raise exception 'FAIL: a cellar user deleted a photograph';
+  end if;
+  perform test_ok('a cellar user cannot delete a photograph, because a photograph is evidence and deleting one should be somebody deciding to');
+
+  -- The cellar's photographs are the cellar's business. S-65 says this is too
+  -- narrow and that a client should see photographs of their own fruit; what it
+  -- must never be is too wide.
+  perform test_act_as('00000000-0000-0000-0000-00000000a003');
+  set local role authenticated;
+  select count(*) into n from attachment;
+  reset role;
+  if n <> 0 then
+    raise exception 'FAIL: a client can read % of this winery''s photographs', n;
+  end if;
+  perform test_ok('a client reads no photographs at all, which is too little and is filed as S-65, and is not too many');
+
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+  delete from attachment where subject_type = 'node' and subject_id = pick_id;
+  delete from attachment where subject_type = 'vessel'
+     and subject_id = '00000000-0000-0000-0000-0000000000c2';
+  delete from event where subject_type = 'node' and subject_id = pick_id;
+  delete from placement where node_id = pick_id;
+  delete from node where id = pick_id;
 end $$;
 
 -- ---------------------------------------------------------------------------

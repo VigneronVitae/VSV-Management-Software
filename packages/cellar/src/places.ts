@@ -45,6 +45,12 @@ export type Place =
   | { at: "pick-new" }
   | { at: "pick-bins"; id?: string }
   | { at: "scale" }
+  // Photographs of a pick and of a vessel. Two places rather than one generic
+  // one, because a place carries a single identifier and a subject type plus an
+  // id is two. Two lines of union is cheaper than a second segment in every
+  // link, and these are the only two subjects anybody photographs today.
+  | { at: "pick-photos"; id: string }
+  | { at: "vessel-photos"; id: string }
   | { at: "press" }
   | { at: "bins-to-return" }
   | { at: "export" }
@@ -98,6 +104,8 @@ const WITH_ID = new Set([
   "vessel-edit",
   "vessel-fill",
   "pick-bins",
+  "pick-photos",
+  "vessel-photos",
   "block",
 ]);
 

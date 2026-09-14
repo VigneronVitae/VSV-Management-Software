@@ -742,6 +742,28 @@ h1 {
   outline-offset: 2px;
 }
 
+/* A photograph and what somebody wrote about it, as one object. The caption
+   sits under its own picture rather than in a list beside them, because six
+   months later the point of a caption is that it is attached to the thing it
+   describes. */
+.photo-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+}
+
+.photo-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--rule);
+}
+.photo-card:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
 /* --- a draft that came back -------------------------------------------- */
 
 /* Restored typing must not look like saved data. That is the A13 shape: two

@@ -2,7 +2,7 @@
 Type: record
 Purpose: "Records every open deferred-verification obligation for the winery app, one entry per gap, as the honest unit of progress."
 Depends on: [packages/cellar/docs/spec.md, docs/methodology-lineage.md]
-Depended on by: [docs/status-ledger.md, docs/findings-ledger.md, CLAUDE.md, README.md, scripts/verify.sh, scripts/db-restore.sh, docs/record-requirements.md]
+Depended on by: [docs/status-ledger.md, docs/findings-ledger.md, CLAUDE.md, README.md, scripts/verify.sh, scripts/db-restore.sh, docs/record-requirements.md, docs/review/2026-09-14-export-red-team.md]
 ---
 
 # Sorry Ledger
@@ -770,6 +770,53 @@ it drew from, which writes the movement as a consequence rather than as a second
 the winemaker's item 4 and this is the argument for it. *Load-bearing:* yes, immediately, in the
 sense that the inventory's accuracy is bounded by discipline rather than by the schema.
 
+**S-65. A photograph is facility-only, including a photograph of a client's own fruit.**
+`0047` reads attachments with `is_facility_user()`, so a custom crush client can see their lot,
+its weight and its lineage, and cannot see the picture of the scale that weight was read from.
+That is the wrong way round: the photograph is the part of the record that is worth anything to
+somebody who was not standing there. It is not an exposure, it is a withholding, which is why it
+ships this way rather than the other: a read policy that is too narrow annoys somebody, and one
+that is too wide shows one client another client's fruit. *Resolves when:* an attachment's
+audience is derived from its subject the way `node_read` already derives a lot's, so a photograph
+of a node is visible to exactly whoever may see that node. The work is one policy and a test that
+two clients cannot see each other's photographs. *Load-bearing:* no. Nothing is lost and nobody
+is shown anything they should not be; the client portal is simply thinner than it should be.
+
+
+**S-66. What is in one bin is not always a number anybody measured.**
+`placement` carries `volume_l` and `fill_pct` and no general quantity, so asking "how many pounds
+are in PB2" cannot be answered from the placement. Raised from outside, reading the export, as the
+one architectural change to make before harvest gets complicated. **The column is the wrong fix
+and the problem is real.** A scale reading is of whatever went on the scale: three bins weighed
+together produce one net weight and no per-bin figure, and writing `quantity` on each placement
+would mean inventing three numbers nobody measured and then having them add up, which is exactly
+the fabricated precision T0-2 exists to refuse. It looks derivable today only because the first
+pick happened to be weighed one bin at a time. *Resolves when:* a view answers the question at the
+resolution it was actually measured at, naming the reading rather than the bin, and says "these
+three bins weighed 2,332 lbs together" where that is what happened. *Load-bearing:* not yet. It
+bites the first time somebody puts two bins on the scale at once and then wants one of them.
+
+**S-67. A vessel with no owner is read as the winery's and nothing says so.**
+Six of eight vessels carry `owner_id` null, including the picking bins and three tanks. Null is
+being used to mean "ours", which leaves no way to say "we do not know whose this is", and the two
+are different facts in a barn holding two custom crush clients' barrels. Raised from outside,
+reading the export. *Resolves when:* either the facility party is written on the vessels that
+belong to it and null goes back to meaning unknown, or the schema says in a comment and a
+constraint that null means the facility. The first is better and is a data change rather than a
+migration, which is the winemaker's to make. *Load-bearing:* no, while every unowned vessel really
+is the winery's. It becomes load-bearing the first time a vessel arrives whose owner is genuinely
+unknown, because there is then nothing to write.
+
+**S-68. The export carries the paths of photographs and not the photographs.**
+`export_cellar` writes every row of every table, and a vessel's photograph is a path into a
+private storage bucket rather than an image. So an export restored into an empty system has the
+name of every photograph and none of them. This is a narrower thing than S-29, which is about the
+vocabulary ids a restore reissues; this one is about bytes that were never in the file. Raised
+from outside, reading the export, and correctly: if the button means "I can rebuild this winery
+after the server burns down", it does not mean that yet. *Resolves when:* the export is a zip of
+the json plus the bucket, or the button says plainly that photographs are not in it. The second is
+an hour and is honest; the first is right. *Load-bearing:* yes the day somebody relies on it, and
+the failure is silent until then, which is the worst shape.
 
 ## Discharged
 **S-52. A press recorded no cuts.** *Discharged by `0045`.*

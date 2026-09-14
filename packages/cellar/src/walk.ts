@@ -1,11 +1,13 @@
 import {
   type AppUser,
+  type Attachment,
   addBinsToPick,
   addBlock,
   addDayNote,
   addLocation,
   addPaperRecord,
   addParty,
+  addPhoto,
   addPlanting,
   addShoppingItem,
   addSupply,
@@ -13,11 +15,13 @@ import {
   addVesselTypeNote,
   addVineyard,
   appUsers,
+  attachmentsFor,
   type Block,
   bindCode,
   binsToReturn,
   blocks,
   cancelPick,
+  captionPhoto,
   claimAccount,
   countSupply,
   createVesselWithWine,
@@ -39,10 +43,14 @@ import {
   openPicks,
   type PaperRecord,
   type Party,
+  type PastWeighing,
   type PlantingDetail,
   paperRecordOperations,
   paperRecords,
   parties,
+  photoUrl,
+  pickById,
+  pickWeighings,
   plantings,
   press,
   rackPlan,
@@ -79,6 +87,7 @@ import {
   updateBlock,
   updatePlanting,
   updateVessel,
+  uploadPhoto,
   uploadVesselPhoto,
   type VesselRow,
   type VesselState,
@@ -92,6 +101,7 @@ import {
   viewerScope,
   vineyards,
   weighBins,
+  weighingsWithoutPhoto,
   writableColumns,
 } from "core";
 import {
@@ -305,6 +315,21 @@ async function screenFor(place: Place): Promise<HTMLElement> {
       const there = (await blocks()).some((b) => b.id === place.id);
       if (!there) throw new GoneError("That block is not there to open.");
       return blockScreen(place.id);
+    }
+    // Checked before opening, the same as every other place carrying an id: a
+    // link to the photographs of a pick somebody cancelled should say so rather
+    // than offering to attach a photograph to nothing.
+    case "pick-photos": {
+      // `pickById` rather than `openPicks`, because a pick that has been pressed
+      // is closed and its photographs are still worth attaching the week after.
+      const pick = await pickById(place.id);
+      if (!pick) throw new GoneError("That pick is not there to open.");
+      return photosScreen("node", place.id);
+    }
+    case "vessel-photos": {
+      const vessel = await vesselByIdOrNull(place.id);
+      if (!vessel) throw new GoneError("That vessel is not there to open.");
+      return photosScreen("vessel", place.id);
     }
     case "vessel-type": {
       const type = (await terms("vessel_type")).find((t) => t.id === place.id);
@@ -1084,6 +1109,85 @@ type VesselForm = {
   draftDone: () => void;
 };
 
+// Two inputs, one of each, because one input cannot ask both questions.
+//
+// This used to live inside vesselFields, which is why for two days the only
+// place in the app that could take a photograph was the vessel form: the scale
+// screen had no way to ask for one, and three photographs of a scale ended up
+// stuck on a phone. It is here now because a photograph is wanted in several
+// places and a control that exists in one is a control that exists nowhere.
+//
+// Which of the two inputs wrote the file last is the answer, so they share a
+// variable rather than being read in an order that would prefer one.
+type PhotoPicker = {
+  root: HTMLElement;
+  file: () => File | null;
+  clear: () => void;
+};
+
+function photoPicker(hint: string): PhotoPicker {
+  let chosen: File | null = null;
+  let fromCamera: HTMLInputElement | null = null;
+  let fromLibrary: HTMLInputElement | null = null;
+  const names: HTMLElement[] = [];
+
+  function oneInput(capture: string | null, label: string): HTMLElement {
+    const input = el("input", {
+      class: "visually-hidden",
+      type: "file",
+      accept: "image/*",
+      ...(capture ? { capture } : {}),
+    });
+    const name = el("span", { class: "field-hint" });
+    names.push(name);
+    on(input, "change", () => {
+      chosen = input.files?.[0] ?? null;
+      for (const n of names) n.textContent = "";
+      name.textContent = chosen ? chosen.name : "";
+      // The other input still holds whatever it took last. Clearing it keeps
+      // the form honest about which single file is about to be uploaded.
+      for (const other of [fromCamera, fromLibrary]) {
+        if (other && other !== input) other.value = "";
+      }
+    });
+    // A label wrapping a hidden input is the whole trick: tapping it opens the
+    // right picker, it is reachable from the keyboard, and it needs no script.
+    const trigger = el(
+      "label",
+      { class: "btn btn-secondary photo-trigger" },
+      input,
+      label,
+    );
+    return el("div", { class: "photo-choice" }, trigger, name);
+  }
+
+  // `capture` is what separates them. Leaving it off does not produce a choice,
+  // it produces the library: on Android the bare input opens the system photo
+  // picker and the camera is behind an icon that is not obviously a way out of
+  // it. The winemaker hit that from the other side, wanting a photo of the tank
+  // in front of him and getting his gallery. A choice is two controls.
+  const cameraChoice = oneInput("environment", "Take photo");
+  const libraryChoice = oneInput(null, "Choose photo");
+  fromCamera = cameraChoice.querySelector("input");
+  fromLibrary = libraryChoice.querySelector("input");
+
+  return {
+    root: el(
+      "div",
+      { class: "field" },
+      el("span", { class: "field-label", text: "Photo" }),
+      el("div", { class: "photo-choices" }, cameraChoice, libraryChoice),
+      el("span", { class: "field-hint", text: hint }),
+    ),
+    file: () => chosen,
+    clear: () => {
+      chosen = null;
+      for (const n of names) n.textContent = "";
+      for (const i of [fromCamera, fromLibrary]) if (i) i.value = "";
+    },
+  };
+}
+
 function vesselFields(partyRows: Party[]): VesselForm {
   const type = termPicker("vessel_type", { label: "Type", stickyKey: "vessel_type" });
   const name = field({
@@ -1301,72 +1405,12 @@ function vesselFields(partyRows: Party[]): VesselForm {
   // move between open and More details as one thing.
   const glycolBlock = el("div", {}, glycol.root, thermal);
 
-  // Two inputs, one of each, because one input cannot ask both questions.
-  //
-  // This used to be a single `accept="image/*"` with no `capture`, on the
-  // reasoning that the phone would then offer its own chooser. It does not. On
-  // Android the bare input opens the system photo picker directly and the
-  // camera is behind an icon that is not obviously a way out of it, which the
-  // winemaker hit from the other side: he wanted a photo of the tank in front
-  // of him and got his gallery. The old comment's reasoning was right and its
-  // conclusion was wrong, and both halves are kept here because the wrong turn
-  // is the part worth not repeating: leaving `capture` off does not produce a
-  // choice, it produces the library. Setting it produces the camera. A choice
-  // is two controls.
-  //
-  // Which of them wrote the file last is the answer, so they share a variable
-  // rather than being read in an order that would prefer one.
-  let chosen: File | null = null;
-
-  function photoInput(capture: string | null, label: string): HTMLElement {
-    const input = el("input", {
-      class: "visually-hidden",
-      type: "file",
-      accept: "image/*",
-      ...(capture ? { capture } : {}),
-    });
-    const name = el("span", { class: "field-hint" });
-    on(input, "change", () => {
-      chosen = input.files?.[0] ?? null;
-      name.textContent = chosen ? chosen.name : "";
-      // The other input still holds whatever it took last. Clearing it keeps
-      // the form honest about which single file is about to be uploaded.
-      for (const other of [fromCamera, fromLibrary]) {
-        if (other && other !== input) other.value = "";
-      }
-    });
-    // A label wrapping a hidden input is the whole trick: tapping it opens the
-    // right picker, it is reachable from the keyboard, and it needs no script.
-    const trigger = el(
-      "label",
-      { class: "btn btn-secondary photo-trigger" },
-      input,
-      label,
-    );
-    return el("div", { class: "photo-choice" }, trigger, name);
-  }
-
-  // Declared before photoInput runs so the change handler above can reach both.
-  let fromCamera: HTMLInputElement | null = null;
-  let fromLibrary: HTMLInputElement | null = null;
-
-  const cameraChoice = photoInput("environment", "Take photo");
-  const libraryChoice = photoInput(null, "Choose photo");
-  fromCamera = cameraChoice.querySelector("input");
-  fromLibrary = libraryChoice.querySelector("input");
-
-  const photoField = el(
-    "div",
-    { class: "field" },
-    el("span", { class: "field-label", text: "Photo" }),
-    el("div", { class: "photo-choices" }, cameraChoice, libraryChoice),
-    el("span", {
-      class: "field-hint",
-      text:
-        "Optional. Useful when the label falls off. Take one now, or pick one " +
-        "already on the phone.",
-    }),
+  const photo = photoPicker(
+    "Optional. Useful when the label falls off. Take one now, or pick one " +
+      "already on the phone. A vessel holds as many as you take: open it to " +
+      "add more.",
   );
+  const photoField = photo.root;
 
   on(capacity.input, "change", () => remember("capacity", capacity.value()));
 
@@ -1617,7 +1661,7 @@ function vesselFields(partyRows: Party[]): VesselForm {
       if (draftPlace) clearDraft(draftPlace);
       detach();
     },
-    photoFile: () => chosen,
+    photoFile: () => photo.file(),
     ready: () => {
       if (!type.value()) return "Pick a vessel type, or add one.";
       if (!name.value()) return "A vessel needs a name.";
@@ -2468,6 +2512,11 @@ function vesselChoiceScreen(vesselId: string, vesselName: string): HTMLElement {
         () => go({ at: "vessel-edit", id: vesselId }),
         "secondary",
       ),
+      button(
+        "Photographs",
+        () => go({ at: "vessel-photos", id: vesselId }),
+        "secondary",
+      ),
       button("Back", () => goBack(), "quiet"),
     ),
   );
@@ -3180,10 +3229,25 @@ function intakeScreen(): HTMLElement {
 
   void (async () => {
     try {
-      const [picks, waiting] = await Promise.all([openPicks(), unweighedBins()]);
+      const [picks, waiting, unphotographed] = await Promise.all([
+        openPicks(),
+        unweighedBins(),
+        weighingsWithoutPhoto(),
+      ]);
       const waitingBy = new Map<string, number>();
       for (const b of waiting) {
         waitingBy.set(b.node_id, (waitingBy.get(b.node_id) ?? 0) + 1);
+      }
+      // Grouped by pick, because the screen that takes the photographs is the
+      // pick's, and because "three readings on the Pinot Gris" is what somebody
+      // holding three photographs actually has.
+      const unphotographedBy = new Map<string, { name: string; n: number }>();
+      for (const w of unphotographed) {
+        const seen = unphotographedBy.get(w.node_id);
+        unphotographedBy.set(w.node_id, {
+          name: w.pick_name,
+          n: (seen?.n ?? 0) + 1,
+        });
       }
 
       body.replaceChildren(
@@ -3196,6 +3260,49 @@ function intakeScreen(): HTMLElement {
                 "secondary",
               )
             : empty("Nothing is waiting to be weighed."),
+
+          // Not a work queue, and deliberately not styled as one. A bin with no
+          // weight is unfinished work; a weighing with no photograph is merely
+          // one whose number cannot be checked against anything. It is here
+          // because three photographs of a scale sat on a phone for a day with
+          // nowhere to go, and a list is how somebody finds the reading each of
+          // them belongs to.
+          ...(unphotographedBy.size === 0
+            ? []
+            : [
+                el("h2", { class: "section-head", text: "Photographs not attached" }),
+                el("p", {
+                  class: "lede",
+                  text:
+                    "These weights have no photograph of the scale behind them. " +
+                    "Not a problem, just weaker evidence. If you took one, it can go on now.",
+                }),
+                el(
+                  "ul",
+                  { class: "vessel-list" },
+                  ...[...unphotographedBy.entries()].map(([id, { name, n }]) => {
+                    const row = el(
+                      "li",
+                      { class: "vessel-row", role: "button", tabindex: "0" },
+                      el("span", { class: "vessel-name", text: name }),
+                      el("span", {
+                        class: "vessel-detail",
+                        text: `${n} reading${n === 1 ? "" : "s"}`,
+                      }),
+                    );
+                    const openRow = () => go({ at: "pick-photos", id });
+                    on(row, "click", openRow);
+                    on(row, "keydown", (ev) => {
+                      if (ev.key === "Enter" || ev.key === " ") {
+                        ev.preventDefault();
+                        openRow();
+                      }
+                    });
+                    return row;
+                  }),
+                ),
+              ]),
+
           el("h2", { class: "section-head", text: "Open picks" }),
           picks.length === 0
             ? empty("No fruit in bins right now.")
@@ -3622,6 +3729,16 @@ function pickBinsScreen(openOn?: string): HTMLElement {
           existingBlock,
           addExisting,
           button("Weigh bins", () => go({ at: "scale" }), "secondary"),
+          // Only once the pick exists. Before the first bin lands there is no
+          // pick to photograph, and a button that leads to a refusal is worse
+          // than no button.
+          nodeId
+            ? button(
+                "Photographs",
+                () => (nodeId ? go({ at: "pick-photos", id: nodeId }) : undefined),
+                "secondary",
+              )
+            : el("span", {}),
           button("Done", () => go({ at: "intake" }), "quiet"),
           cancelBlock,
           message,
@@ -3728,6 +3845,14 @@ function scaleScreen(): HTMLElement {
           placeholder: "one full one half",
           hint: "Optional. What a number alone would not say.",
         });
+        // Wanted, not required. A typed weight is somebody's report and a
+        // photograph of the display is the thing itself, which is the sort of
+        // disagreement nobody finds in March by staring at a spreadsheet. But
+        // the truck is waiting, so a reading with no photograph goes through.
+        const photo = photoPicker(
+          "Of the display. Not required, but it is what lets this number be " +
+            "checked later. If you cannot now, the pick screen takes them after.",
+        );
         const result = el("div", {});
 
         return el(
@@ -3737,6 +3862,7 @@ function scaleScreen(): HTMLElement {
           ...boxes.map((b) => b.box.root),
           gross.root,
           note.root,
+          photo.root,
           button("Record this weight", async () => {
             const chosen = boxes
               .filter((b) => b.box.input.checked)
@@ -3752,23 +3878,53 @@ function scaleScreen(): HTMLElement {
               return;
             }
             try {
+              // The photograph goes up first, and a failure here must not lose
+              // the weight. Somebody is standing at a scale with a truck behind
+              // them, so a dead upload records the reading anyway and says the
+              // photograph did not make it, rather than refusing the number.
+              const file = photo.file();
+              let photoPath: string | null = null;
+              let photoFailed: string | null = null;
+              if (file) {
+                try {
+                  photoPath = await uploadPhoto("node", nodeId, file);
+                } catch (error) {
+                  photoFailed = error instanceof Error ? error.message : String(error);
+                }
+              }
+
               const out = await weighBins({
                 nodeId,
                 vesselIds: chosen,
                 grossLbs: Number(gross.value()),
                 note: note.value() || null,
+                photoPath,
               });
               result.replaceChildren(
                 banner(
                   `${out.net_lbs.toLocaleString()} lbs of fruit: ${out.gross_lbs.toLocaleString()} gross ` +
                     `less ${out.tare_lbs.toLocaleString()} of bin. This pick is now ` +
                     `${out.total_lbs.toLocaleString()} lbs, with ${out.unweighed} bin` +
-                    `${out.unweighed === 1 ? "" : "s"} still to weigh.`,
+                    `${out.unweighed === 1 ? "" : "s"} still to weigh.` +
+                    (out.photographed ? " Photograph of the scale attached." : ""),
                   "good",
                 ),
+                // Said separately and in a different colour, because the weight
+                // landed and the photograph did not, and one banner claiming
+                // both would be the A13 shape.
+                ...(photoFailed
+                  ? [
+                      banner(
+                        `The weight is recorded. The photograph did not upload: ${photoFailed}. ` +
+                          "It is still on the phone; attach it from the pick screen when there is signal.",
+                        "note",
+                      ),
+                    ]
+                  : []),
               );
               gross.input.value = "";
               note.input.value = "";
+              photo.clear();
               for (const b of boxes) {
                 if (b.box.input.checked) {
                   b.box.input.checked = false;
@@ -3800,6 +3956,290 @@ function scaleScreen(): HTMLElement {
   })();
 
   return view;
+}
+
+// --- photographs -----------------------------------------------------------
+
+// Attaching a photograph after the fact, which is the only time most of them
+// get attached.
+//
+// The winemaker weighed three loads, photographed the scale three times, and
+// came back that evening with three pictures and nowhere to put them: 0042 had
+// put the photograph in the kernel and nothing on any screen ever asked for one.
+// The scale screen asks now, but asking at the scale is not enough on its own.
+// The moment of recording is the moment both hands are full, so a photograph
+// that can only be attached then is a photograph that does not get attached.
+//
+// A photograph of a scale is evidence for one particular reading, so this lists
+// the readings and lets each take its own. A photograph of the fruit is about
+// the pick and about no reading, so that is a separate control and says so.
+
+// Shown for a photograph that is already attached. The bucket is private, so the
+// image comes through a signed url that expires; a card that fails to load still
+// shows its caption and its date, because "there is a photograph here and it
+// will not display" and "there is no photograph" must not look the same.
+async function photoCard(
+  a: Attachment,
+  onChanged: () => void,
+  said: HTMLElement,
+): Promise<HTMLElement> {
+  const url = await photoUrl(a.path);
+  const caption = field({
+    label: "Caption",
+    value: a.caption ?? "",
+    placeholder: "what this is of",
+  });
+
+  return el(
+    "div",
+    { class: "photo-card" },
+    url
+      ? el("img", { class: "photo", src: url, alt: a.caption ?? "A photograph" })
+      : empty("This photograph did not load. It is still attached."),
+    el("span", {
+      class: "field-hint",
+      text: `Taken ${new Date(a.at).toLocaleString()}`,
+    }),
+    caption.root,
+    button(
+      "Save caption",
+      async () => {
+        try {
+          await captionPhoto(a.id, caption.value());
+          said.replaceChildren(banner("Caption saved.", "good"));
+          onChanged();
+        } catch (error) {
+          said.replaceChildren(fail(error));
+        }
+      },
+      "secondary",
+    ),
+  );
+}
+
+function photosScreen(subject: "node" | "vessel", subjectId: string): HTMLElement {
+  const body = el("div", {}, empty("Loading."));
+  const message = el("div", {});
+  const view = screen(
+    "Photographs",
+    lede(
+      subject === "node"
+        ? "Pictures of this pick. A photograph of the scale belongs to the " +
+            "reading it shows, so attach it to that reading rather than to the pick."
+        : "Pictures of this vessel. As many as you take: nothing here replaces " +
+            "what was already attached.",
+    ),
+    body,
+  );
+
+  async function load(): Promise<void> {
+    const [already, weighings] = await Promise.all([
+      attachmentsFor(subject, subjectId),
+      subject === "node" ? pickWeighings(subjectId) : Promise.resolve([]),
+    ]);
+
+    // One picker per reading. A single picker plus a dropdown would be fewer
+    // controls and would put the choosing after the taking, which is the wrong
+    // way round: he is looking at a photograph of a display reading 839 and
+    // wants the row that says 839.
+    function weighingRow(w: PastWeighing): HTMLElement {
+      const picker = photoPicker(
+        "Of the scale for this reading. Taken this morning is fine.",
+      );
+      const taken = field({
+        label: "When it was taken",
+        type: "datetime-local",
+        // Defaults to when the reading was recorded, because a photograph of a
+        // scale was almost always taken within a minute of the number being
+        // typed. Editable, because almost always is not always.
+        value: localStamp(w.at),
+        hint: "Defaults to when this weight was recorded.",
+      });
+      const said = el("div", {});
+
+      const what =
+        `${w.net_lbs === null ? "no net" : `${Number(w.net_lbs).toLocaleString()} lbs`}` +
+        `${w.gross_lbs === null ? "" : `, ${Number(w.gross_lbs).toLocaleString()} gross`}` +
+        `${w.bins.length === 0 ? "" : ` on ${w.bins.join(", ")}`}`;
+
+      return el(
+        "details",
+        { class: "more" },
+        el("summary", {
+          text:
+            `${new Date(w.at).toLocaleTimeString()}: ${what}` +
+            (w.superseded ? " (corrected later)" : "") +
+            (w.photos > 0
+              ? `, ${w.photos} photograph${w.photos === 1 ? "" : "s"}`
+              : ", no photograph"),
+        }),
+        rows(
+          ...(w.note ? [summaryRow("Note", w.note)] : []),
+          // A corrected reading is still part of the record of the day, which is
+          // why it is here at all rather than filtered out. Photographing one is
+          // allowed and is occasionally the point: the photograph is how you
+          // find out which of the two numbers was right.
+          ...(w.superseded
+            ? [
+                el("p", {
+                  class: "field-hint",
+                  text:
+                    "A later reading corrected this one, so it is not counted in " +
+                    "the pick's total. A photograph of it still says what the scale showed.",
+                }),
+              ]
+            : []),
+          picker.root,
+          taken.root,
+          button(
+            "Attach to this reading",
+            async () => {
+              const file = picker.file();
+              if (!file) {
+                said.replaceChildren(
+                  banner("Take or choose a photograph first.", "error"),
+                );
+                return;
+              }
+              try {
+                const out = await addPhoto({
+                  subjectType: "node",
+                  subjectId,
+                  file,
+                  aboutEvent: w.event_id,
+                  takenAt: taken.value() ? new Date(taken.value()).toISOString() : null,
+                });
+                said.replaceChildren(
+                  banner(
+                    out.already
+                      ? "That photograph was already attached to this reading. Nothing changed."
+                      : "Attached. This reading can be checked against the scale now.",
+                    out.already ? "note" : "good",
+                  ),
+                );
+                picker.clear();
+                await load();
+              } catch (error) {
+                said.replaceChildren(fail(error));
+              }
+            },
+            "secondary",
+          ),
+          said,
+        ),
+      );
+    }
+
+    // Loose photographs: of the fruit, of the truck, of a bin with a split seam.
+    const loose = photoPicker(
+      subject === "node"
+        ? "Of the pick itself rather than of a reading. The fruit, the bins, the truck."
+        : "Of this vessel.",
+    );
+    const looseCaption = field({
+      label: "Caption",
+      placeholder: subject === "node" ? "fruit on the sorting table" : "the gauge",
+      hint: "Optional. Worth a few words when it is not obvious six months later.",
+    });
+    const looseTaken = field({
+      label: "When it was taken",
+      type: "datetime-local",
+      hint: "Optional. Leave blank for now.",
+    });
+    const looseSaid = el("div", {});
+
+    const cards = await Promise.all(
+      already.map((a) => photoCard(a, () => void load(), message)),
+    );
+
+    body.replaceChildren(
+      rows(
+        ...(subject === "node"
+          ? [
+              el("h2", { class: "section-head", text: "Weighings" }),
+              weighings.length === 0
+                ? empty("Nothing has been weighed on this pick yet.")
+                : el("div", {}, ...weighings.map(weighingRow)),
+            ]
+          : []),
+
+        el("h2", {
+          class: "section-head",
+          text: subject === "node" ? "A photograph of the pick" : "Add a photograph",
+        }),
+        loose.root,
+        looseCaption.root,
+        looseTaken.root,
+        button("Attach it", async () => {
+          const file = loose.file();
+          if (!file) {
+            looseSaid.replaceChildren(
+              banner("Take or choose a photograph first.", "error"),
+            );
+            return;
+          }
+          try {
+            const out = await addPhoto({
+              subjectType: subject,
+              subjectId,
+              file,
+              caption: looseCaption.value() || null,
+              takenAt: looseTaken.value()
+                ? new Date(looseTaken.value()).toISOString()
+                : null,
+            });
+            looseSaid.replaceChildren(
+              banner(
+                out.already
+                  ? "That photograph is already here. Nothing changed."
+                  : "Attached.",
+                out.already ? "note" : "good",
+              ),
+            );
+            loose.clear();
+            looseCaption.input.value = "";
+            await load();
+          } catch (error) {
+            looseSaid.replaceChildren(fail(error));
+          }
+        }),
+        looseSaid,
+
+        el("h2", { class: "section-head", text: "Attached" }),
+        already.length === 0
+          ? empty("No photographs yet.")
+          : el("div", { class: "photo-cards" }, ...cards),
+        message,
+        button("Back", () => goBack(), "quiet"),
+      ),
+    );
+  }
+
+  void (async () => {
+    try {
+      await load();
+    } catch (error) {
+      body.replaceChildren(
+        fail(error),
+        button("Back", () => goBack(), "quiet"),
+      );
+    }
+  })();
+
+  return view;
+}
+
+// `datetime-local` wants local wall time with no zone, and an ISO string from
+// the database is UTC with one. Formatting it by hand rather than slicing the
+// ISO string, because slicing shows a photograph taken at 9am as taken at 4pm.
+// S-57 is the wider version of this: the app has no timezone of its own.
+function localStamp(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number): string => String(n).padStart(2, "0");
+  return (
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+    `T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  );
 }
 
 // --- press -----------------------------------------------------------------

@@ -27,6 +27,22 @@ add_bins_to_pick:raise:6	add_bins_to_pick	raise	raise exception 'that is not a p
 add_bins_to_pick:guard:6	add_bins_to_pick	guard	if lender is not null then	if false then	1
 add_bins_to_pick:guard:7	add_bins_to_pick	guard	elsif p_owner_id is not null and p_owner_id is distinct from facility_party_id() then	elsif false then	1
 apply_owner_privacy:guard:1	apply_owner_privacy	guard	if new.hidden = '{}' and new.owner_id is not null then	if false then	1
+attach_photo:guard:1	attach_photo	guard	if not is_facility_user() then	if false then	1
+attach_photo:raise:1	attach_photo	raise	raise exception 'photographs are attached by people who work here';	raise notice 'photographs are attached by people who work here';	1
+attach_photo:guard:2	attach_photo	guard	if p_path is null or btrim(p_path) = '' then	if false then	1
+attach_photo:raise:2	attach_photo	raise	raise exception 'there is no photograph here to attach';	raise notice 'there is no photograph here to attach';	1
+attach_photo:guard:3	attach_photo	guard	if not exists (select 1 from subject_resolver where subject_type = p_subject_type) then	if false then	1
+attach_photo:raise:3	attach_photo	raise	raise exception 'nothing in this system is a %, so a photograph cannot be of one',	raise notice 'nothing in this system is a %, so a photograph cannot be of one',	1
+attach_photo:guard:4	attach_photo	guard	if a.id is null then	if false then	1
+attach_weighing_photo:head:1	attach_weighing_photo	head	if new.operation_id = term_id('operation', 'weigh')\n     and new.subject_type = 'node'\n     and coalesce(btrim(new.data ->> 'photo_path'), '') <> '' then	if false then	1
+attachment_event_matches_subject:guard:1	attachment_event_matches_subject	guard	if new.about_event is null then	if false then	1
+attachment_event_matches_subject:earlyreturn:1	attachment_event_matches_subject	earlyreturn	return new;	null;	1
+attachment_event_matches_subject:guard:2	attachment_event_matches_subject	guard	if e.id is null then	if false then	1
+attachment_event_matches_subject:raise:1	attachment_event_matches_subject	raise	raise exception 'there is no event % for this photograph to be evidence of',	raise notice 'there is no event % for this photograph to be evidence of',	1
+attachment_event_matches_subject:guard:3	attachment_event_matches_subject	guard	if e.subject_type <> new.subject_type or e.subject_id <> new.subject_id then	if false then	1
+attachment_event_matches_subject:raise:2	attachment_event_matches_subject	raise	raise exception	raise notice	2
+attachment_is_not_rewritten:head:1	attachment_is_not_rewritten	head	if new.path <> old.path\n     or new.subject_type <> old.subject_type\n     or new.subject_id <> old.subject_id\n     or new.about_event is distinct from old.about_event\n     or new.by_user is distinct from old.by_user\n     or new.at <> old.at then	if false then	1
+attachment_is_not_rewritten:raise:1	attachment_is_not_rewritten	raise	raise exception	raise notice	1
 bin_tare_lbs:guard:1	bin_tare_lbs	guard	if t is null then	if false then	1
 bin_tare_lbs:raise:1	bin_tare_lbs	raise	raise exception 'no vessel with id %', p_vessel_id;	raise notice 'no vessel with id %', p_vessel_id;	1
 bin_tare_lbs:guard:2	bin_tare_lbs	guard	if coalesce((t ->> 'intake_bin')::boolean, false) is not true then	if false then	1
