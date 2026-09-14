@@ -120,11 +120,35 @@ function whenLeaving(fn: () => void): void {
   leaving.push(fn);
 }
 
+// Where the last paint was, as a place. Held so the shell can decide whether a
+// way home makes sense without every screen having to say so. Null on the gate
+// screens, which are not places: there is no cellar to go back to from the sign
+// in screen.
+let atPlace: Place | null = null;
+
+// One control, in the shell rather than on twenty screens. Three screens deep in
+// a pick, home used to be three taps of Back, and Back is the wrong instrument
+// for "I am done with this": it retraces where you came from rather than taking
+// you where you are going.
+//
+// Sticky, because the screen it is most needed on is the long one you have
+// scrolled down.
+function homeBar(): HTMLElement | null {
+  if (!atPlace || atPlace.at === "home") return null;
+  return el(
+    "div",
+    { class: "topbar" },
+    button("Home", () => go(HOME), "quiet"),
+  );
+}
+
 function show(node: HTMLElement): void {
   const done = leaving;
   leaving = [];
   for (const fn of done) fn();
-  root.replaceChildren(node);
+  const bar = homeBar();
+  if (bar) root.replaceChildren(bar, node);
+  else root.replaceChildren(node);
   window.scrollTo(0, 0);
 }
 
@@ -261,6 +285,7 @@ class GoneError extends Error {}
 async function open(place: Place, how: "push" | "replace"): Promise<void> {
   try {
     const node = await screenFor(place);
+    atPlace = place;
     const url = encode(place);
     if (how === "push" && window.location.hash !== url) {
       window.history.pushState(null, "", url);
@@ -272,6 +297,7 @@ async function open(place: Place, how: "push" | "replace"): Promise<void> {
   } catch (error) {
     if (error instanceof GoneError) {
       window.history.replaceState(null, "", encode(HOME));
+      atPlace = HOME;
       const node = standing ? await screenFor(HOME).catch(() => null) : null;
       return show(
         screen(
@@ -296,11 +322,8 @@ async function open(place: Place, how: "push" | "replace"): Promise<void> {
 // should find is the vessel it happened to, so that is what goes in the URL,
 // and the result itself lives only as long as the person is looking at it.
 function showResult(node: HTMLElement, vesselId: string): void {
-  window.history.replaceState(
-    null,
-    "",
-    encode(vesselId ? { at: "vessel", id: vesselId } : HOME),
-  );
+  atPlace = vesselId ? { at: "vessel", id: vesselId } : HOME;
+  window.history.replaceState(null, "", encode(atPlace));
   show(node);
 }
 
@@ -328,6 +351,9 @@ function goBack(): void {
 
 async function route(): Promise<void> {
   try {
+    // Cleared before the gates, so a sign out does not leave a way home on a
+    // screen that has no cellar behind it.
+    atPlace = null;
     const session = await currentSession();
     if (!session) return show(signInScreen());
 

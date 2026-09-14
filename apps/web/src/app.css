@@ -752,3 +752,37 @@ h1 {
   align-items: center;
   gap: 0.5rem;
 }
+
+/* --- the way home ------------------------------------------------------- */
+
+/* One control in the shell rather than a button on every screen. Sticky,
+   because the screen it is most needed on is the long one you have scrolled
+   down: a pick with twenty bins on it, or the scale with four picks waiting. */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  /* Opaque. The content scrolls underneath it and has to not show through. */
+  background: var(--ground);
+  border-bottom: 1px solid var(--rule);
+  padding: 0.25rem 0;
+  margin-bottom: 0.5rem;
+}
+
+/* Back sits at the foot of a screen and retraces a step. Home sits at the head
+   and leaves. Giving them the same weight would make the pair read as two
+   spellings of one thing. */
+.topbar .btn {
+  min-height: 2.6rem;
+  padding-left: 0;
+  padding-right: 0.75rem;
+  text-decoration: none;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+.topbar .btn::before {
+  content: "\2190";
+  margin-right: 0.4rem;
+}

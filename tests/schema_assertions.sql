@@ -5278,6 +5278,15 @@ end $$;
 do $$
 declare v_id uuid := '00000000-0000-0000-0000-00000000c101';
 begin
+  -- Cleared rather than assumed. This used to read whatever tare the facility
+  -- happened to have set, so it passed against an empty database and failed the
+  -- hour the winemaker typed a real number into the running cellar. **An
+  -- assertion whose answer depends on production data is not an assertion**, and
+  -- this one was one until the first pick found it. The suite rolls back, so the
+  -- real tare is untouched.
+  update term set attributes = attributes - 'tare_lbs'
+   where kind = 'vessel_type' and value = 'picking_bin';
+
   insert into vessel (id, type_id, name, capacity_l)
   values (v_id, term_id('vessel_type', 'picking_bin'), 'Assert bin A', 400);
 
