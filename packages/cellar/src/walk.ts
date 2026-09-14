@@ -11,6 +11,7 @@ import {
   addPlanting,
   addShoppingItem,
   addSupply,
+  addToWine,
   addVessel,
   addVesselTypeNote,
   addVineyard,
@@ -33,8 +34,10 @@ import {
   exportCellar,
   facilityParty,
   fillVessel,
+  type LotAddition,
   type LotWithoutVintage,
   locations,
+  lotAdditions,
   lotsWithoutVintage,
   markBought,
   markPropagated,
@@ -77,6 +80,7 @@ import {
   signUp,
   slug,
   suppliesBelowLevel,
+  suppliesForAddition,
   suppliesOnHand,
   type Term,
   type TermKind,
@@ -312,6 +316,8 @@ async function screenFor(place: Place): Promise<HTMLElement> {
       return storesScreen();
     case "vintages":
       return vintagesScreen();
+    case "additions":
+      return additionsScreen();
     case "day":
       return dayScreen(place.id);
     case "paper":
@@ -780,6 +786,11 @@ async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> 
         go: () => go({ at: "rack" }),
       },
       {
+        name: "Additions",
+        note: "What went into the wine, and off the shelf at the same time.",
+        go: () => go({ at: "additions" }),
+      },
+      {
         name: "Vessels",
         note: "What is in the cellar, and how full.",
         badge: `${filled} of ${kit.length}`,
@@ -944,21 +955,156 @@ function installBlock(): HTMLElement {
   return holder;
 }
 
+// The winemaker, with sixty vessels and counting: "in vessels I'd love to be
+// able to sort them in a bunch of different ways. Like include and exclude
+// types, sort by status, sort by name, etc."
+//
+// All of it client side and none of it in the URL. A sort order is a way of
+// looking at a list rather than a place, so it does not belong in a Place: a
+// link somebody sends should open the vessels, not somebody else's filter. The
+// choices do survive the screen, in the same sticky store the forms use, because
+// somebody who works in barrels wants barrels every time.
+type VesselOrder = "name" | "fullest" | "emptiest" | "type" | "recent";
+
 function vesselListScreen(kit: VesselState[]): HTMLElement {
+  const body = el("div", {});
+  const count = el("p", { class: "lede" });
+
+  // Types present, from the vessels themselves rather than from the vocabulary,
+  // so a type nobody owns one of does not appear as a filter that empties the
+  // list.
+  const types = [...new Set(kit.map((v) => v.type))].sort();
+  const excluded = new Set<string>(
+    (stickyValue("vessel_filter_out") || "").split("|").filter(Boolean),
+  );
+  let order: VesselOrder = (stickyValue("vessel_order") as VesselOrder) || "name";
+  let onlyFull = stickyValue("vessel_only") === "full";
+  let onlyEmpty = stickyValue("vessel_only") === "empty";
+
+  function shown(): VesselState[] {
+    let out = kit.filter((v) => !excluded.has(v.type));
+    if (onlyFull) out = out.filter((v) => !v.is_empty);
+    if (onlyEmpty) out = out.filter((v) => v.is_empty);
+
+    const fullness = (v: VesselState): number =>
+      v.capacity_l !== null && v.current_volume_l !== null && Number(v.capacity_l) > 0
+        ? Number(v.current_volume_l) / Number(v.capacity_l)
+        : -1;
+
+    const by: Record<VesselOrder, (a: VesselState, b: VesselState) => number> = {
+      name: (a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }),
+      // Numeric collation, because B10 sorts before B9 otherwise and a barrel
+      // room is numbered.
+      type: (a, b) =>
+        a.type.localeCompare(b.type) ||
+        a.name.localeCompare(b.name, undefined, { numeric: true }),
+      fullest: (a, b) => fullness(b) - fullness(a),
+      emptiest: (a, b) => fullness(a) - fullness(b),
+      // When the wine went in, newest first, with the empty ones after. Not
+      // when the vessel was registered: `vessel_state` does not carry that, and
+      // "what did I fill most recently" is the question somebody actually asks
+      // standing in the barrel room.
+      recent: (a, b) =>
+        (b.filled_at ?? "").localeCompare(a.filled_at ?? "") ||
+        a.name.localeCompare(b.name, undefined, { numeric: true }),
+    };
+    return out.sort(by[order]);
+  }
+
+  function draw(): void {
+    const list = shown();
+    count.textContent =
+      list.length === kit.length
+        ? `${kit.filter((v) => !v.is_empty).length} of ${kit.length} have wine in them.`
+        : `${list.length} of ${kit.length} shown, ` +
+          `${list.filter((v) => !v.is_empty).length} with wine in them.`;
+    body.replaceChildren(
+      list.length === 0
+        ? empty("Nothing matches. Widen the filters above.")
+        : vesselList(list),
+    );
+  }
+
+  const sort = el("select", { class: "input" });
+  sort.replaceChildren(
+    el("option", { value: "name", text: "Name" }),
+    el("option", { value: "type", text: "Type, then name" }),
+    el("option", { value: "fullest", text: "Fullest first" }),
+    el("option", { value: "emptiest", text: "Emptiest first" }),
+    el("option", { value: "recent", text: "Most recently filled" }),
+  );
+  sort.value = order;
+  on(sort, "change", () => {
+    order = sort.value as VesselOrder;
+    remember("vessel_order", order);
+    draw();
+  });
+
+  const status = el("select", { class: "input" });
+  status.replaceChildren(
+    el("option", { value: "", text: "Full and empty" }),
+    el("option", { value: "full", text: "Only ones with wine" }),
+    el("option", { value: "empty", text: "Only empty ones" }),
+  );
+  status.value = onlyFull ? "full" : onlyEmpty ? "empty" : "";
+  on(status, "change", () => {
+    onlyFull = status.value === "full";
+    onlyEmpty = status.value === "empty";
+    remember("vessel_only", status.value);
+    draw();
+  });
+
+  // Ticked means shown. Exclusion is the thing he asked for and inclusion is
+  // how it reads: nobody thinks in terms of what they are hiding.
+  const typeBoxes = types.map((t) => {
+    const box = checkbox(t, !excluded.has(t));
+    on(box.input, "change", () => {
+      if (box.input.checked) excluded.delete(t);
+      else excluded.add(t);
+      remember("vessel_filter_out", [...excluded].join("|"));
+      draw();
+    });
+    return box.root;
+  });
+
+  draw();
+
   return screen(
     "Vessels",
-    lede(
-      kit.length === 0
-        ? "Nothing yet."
-        : `${kit.filter((v) => !v.is_empty).length} of ${kit.length} have wine in them.`,
-    ),
+    kit.length === 0 ? lede("Nothing yet.") : count,
     kit.length === 0
       ? empty(
           // W-9 phase 4. "No vessels yet" is only true for somebody who can see
           // all of them. describeEmpty is the one place that difference is said.
           `${describeEmpty("vessels", scope)} The first one is the longest; the rest remember your answers.`,
         )
-      : vesselList(kit),
+      : el(
+          "div",
+          {},
+          el(
+            "details",
+            { class: "more" },
+            el("summary", { text: "Sort and filter" }),
+            rows(
+              el(
+                "div",
+                { class: "field" },
+                el("span", { class: "field-label", text: "Sort by" }),
+                sort,
+              ),
+              el(
+                "div",
+                { class: "field" },
+                el("span", { class: "field-label", text: "Show" }),
+                status,
+              ),
+              ...(types.length > 1
+                ? [el("span", { class: "field-label", text: "Types" }), ...typeBoxes]
+                : []),
+            ),
+          ),
+          body,
+        ),
     button("Back", () => goBack(), "quiet"),
   );
 }
@@ -3999,6 +4145,248 @@ function scaleScreen(): HTMLElement {
           ...groups,
           button("Done", () => go({ at: "intake" }), "quiet"),
           message,
+        ),
+      );
+    } catch (error) {
+      body.replaceChildren(
+        fail(error),
+        button("Back", () => goBack(), "quiet"),
+      );
+    }
+  })();
+
+  return view;
+}
+
+// --- additions -------------------------------------------------------------
+
+// Something goes into the wine in a vessel.
+//
+// Vessel first, because that is how the winemaker asked for it and because it
+// is how the job is done: you stand in front of a tank. The lot is whatever is
+// in the vessels ticked, which the kernel works out and refuses if they hold
+// different wine.
+//
+// The rate is not a field. The volume of wine at the moment of the addition is
+// a function of the placements, and the rate is the amount over that volume, so
+// both are shown after the fact rather than typed before it. Alexis's form has
+// four columns for what is one recorded fact and two derivations.
+function additionsScreen(): HTMLElement {
+  const body = el("div", {}, empty("Loading."));
+  const message = el("div", {});
+  const view = screen(
+    "Additions",
+    lede(
+      "What went into the wine, and into which vessel. Taking it off the shelf " +
+        "happens here too, so it does not have to be recorded twice.",
+    ),
+    body,
+  );
+
+  void (async () => {
+    try {
+      const [kit, shelf] = await Promise.all([vessels(), suppliesForAddition()]);
+      const holding = kit.filter((v) => !v.is_empty);
+
+      if (holding.length === 0) {
+        body.replaceChildren(
+          empty("No vessel has wine in it, so there is nothing to add to."),
+          button("Back", () => goBack(), "quiet"),
+        );
+        return;
+      }
+
+      // Grouped by lot, because the kernel refuses an addition spanning two of
+      // them and offering a selection that will be refused is offering a
+      // refusal. A lot in three barrels shows as three tickable rows under one
+      // heading, and ticking one of them is the ordinary case.
+      const byLot = new Map<string, typeof holding>();
+      for (const v of holding) {
+        const key = v.node_id ?? `loose:${v.id}`;
+        const list = byLot.get(key) ?? [];
+        list.push(v);
+        byLot.set(key, list);
+      }
+
+      function lotBlock(members: typeof holding): HTMLElement {
+        const boxes = members.map((v) => ({
+          vessel: v,
+          box: checkbox(
+            v.current_volume_l === null
+              ? v.name
+              : `${v.name} (${Number(v.current_volume_l).toLocaleString()} L)`,
+            members.length === 1,
+          ),
+        }));
+
+        // Off the shelf, or by name. Both are real: a winery adds things it does
+        // not keep an inventory of, and refusing those would mean they go
+        // unrecorded rather than that somebody sets up a supply first.
+        const fromShelf = el("select", { class: "input" });
+        fromShelf.replaceChildren(
+          el("option", { value: "", text: "Not off the shelf" }),
+          ...shelf.map((s) =>
+            el("option", {
+              value: s.supply_id,
+              text: `${s.name} (${Number(s.on_hand).toLocaleString()} ${s.unit} on hand)`,
+            }),
+          ),
+        );
+        const shelfField = el(
+          "div",
+          { class: "field" },
+          el("span", { class: "field-label", text: "From the shelf" }),
+          fromShelf,
+          el("span", {
+            class: "field-hint",
+            text:
+              shelf.length === 0
+                ? "Nothing on the shelf is flagged as going into wine yet. Set that on the supply in Stores."
+                : "Picking one takes the amount off the shelf as well.",
+          }),
+        );
+
+        const what = field({
+          label: "What went in",
+          placeholder: "KMBS",
+          hint: "Needed only if it did not come off the shelf.",
+        });
+        const amount = field({ label: "How much", type: "number", placeholder: "30" });
+        const unit = field({ label: "Unit", placeholder: "g" });
+        const when = field({
+          label: "When",
+          type: "datetime-local",
+          hint: "Blank means now.",
+        });
+        const note = field({ label: "Note", placeholder: "for the cold soak" });
+        const said = el("div", {});
+
+        // The unit follows the shelf when something is picked, because the one
+        // case where the shelf does not move is a unit mismatch, and the way to
+        // have fewer of those is to offer the right answer rather than to
+        // explain the wrong one afterwards.
+        on(fromShelf, "change", () => {
+          const picked = shelf.find((s) => s.supply_id === fromShelf.value);
+          if (picked && !unit.value()) unit.input.value = picked.unit;
+        });
+
+        return el(
+          "div",
+          { class: "rows" },
+          el("h2", {
+            class: "section-head",
+            text: members[0]?.lot_name ?? "Wine with no lot name",
+          }),
+          ...boxes.map((b) => b.box.root),
+          shelfField,
+          what.root,
+          amount.root,
+          unit.root,
+          when.root,
+          note.root,
+          button("Record this addition", async () => {
+            const chosen = boxes
+              .filter((b) => b.box.input.checked)
+              .map((b) => b.vessel.id);
+            if (chosen.length === 0) {
+              said.replaceChildren(banner("Tick the vessels this went into.", "error"));
+              return;
+            }
+            if (!amount.value() || !unit.value()) {
+              said.replaceChildren(
+                banner("Say how much went in, and in what unit.", "error"),
+              );
+              return;
+            }
+            if (!fromShelf.value && !what.value()) {
+              said.replaceChildren(
+                banner("Say what went in, or pick it off the shelf.", "error"),
+              );
+              return;
+            }
+            try {
+              const out = await addToWine({
+                vesselIds: chosen,
+                amount: Number(amount.value()),
+                unit: unit.value(),
+                supplyId: fromShelf.value || null,
+                what: what.value() || null,
+                at: when.value() ? new Date(when.value()).toISOString() : null,
+                note: note.value() || null,
+              });
+              said.replaceChildren(
+                banner(
+                  `${out.amount} ${out.unit} of ${out.what} into ${out.lot_name}` +
+                    (out.volume_l > 0
+                      ? `, which held ${Number(out.volume_l).toLocaleString()} L, so ` +
+                        `${out.per_litre} ${out.unit} per litre.`
+                      : ". No volume is recorded for those vessels, so there is no rate."),
+                  "good",
+                ),
+                // Two outcomes, said apart. The addition landed either way, and
+                // a banner claiming the shelf moved when it did not is the A13
+                // shape.
+                ...(out.shelf_note
+                  ? [
+                      banner(
+                        `The addition is recorded. The shelf was not touched: ${out.shelf_note}.`,
+                        "note",
+                      ),
+                    ]
+                  : []),
+                ...(out.shelf_moved
+                  ? [banner("Taken off the shelf as well.", "good")]
+                  : []),
+              );
+              amount.input.value = "";
+              note.input.value = "";
+              what.input.value = "";
+            } catch (error) {
+              said.replaceChildren(fail(error));
+            }
+          }),
+          said,
+        );
+      }
+
+      const past = await lotAdditions();
+
+      body.replaceChildren(
+        rows(
+          ...[...byLot.values()].map(lotBlock),
+
+          el("h2", { class: "section-head", text: "Already recorded" }),
+          past.length === 0
+            ? empty("Nothing has been added to anything yet.")
+            : el(
+                "ul",
+                { class: "vessel-list" },
+                ...past.slice(0, 20).map((a) =>
+                  el(
+                    "li",
+                    { class: "vessel-row" },
+                    el("span", {
+                      class: "vessel-name",
+                      text: `${a.amount} ${a.unit} ${a.what}`,
+                    }),
+                    el("span", {
+                      class: "vessel-detail",
+                      text:
+                        `${a.lot_name}` +
+                        (a.vessels.length > 0 ? ` in ${a.vessels.join(", ")}` : "") +
+                        `, ${new Date(a.at).toLocaleDateString()}` +
+                        (a.per_litre === null ? "" : `, ${a.per_litre} ${a.unit}/L`),
+                    }),
+                    // Whether the inventory moved with it, because the whole
+                    // point of naming the supply is that it did.
+                    a.took_from_the_shelf
+                      ? el("span", { class: "tag", text: "off the shelf" })
+                      : null,
+                  ),
+                ),
+              ),
+          message,
+          button("Back", () => goBack(), "quiet"),
         ),
       );
     } catch (error) {

@@ -34,7 +34,7 @@
 --              supabase/migrations/0029_viewer_scope.sql,
 --              supabase/migrations/0030_writable_columns.sql,
 --              supabase/migrations/0031_scheduling_to_core.sql,
---              supabase/migrations/0032_vessel_maker_and_room_temperature.sql, supabase/migrations/0033_intake.sql, supabase/migrations/0034_press.sql, supabase/migrations/0035_bins_in_bulk.sql, supabase/migrations/0036_bins_on_loan.sql, supabase/migrations/0037_export.sql, supabase/migrations/0038_cancel_a_pick.sql, supabase/migrations/0039_vineyard.sql, supabase/migrations/0040_block_variety_is_history.sql, supabase/migrations/0041_daily_log.sql, supabase/migrations/0042_weighing_photo.sql, supabase/migrations/0043_record_propagation.sql, supabase/migrations/0044_finishing_a_pick.sql, supabase/migrations/0045_press_detail.sql, supabase/migrations/0046_supply_inventory.sql, supabase/migrations/0047_attachments.sql, supabase/migrations/0048_pick_weighing.sql, supabase/migrations/0049_every_lot_says_its_vintage.sql]
+--              supabase/migrations/0032_vessel_maker_and_room_temperature.sql, supabase/migrations/0033_intake.sql, supabase/migrations/0034_press.sql, supabase/migrations/0035_bins_in_bulk.sql, supabase/migrations/0036_bins_on_loan.sql, supabase/migrations/0037_export.sql, supabase/migrations/0038_cancel_a_pick.sql, supabase/migrations/0039_vineyard.sql, supabase/migrations/0040_block_variety_is_history.sql, supabase/migrations/0041_daily_log.sql, supabase/migrations/0042_weighing_photo.sql, supabase/migrations/0043_record_propagation.sql, supabase/migrations/0044_finishing_a_pick.sql, supabase/migrations/0045_press_detail.sql, supabase/migrations/0046_supply_inventory.sql, supabase/migrations/0047_attachments.sql, supabase/migrations/0048_pick_weighing.sql, supabase/migrations/0049_every_lot_says_its_vintage.sql, supabase/migrations/0050_additions.sql, supabase/migrations/0051_supplies_for_addition.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -2723,7 +2723,11 @@ begin
   -- lot says either a year or that it is non-vintage. It is added `not
   -- valid`, which this census does not distinguish and the assertion in the
   -- vintage block below does. S-69.
-  want := 'c=32 f=62 p=34 u=20';
+  -- c=32 f=62 p=34 u=20 before 0050, whose one new foreign key is a supply
+  -- movement naming the addition that caused it. That link is the whole of
+  -- S-64's answer: it is what makes the scoop off the shelf and the scoop
+  -- into the wine provably one act.
+  want := 'c=32 f=63 p=34 u=20';
   if have <> want then
     raise exception
       E'FAIL: the constraint inventory changed.\nnow:  %\nwas:  %\nIf that is deliberate, update this line in the same commit that changed the schema.', have, want;
@@ -2913,7 +2917,10 @@ begin
   -- refusal, because it is still in the record and no longer says anything.
   -- The new no-action is whoever attached it, which outlives their account
   -- for the same reason a note does.
-  want := 'a=36 c=14 n=2 r=10';
+  -- a=36 c=14 n=2 r=10 before 0050. The new restrict is that same link: a
+  -- movement left pointing at an addition that is not there would be a use
+  -- off the shelf with no reason attached, which is worse than no link.
+  want := 'a=36 c=14 n=2 r=11';
   if have <> want then
     raise exception
       E'FAIL: foreign key delete behaviour changed.\nnow:  %\nwas:  %\na is no action, c is cascade, n is set null, r is restrict.', have, want;
@@ -2941,18 +2948,21 @@ begin
   -- it says that a photograph may not be left pointing at a reading that no
   -- longer exists. Events are never deleted, so it should never fire; the point
   -- is what happens if somebody writes the code that would.
+  -- 0050 added supply_movement.caused_by, the third restrict guarding
+  -- evidence rather than structure.
   want := 'attachment.attachment_about_event_fkey, '
        || 'attachment.attachment_subject_type_fkey, '
        || 'event.event_subject_type_is_registered, '
        || 'lineage.lineage_child_id_fkey, lineage.lineage_parent_id_fkey, '
        || 'placement.placement_node_id_fkey, placement.placement_vessel_id_fkey, '
        || 'procedure.procedure_subject_type_is_registered, '
+       || 'supply_movement.supply_movement_caused_by_fkey, '
        || 'task.task_subject_type_is_registered, term.term_kind_is_registered';
 
   if have <> want then
     raise exception E'FAIL: the restrict keys changed.\nnow:  %\nwas:  %', have, want;
   end if;
-  perform test_ok('the ten ON DELETE RESTRICT keys are the lineage and placement ones ledger A20 names, the five registry ones, and the one holding a photograph to the reading it is evidence of');
+  perform test_ok('the eleven ON DELETE RESTRICT keys are the lineage and placement ones ledger A20 names, the five registry ones, and the one holding a photograph to the reading it is evidence of');
 end $$;
 
 -- ---------------------------------------------------------------------------
@@ -7452,6 +7462,166 @@ begin
   perform test_ok('a year visible in a lot name is offered as a suggestion and never written, because reading a fact off a string is not the same as knowing it');
 
   delete from node where id = probe;
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- something goes into the wine, and off the shelf'; end $$;
+
+-- 0050. The winemaker: "we definitely need an additions section. Where you
+-- select a vessel with wine and add additions." And S-64, which 0046 predicted
+-- would be the thing that made its inventory untrustworthy: nobody records a
+-- scoop twice during harvest.
+do $$
+declare
+  v_a   uuid := '00000000-0000-0000-0000-00000000cc01';
+  v_b   uuid := '00000000-0000-0000-0000-00000000cc02';
+  dap   uuid := '00000000-0000-0000-0000-00000000cc03';
+  wrap  uuid := '00000000-0000-0000-0000-00000000cc04';
+  tank  uuid;
+  vrty  uuid;
+  n_a   uuid;
+  n_b   uuid;
+  out_js jsonb;
+  n     int;
+  q     numeric;
+begin
+  select id into tank from term where kind = 'vessel_type' and value = 'tank';
+  select id into vrty from term where kind = 'variety' and value = 'riesling';
+
+  insert into supply (id, name, unit) values
+    (dap,  'Assert DAP for wine', 'g'),
+    (wrap, 'Assert not an addition', 'Rolls');
+  insert into supply_material_kind (supply_id, kind_id)
+  values (dap, term_id('material_kind', 'addition'));
+  insert into supply_movement (supply_id, kind, quantity, by_user)
+  values (dap, 'received', 1000, '00000000-0000-0000-0000-00000000a001');
+
+  -- The picker offers what somebody flagged as going into wine, matched on the
+  -- registry value rather than on the label, so renaming the sort cannot empty
+  -- it silently. 0051 and AR-E6.
+  select count(*) into n from supply_for_addition where supply_id = dap;
+  if n <> 1 then
+    raise exception 'FAIL: a supply flagged as going into wine is not offered as an addition';
+  end if;
+  select count(*) into n from supply_for_addition where supply_id = wrap;
+  if n <> 0 then
+    raise exception 'FAIL: plastic wrap is offered as something to put in wine';
+  end if;
+  perform test_ok('the additions picker offers what somebody flagged as going into wine and nothing else, matched on the registry value rather than its label');
+
+  n_a := (create_vessel_with_wine(
+    jsonb_build_object('id', v_a, 'name', 'ASRTADD A', 'type_id', tank, 'capacity_l', 1000),
+    jsonb_build_object('name', 'ASRTADD lot', 'vintage', 2026, 'variety_id', vrty,
+                       'quantity', 500, 'unit', 'L'),
+    500, '[]'::jsonb, false) ->> 'node_id')::uuid;
+  n_b := (create_vessel_with_wine(
+    jsonb_build_object('id', v_b, 'name', 'ASRTADD B', 'type_id', tank, 'capacity_l', 1000),
+    jsonb_build_object('name', 'ASRTADD other lot', 'vintage', 2026, 'variety_id', vrty,
+                       'quantity', 300, 'unit', 'L'),
+    300, '[]'::jsonb, false) ->> 'node_id')::uuid;
+
+  -- **S-64, answered.** One action, two records.
+  out_js := add_to_wine(array[v_a]::uuid[], 100, 'g', dap);
+  if (out_js ->> 'shelf_moved')::boolean is not true then
+    raise exception 'FAIL: an addition off the shelf did not take anything off the shelf: %',
+      out_js ->> 'shelf_note';
+  end if;
+  select on_hand into q from supply_on_hand where supply_id = dap;
+  if q <> 900 then
+    raise exception 'FAIL: 100 g out of 1000 leaves % on the shelf', q;
+  end if;
+  perform test_ok('an addition that names the supply it came from takes it off the shelf as a consequence, which is S-64 and is why the stores exist');
+
+  select count(*) into n from supply_movement
+   where supply_id = dap and caused_by = (out_js ->> 'event_id')::uuid;
+  if n <> 1 then
+    raise exception 'FAIL: the movement does not name the addition that caused it';
+  end if;
+  perform test_ok('the scoop off the shelf names the addition it was part of, so the two are provably one act rather than two entries somebody hoped matched');
+
+  -- The rate is arithmetic over two facts that are both in the record, so it is
+  -- computed rather than stored. T0-2.
+  if (out_js ->> 'volume_l')::numeric <> 500 then
+    raise exception 'FAIL: the addition went into % litres rather than 500', out_js ->> 'volume_l';
+  end if;
+  if (out_js ->> 'per_litre')::numeric <> 0.2 then
+    raise exception 'FAIL: 100 g into 500 L came out as % per litre', out_js ->> 'per_litre';
+  end if;
+  select count(*) into n from event
+   where id = (out_js ->> 'event_id')::uuid
+     and (data ? 'per_litre' or data ? 'volume_l');
+  if n <> 0 then
+    raise exception 'FAIL: the rate or the volume was stored, and both are derivations';
+  end if;
+  perform test_ok('the volume at the time and the rate are computed from the placements and never written down, which is the whole of C-3 lesson');
+
+  -- **Unit mismatch is said, not guessed.** A factor invented here is an
+  -- inventory that is confidently wrong. S-63.
+  out_js := add_to_wine(array[v_a]::uuid[], 2, 'kg', dap);
+  if (out_js ->> 'shelf_moved')::boolean is not false then
+    raise exception 'FAIL: 2 kg was taken off a shelf measured in grams';
+  end if;
+  if position('nothing here converts' in (out_js ->> 'shelf_note')) = 0 then
+    raise exception 'FAIL: the shelf was left alone and the reason given was: %',
+      out_js ->> 'shelf_note';
+  end if;
+  select on_hand into q from supply_on_hand where supply_id = dap;
+  if q <> 900 then
+    raise exception 'FAIL: the shelf moved anyway, to %', q;
+  end if;
+  select count(*) into n from lot_addition where node_id = n_a;
+  if n <> 2 then
+    raise exception 'FAIL: the addition in a unit the shelf does not use was not recorded at all';
+  end if;
+  perform test_ok('an addition measured in a unit the shelf does not keep is recorded in full and moves nothing, and says which, because a guessed conversion is worse than an unrecorded one');
+
+  -- Vessels first, and one lot at a time. A lot in three barrels dosed in one of
+  -- them is not an addition to the other two: the wine is not mixed, and one
+  -- record of both would put a rate on the day that neither experienced.
+  begin
+    perform add_to_wine(array[v_a, v_b]::uuid[], 50, 'g', dap);
+    raise exception 'FAIL: one addition was recorded across two different lots';
+  exception when others then
+    if position('different lots' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('an addition cannot span two lots in one record, because the rate it implies is true of neither');
+  end;
+
+  -- The refusals that stop a record meaning nothing.
+  begin
+    perform add_to_wine(array[v_a]::uuid[], 100, 'g');
+    raise exception 'FAIL: something unnamed was added to the wine';
+  exception when others then
+    if position('say what went in' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('an addition that does not say what went in is refused, because the amount alone records nothing');
+  end;
+
+  begin
+    perform add_to_wine(array[v_b]::uuid[], 0, 'g', null, 'nothing at all');
+    raise exception 'FAIL: an addition of zero was recorded';
+  exception when others then
+    if position('is not an amount' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('an addition of nothing is refused, because zero is a measurement and this is the absence of one');
+  end;
+
+  -- Something not on the shelf is still a record. Refusing it would mean it goes
+  -- unrecorded rather than that somebody sets up a supply first.
+  out_js := add_to_wine(array[v_b]::uuid[], 5, 'mL', null, 'Assert enzyme');
+  if out_js ->> 'what' <> 'Assert enzyme' then
+    raise exception 'FAIL: an addition by name came back as %', out_js ->> 'what';
+  end if;
+  if (out_js ->> 'shelf_moved')::boolean is not false then
+    raise exception 'FAIL: something not off the shelf moved the shelf';
+  end if;
+  perform test_ok('something the winery does not keep an inventory of is still recorded, because the alternative is that it is not recorded at all');
+
+  -- Tidy, photographs and movements before the events they hang off.
+  delete from supply_movement where supply_id in (dap, wrap);
+  delete from event where subject_type = 'node' and subject_id in (n_a, n_b);
+  delete from supply_material_kind where supply_id in (dap, wrap);
+  delete from supply where id in (dap, wrap);
+  delete from placement where vessel_id in (v_a, v_b);
+  delete from node where id in (n_a, n_b) or name like 'ASRTADD%';
+  delete from vessel where id in (v_a, v_b);
 end $$;
 
 -- ---------------------------------------------------------------------------

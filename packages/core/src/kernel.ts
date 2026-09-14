@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { readConfig } from "./env.ts";
 import type {
+  AdditionResult,
   AppUser,
   Attachment,
   BinToReturn,
@@ -11,6 +12,7 @@ import type {
   EventRow,
   HistoryRow,
   Location,
+  LotAddition,
   LotWithoutVintage,
   NodePayload,
   PaperRecord,
@@ -21,6 +23,7 @@ import type {
   PressResult,
   ShoppingItem,
   SupplyCount,
+  SupplyForAddition,
   SupplyOnHand,
   Term,
   TermKind,
@@ -910,6 +913,55 @@ export async function openPicks(): Promise<Pick[]> {
     .order("created_at", { ascending: false });
   if (error) throw new KernelError(error);
   return (data ?? []) as Pick[];
+}
+
+// --- additions -------------------------------------------------------------
+
+export async function suppliesForAddition(): Promise<SupplyForAddition[]> {
+  const { data, error } = await kernel()
+    .from("supply_for_addition")
+    .select("supply_id,name,unit,on_hand,counted_at,supplier")
+    .order("name");
+  if (error) throw new KernelError(error);
+  return (data ?? []) as SupplyForAddition[];
+}
+
+// Vessels rather than a lot, because an addition is made to what is in front of
+// somebody. A lot spread across three barrels and dosed in one of them is not
+// an addition to the other two, and the kernel refuses vessels holding
+// different wine rather than averaging across them.
+export async function addToWine(args: {
+  vesselIds: Uuid[];
+  amount: number;
+  unit: string;
+  supplyId?: Uuid | null;
+  what?: string | null;
+  at?: string | null;
+  note?: string | null;
+}): Promise<AdditionResult> {
+  const { data, error } = await kernel().rpc("add_to_wine", {
+    p_vessel_ids: args.vesselIds,
+    p_amount: args.amount,
+    p_unit: args.unit,
+    p_supply_id: args.supplyId ?? null,
+    p_what: args.what ?? null,
+    p_at: args.at ?? null,
+    p_note: args.note ?? null,
+  });
+  if (error) throw new KernelError(error);
+  return data as AdditionResult;
+}
+
+export async function lotAdditions(nodeId?: Uuid): Promise<LotAddition[]> {
+  let q = kernel()
+    .from("lot_addition")
+    .select(
+      "event_id,node_id,lot_name,at,what,supply_id,amount,unit,note,vessels,volume_l,per_litre,took_from_the_shelf",
+    );
+  if (nodeId) q = q.eq("node_id", nodeId);
+  const { data, error } = await q.order("at", { ascending: false });
+  if (error) throw new KernelError(error);
+  return (data ?? []) as LotAddition[];
 }
 
 // --- vintages --------------------------------------------------------------

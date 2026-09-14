@@ -65,7 +65,8 @@ export type Place =
   | { at: "stores" }
   // Lots that predate 0049 and say neither a year nor NV. Nothing new can join
   // the list, so this place empties and stops being offered.
-  | { at: "vintages" };
+  | { at: "vintages" }
+  | { at: "additions" };
 
 export const HOME: Place = { at: "home" };
 
@@ -97,6 +98,7 @@ const WITHOUT_ID = new Set([
   "makers",
   "stores",
   "vintages",
+  "additions",
 ]);
 
 // A calendar day, which is what the day log is addressed by.

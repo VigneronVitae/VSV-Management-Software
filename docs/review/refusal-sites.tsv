@@ -27,6 +27,25 @@ add_bins_to_pick:permissive:1	add_bins_to_pick	permissive	and coalesce((attribut
 add_bins_to_pick:raise:6	add_bins_to_pick	raise	raise exception 'that is not a picking bin type, so fruit is not weighed in it';	raise notice 'that is not a picking bin type, so fruit is not weighed in it';	1
 add_bins_to_pick:guard:6	add_bins_to_pick	guard	if lender is not null then	if false then	1
 add_bins_to_pick:guard:7	add_bins_to_pick	guard	elsif p_owner_id is not null and p_owner_id is distinct from facility_party_id() then	elsif false then	1
+add_to_wine:guard:1	add_to_wine	guard	if n_vessels = 0 then	if false then	1
+add_to_wine:raise:1	add_to_wine	raise	raise exception 'no vessel was named, so there is nothing for this to go into';	raise notice 'no vessel was named, so there is nothing for this to go into';	1
+add_to_wine:guard:2	add_to_wine	guard	if p_amount is null or p_amount <= 0 then	if false then	1
+add_to_wine:raise:2	add_to_wine	raise	raise exception 'an addition of % is not an amount',	raise notice 'an addition of % is not an amount',	1
+add_to_wine:guard:3	add_to_wine	guard	if p_unit is null or btrim(p_unit) = '' then	if false then	1
+add_to_wine:raise:3	add_to_wine	raise	raise exception 'say what % is: grams, millilitres, something',	raise notice 'say what % is: grams, millilitres, something',	1
+add_to_wine:guard:4	add_to_wine	guard	if p_supply_id is null and btrim(coalesce(p_what, '')) = '' then	if false then	1
+add_to_wine:raise:4	add_to_wine	raise	raise exception 'say what went in, either off the shelf or by name';	raise notice 'say what went in, either off the shelf or by name';	1
+add_to_wine:guard:5	add_to_wine	guard	if node_ids is null or array_length(node_ids, 1) = 0 then	if false then	1
+add_to_wine:raise:5	add_to_wine	raise	raise exception 'there is no wine in %',	raise notice 'there is no wine in %',	1
+add_to_wine:guard:6	add_to_wine	guard	if array_length(node_ids, 1) > 1 then	if false then	1
+add_to_wine:raise:6	add_to_wine	raise	raise exception	raise notice	6
+add_to_wine:guard:7	add_to_wine	guard	if lot.status = 'closed' then	if false then	1
+add_to_wine:raise:7	add_to_wine	raise	raise exception 'that lot is closed, so nothing more goes into it';	raise notice 'that lot is closed, so nothing more goes into it';	1
+add_to_wine:guard:8	add_to_wine	guard	if p_supply_id is not null then	if false then	1
+add_to_wine:guard:9	add_to_wine	guard	if s.id is null then	if false then	1
+add_to_wine:raise:8	add_to_wine	raise	raise exception 'no supply with id %', p_supply_id;	raise notice 'no supply with id %', p_supply_id;	1
+add_to_wine:guard:10	add_to_wine	guard	if p_supply_id is not null then	if false then	2
+add_to_wine:guard:11	add_to_wine	guard	if lower(btrim(s.unit)) = lower(btrim(p_unit)) then	if false then	1
 apply_owner_privacy:guard:1	apply_owner_privacy	guard	if new.hidden = '{}' and new.owner_id is not null then	if false then	1
 attach_photo:guard:1	attach_photo	guard	if not is_facility_user() then	if false then	1
 attach_photo:raise:1	attach_photo	raise	raise exception 'photographs are attached by people who work here';	raise notice 'photographs are attached by people who work here';	1

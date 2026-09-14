@@ -116,6 +116,9 @@ export type VesselState = {
   vintage: number | null;
   product_type: string | null;
   current_volume_l: number | null;
+  // When the wine currently in it went in. Null for an empty vessel, which
+  // is what puts the empties last when the list is sorted by it.
+  filled_at: string | null;
   is_empty: boolean;
   // Whose wine, as opposed to whose vessel. Different questions, and on a
   // custom crush floor they routinely have different answers.
@@ -299,6 +302,53 @@ export type LotWithoutVintage = {
   created_at: string;
   year_in_the_name: boolean;
   suggested_year: string | null;
+};
+
+// --- additions -------------------------------------------------------------
+
+// A supply flagged as going into wine. Matched on the registry value in the
+// kernel rather than on the label here, so renaming the sort cannot silently
+// empty the picker.
+export type SupplyForAddition = {
+  supply_id: Uuid;
+  name: string;
+  unit: string;
+  on_hand: number;
+  counted_at: string | null;
+  supplier: string | null;
+};
+
+// What `add_to_wine` gives back. The volume and the rate are derived from the
+// placements as they stood at the time, said back rather than stored.
+export type AdditionResult = {
+  event_id: Uuid;
+  node_id: Uuid;
+  lot_name: string;
+  what: string;
+  amount: number;
+  unit: string;
+  volume_l: number;
+  per_litre: number | null;
+  // Whether the inventory moved with it. False when the units differ, which is
+  // S-63 and is said out loud rather than papered over with a guessed factor.
+  shelf_moved: boolean;
+  shelf_note: string | null;
+};
+
+export type LotAddition = {
+  event_id: Uuid;
+  node_id: Uuid;
+  lot_name: string;
+  at: string;
+  what: string;
+  supply_id: Uuid | null;
+  amount: number;
+  unit: string;
+  note: string | null;
+  vessels: string[];
+  volume_l: number | null;
+  per_litre: number | null;
+  took_from_the_shelf: boolean;
 };
 
 // --- photographs -----------------------------------------------------------
