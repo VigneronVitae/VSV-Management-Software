@@ -670,6 +670,22 @@ area and temperature together rather than three. *Load-bearing:* no, for one win
 It becomes load-bearing on the first import from a vineyard module that reports hectares.
 
 
+**S-56. A bin's fill percentage is per bin in the schema and per action in the app.**
+`placement.fill_pct` is a column on the placement, so the database already says how full each
+individual bin was. What the app does not do is ask: `add_bin_to_pick` takes one percentage and
+`add_bins_to_pick` hands that same number to every bin in the call, so three bins registered
+together are recorded as equally full whether they are or not. **And nothing can correct it
+afterwards**, which is the worse half: a bin entered at 100 that was half full stays at 100 for
+the life of the record. Named by the winemaker during the first pick, who added that the day's
+bins were all full so it did not bite. *Resolves when:* the bulk call takes a percentage per bin
+rather than one for the set, and the pick screen lists the bins already on it with their own
+editable figure, which is also where a bin added in a hurry gets corrected. *Load-bearing:* not
+for a pick where every bin is full, which is the normal case. It becomes load-bearing the first
+time a part-full bin is weighed together with full ones, because the fill percentages are what
+a later session would divide a shared scale reading by, and three numbers that all say 100
+divide it evenly and wrongly. That is the estimate S-50 is waiting on.
+
+
 ## Discharged
 
 **S-25. An account belonging to no party is staff, so a client who signs up
