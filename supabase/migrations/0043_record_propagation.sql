@@ -5,7 +5,7 @@
 --           rather than a thing anybody remembers."
 -- Depends on: [supabase/migrations/0027_term_kind_registry.sql,
 --              supabase/migrations/0042_weighing_photo.sql]
--- Depended on by: [tests/schema_assertions.sql]
+-- Depended on by: [tests/schema_assertions.sql, supabase/migrations/0044_finishing_a_pick.sql]
 -- Axioms enforced: T0-2 (what still needs writing down is derived from what has
 --                  been written down, never tracked separately), T0-5 (a
 --                  propagation is appended and not edited)

@@ -5,7 +5,7 @@
 --           remembering."
 -- Depends on: [supabase/migrations/0021_cellar_write_paths.sql,
 --              supabase/migrations/0029_viewer_scope.sql]
--- Depended on by: [tests/schema_assertions.sql]
+-- Depended on by: [tests/schema_assertions.sql, supabase/migrations/0044_finishing_a_pick.sql]
 -- Axioms enforced: R-4, a client may not encode a business rule.
 -- Open sorries: S-45, column privileges cannot express this rule, so this reads
 --               the trigger instead and there is no second mechanism to keep in

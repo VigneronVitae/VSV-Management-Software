@@ -1087,3 +1087,30 @@ export async function markPropagated(args: {
   });
   if (error) throw new KernelError(error);
 }
+
+// What a maker builds. 0032 made this a set so somebody who builds both barrels
+// and tanks is entered once and flagged twice, and then nothing could set it:
+// the only way to create a maker was the inline add on a vessel form, which
+// stamps whichever kind that form happens to be. This is the missing half.
+//
+// A maker written before 0032 carries a single `contract` string. Writing the
+// set removes it rather than leaving both, because two ways of saying the same
+// thing is how they come to disagree.
+export async function setMakerMakes(makerId: Uuid, makes: string[]): Promise<void> {
+  const { data, error } = await kernel()
+    .from("term")
+    .select("attributes")
+    .eq("id", makerId)
+    .single();
+  if (error) throw new KernelError(error);
+  const attributes: Record<string, unknown> = {
+    ...((data as { attributes: Record<string, unknown> }).attributes ?? {}),
+  };
+  attributes.makes = makes;
+  delete attributes.contract;
+  const { error: writeError } = await kernel()
+    .from("term")
+    .update({ attributes })
+    .eq("id", makerId);
+  if (writeError) throw new KernelError(writeError);
+}

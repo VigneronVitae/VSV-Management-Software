@@ -4,9 +4,15 @@
 
 export type Uuid = string;
 
+// The vocabularies `term_kind` registers. Hand-maintained against a registry,
+// which is the drift `AR-E7` took out of two enums and left here: `cooper` was
+// in this list for a day after `0032` deleted the vocabulary, and `vessel_maker`
+// was absent for a day after `0032` created it. TypeScript catches the second
+// direction the moment somebody uses the missing name and catches the first
+// never. See sorry S-61.
 export type TermKind =
   | "variety"
-  | "cooper"
+  | "vessel_maker"
   | "wood"
   | "vessel_type"
   | "product_type"

@@ -34,7 +34,7 @@
 --              supabase/migrations/0029_viewer_scope.sql,
 --              supabase/migrations/0030_writable_columns.sql,
 --              supabase/migrations/0031_scheduling_to_core.sql,
---              supabase/migrations/0032_vessel_maker_and_room_temperature.sql, supabase/migrations/0033_intake.sql, supabase/migrations/0034_press.sql, supabase/migrations/0035_bins_in_bulk.sql, supabase/migrations/0036_bins_on_loan.sql, supabase/migrations/0037_export.sql, supabase/migrations/0038_cancel_a_pick.sql, supabase/migrations/0039_vineyard.sql, supabase/migrations/0040_block_variety_is_history.sql, supabase/migrations/0041_daily_log.sql, supabase/migrations/0042_weighing_photo.sql, supabase/migrations/0043_record_propagation.sql]
+--              supabase/migrations/0032_vessel_maker_and_room_temperature.sql, supabase/migrations/0033_intake.sql, supabase/migrations/0034_press.sql, supabase/migrations/0035_bins_in_bulk.sql, supabase/migrations/0036_bins_on_loan.sql, supabase/migrations/0037_export.sql, supabase/migrations/0038_cancel_a_pick.sql, supabase/migrations/0039_vineyard.sql, supabase/migrations/0040_block_variety_is_history.sql, supabase/migrations/0041_daily_log.sql, supabase/migrations/0042_weighing_photo.sql, supabase/migrations/0043_record_propagation.sql, supabase/migrations/0044_finishing_a_pick.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -598,16 +598,26 @@ begin
   perform test_ok('a barrel is offered coopers');
 end $$;
 
+-- Named so it can collide with neither a real maker nor another fixture. It
+-- avoids the `assert_` prefix on purpose: a later block asserts the exact set of
+-- makers whose value begins with it, so a fixture wearing that prefix joins a
+-- list it was never meant to be in. This fixture was called
+-- `letina` and the winemaker then entered Letina as a real tank fabricator,
+-- at which point the suite went red for a reason that had nothing to do with the
+-- code. **A fixture that can collide with production data is the same defect as
+-- an assertion that reads production data**, which this suite already learned
+-- once today over a bin tare, and this is the second instance of the same class.
 insert into term (kind, value, label, attributes)
-  values ('vessel_maker', 'letina', 'Letina', '{"contract":"manufacturer"}');
+  values ('vessel_maker', 'fixture_tank_brand', 'Fixture Tank Brand',
+          '{"contract":"manufacturer"}');
 
 do $$
 declare barrel_has int; tank_has int;
 begin
   select count(*) into barrel_has
-    from makers_for_vessel_type(term_id('vessel_type','barrel')) where value = 'letina';
+    from makers_for_vessel_type(term_id('vessel_type','barrel')) where value = 'fixture_tank_brand';
   select count(*) into tank_has
-    from makers_for_vessel_type(term_id('vessel_type','tank')) where value = 'letina';
+    from makers_for_vessel_type(term_id('vessel_type','tank')) where value = 'fixture_tank_brand';
   if barrel_has <> 0 then raise exception 'FAIL: a tank fabricator is offered for a barrel'; end if;
   if tank_has <> 1 then raise exception 'FAIL: a tank fabricator is not offered for a tank'; end if;
   perform test_ok('a tank fabricator is offered for a tank and not for a barrel');
@@ -4980,8 +4990,14 @@ declare got text[];
 begin
   perform test_act_as('00000000-0000-0000-0000-00000000a002');   -- a cellar hand
   got := writable_columns('vessel');
-  if not (got @> array['has_glycol','setpoint_c','mode'] and array_length(got,1) = 3) then
-    raise exception 'FAIL: a cellar hand may write %, and the trigger says three', got;
+  -- Three until 0044, which added location_id. That is a policy change rather
+  -- than a refactor and it is the reason this assertion is pinned: moving a
+  -- vessel is what a cellar hand does all day, `move_vessel` has been an
+  -- operation since 0004, and until 0044 nothing could perform it because the
+  -- allow-list did not include where a vessel is.
+  if not (got @> array['has_glycol','setpoint_c','mode','location_id']
+          and array_length(got,1) = 4) then
+    raise exception 'FAIL: a cellar hand may write %, and the trigger says four', got;
   end if;
   perform test_ok('a cellar hand is told the three vessel columns the trigger lets them write');
 
@@ -6007,7 +6023,8 @@ begin
     join pg_namespace ns on ns.oid = c.relnamespace
    where ns.nspname = 'public' and c.relkind = 'v'
      and c.relname in ('planting_detail', 'bin_to_return', 'unweighed_bin',
-                       'weighing_without_photo', 'measurement_to_propagate')
+                       'weighing_without_photo', 'measurement_to_propagate',
+                       'processing_plan')
      and (c.reloptions is null or not ('security_invoker=true' = any(c.reloptions)));
   if leaky is not null then
     raise exception
@@ -6304,6 +6321,202 @@ begin
 
   perform test_act_as('00000000-0000-0000-0000-00000000a001');
   delete from paper_record where id = '00000000-0000-0000-0000-00000000fa21';
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- picking stops, and the fruit goes somewhere'; end $$;
+
+-- 0044. Finishing is not closing, a plan is not an event, and where fruit goes
+-- when it leaves depends on whether it is coming back.
+do $$
+declare
+  pick_id uuid := '00000000-0000-0000-0000-00000000fc01';
+  cold    uuid := '00000000-0000-0000-0000-00000000fc02';
+  bins    uuid[];
+  rest    uuid[];
+  out_js  jsonb;
+  n       int;
+begin
+  update term set attributes = attributes || '{"tare_lbs": 60}'::jsonb
+   where kind = 'vessel_type' and value = 'picking_bin';
+  insert into location (id, name) values (cold, 'Assert cold store');
+
+  perform add_bins_to_pick(
+    jsonb_build_object('id', pick_id, 'variety_id', term_id('variety', 'riesling'),
+                       'vintage', 2026),
+    null, 3, term_id('vessel_type', 'picking_bin'), 'ASRTFIN', 100);
+
+  -- Two of the three weighed, so finishing has something to be loud about.
+  select array_agg(vessel_id) into bins from (
+    select vessel_id from unweighed_bin where node_id = pick_id order by bin_name limit 2
+  ) x;
+  perform weigh_bins(pick_id, bins, 4120);
+
+  out_js := finish_pick(pick_id);
+
+  if (out_js ->> 'net_lbs')::numeric <> 4000 then
+    raise exception 'FAIL: a finished pick reports % lbs and 4000 were weighed', out_js ->> 'net_lbs';
+  end if;
+  if (out_js ->> 'tons')::numeric <> 2.000 then
+    raise exception 'FAIL: 4000 lbs came to % tons', out_js ->> 'tons';
+  end if;
+  perform test_ok('finishing a pick reports what it weighed, in the unit somebody says out loud');
+
+  -- Reported, never refused. A pick finished with bins nobody weighed is a real
+  -- end to a long day, and refusing would push somebody into not finishing it,
+  -- which loses the signal entirely.
+  if (out_js ->> 'unweighed')::int <> 1 then
+    raise exception
+      'FAIL: a pick finished with one unweighed bin reports %, and saying so is the whole point',
+      out_js ->> 'unweighed';
+  end if;
+  select count(*) into n from node where id = pick_id and status = 'closed';
+  if n <> 0 then
+    raise exception 'FAIL: finishing a pick closed it, and its fruit has not gone anywhere yet';
+  end if;
+  perform test_ok('finishing says what is still unweighed rather than refusing, and does not close the pick');
+
+  -- Asked for directly: "make sure that the pick total, if not all of the bins
+  -- are weighed, is updated once the bins are weighed." It holds because
+  -- `weigh_bins` recomputes the total from the live weighing events rather than
+  -- adding to a running figure, so a bin weighed after the pick was finished
+  -- lands in the total and finishing is not a freeze.
+  -- A separate variable. Reusing `bins` here reassigned it to the one remaining
+  -- bin and the move test below then moved one bin and expected two, which is a
+  -- test failing for its own reasons rather than the code's.
+  select array_agg(vessel_id) into rest from unweighed_bin where node_id = pick_id;
+  perform weigh_bins(pick_id, rest, 2060);
+
+  select quantity into n from node where id = pick_id;
+  if n <> 6000 then
+    raise exception
+      'FAIL: weighing the last bin after the pick was finished left the total at % rather than 6000', n;
+  end if;
+  select count(*) into n from unweighed_bin where node_id = pick_id;
+  if n <> 0 then
+    raise exception 'FAIL: a bin weighed after finishing is still listed as unweighed';
+  end if;
+  select count(*) into n from node
+   where id = pick_id and attributes ? 'picking_finished_at';
+  if n <> 1 then
+    raise exception 'FAIL: weighing a bin after finishing unfinished the pick';
+  end if;
+  perform test_ok('a bin weighed after the pick was finished raises the total, and finishing is not a freeze');
+
+  -- Cold storage is a location, so going cold is a move, and the event is what
+  -- answers how long fruit sat rather than only where it is now.
+  perform move_bins(bins, cold);
+  select count(*) into n from vessel where id = any(bins) and location_id = cold;
+  if n <> 2 then
+    raise exception 'FAIL: % of 2 bins reached the cold store', n;
+  end if;
+  select count(*) into n from event
+   where subject_type = 'vessel' and subject_id = any(bins)
+     and operation_id = term_id('operation', 'move_vessel');
+  if n <> 2 then
+    raise exception 'FAIL: % move events were written for 2 bins, and when it moved is the useful half', n;
+  end if;
+  perform test_ok('moving bins records where they went and when, which is what answers how long fruit sat');
+
+  begin
+    perform move_bins(bins, '00000000-0000-0000-0000-0000000000ff');
+    raise exception 'FAIL: bins were moved to a location that does not exist';
+  exception when others then
+    if position('no such location' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('moving bins somewhere that does not exist is refused');
+  end;
+
+  -- A plan is tasks, because a plan is changeable and an observation is not.
+  perform plan_processing(bins, term_id('operation', 'press'), date '2026-09-17', 'whole cluster');
+  select count(*) into n from task
+   where subject_type = 'vessel' and subject_id = any(bins)
+     and operation_id = term_id('operation', 'press');
+  if n <> 2 then
+    raise exception 'FAIL: planning two bins made % tasks', n;
+  end if;
+  -- Qualified, because `bins` is also a column on the view and a plpgsql
+  -- variable of the same name is ambiguous rather than shadowing.
+  select pp.bins into n from processing_plan pp where pp.planned_for = date '2026-09-17';
+  if n <> 2 then
+    raise exception 'FAIL: the plan for that day covers % bins', n;
+  end if;
+  perform test_ok('a plan is a set of tasks sharing a day and an operation, grouped by asking rather than stored');
+
+  -- Changing it is allowed, which is the difference between a plan and a record.
+  update task set due_from = date '2026-09-18', due_to = date '2026-09-19'
+   where subject_id = any(bins) and operation_id = term_id('operation', 'press');
+  select count(*) into n from processing_plan pp where pp.planned_for = date '2026-09-17';
+  if n <> 0 then
+    raise exception 'FAIL: a plan moved to another day is still showing on the old one';
+  end if;
+  perform test_ok('a plan can be moved, because an intention is not an observation');
+
+  delete from task where subject_id = any(bins);
+end $$;
+
+-- Where fruit goes when it leaves depends on whether it is coming back, which is
+-- the winemaker's answer: sold fruit stops being this winery's problem and fruit
+-- sent out to be made is still its wine.
+do $$
+declare
+  sold_id uuid := '00000000-0000-0000-0000-00000000fc11';
+  out_id  uuid := '00000000-0000-0000-0000-00000000fc12';
+  n       int;
+begin
+  insert into node (id, stage, status, name, quantity, unit, created_by) values
+    (sold_id, 'bin', 'open', 'Assert sold pick', 1200, 'lbs',
+     '00000000-0000-0000-0000-00000000a001'),
+    (out_id,  'bin', 'open', 'Assert away pick', 900, 'lbs',
+     '00000000-0000-0000-0000-00000000a001');
+
+  perform send_fruit_away(sold_id, 'Another Winery', false);
+  select count(*) into n from node where id = sold_id and status = 'closed';
+  if n <> 1 then
+    raise exception 'FAIL: fruit that was sold left and the pick is still open';
+  end if;
+  -- The weight stays on the row. It is the thing anybody would later be asked
+  -- about, and zeroing it to make the row look empty would throw it away.
+  select count(*) into n from node where id = sold_id and quantity = 1200;
+  if n <> 1 then
+    raise exception 'FAIL: the weight that left is no longer recorded anywhere';
+  end if;
+  perform test_ok('sold fruit closes the pick and the weight that left stays on it');
+
+  perform send_fruit_away(out_id, 'Another Winery', true);
+  select count(*) into n from node where id = out_id and status = 'open';
+  if n <> 1 then
+    raise exception 'FAIL: fruit sent out to be made and coming back closed the pick, and it is still this winery''s wine';
+  end if;
+  perform test_ok('fruit sent out to be made and returning leaves the pick open, which is true rather than tidy');
+
+  begin
+    perform send_fruit_away(out_id, '   ', true);
+    raise exception 'FAIL: fruit left to nowhere';
+  exception when others then
+    if position('does not leave to nowhere' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('fruit does not leave to nowhere, so a destination is required');
+  end;
+
+  delete from event where subject_type = 'node' and subject_id in (sold_id, out_id);
+  delete from node where id in (sold_id, out_id);
+end $$;
+
+-- The allow-list change, asserted because it is a policy decision rather than a
+-- refactor: a cellar hand may move a vessel, which `move_vessel` has implied
+-- since 0004 and nothing could perform.
+do $$
+declare allowed text;
+begin
+  select pg_get_triggerdef(oid) into allowed
+    from pg_trigger where tgname = 'vessel_cellar_columns';
+  if position('location_id' in allowed) = 0 then
+    raise exception
+      'FAIL: a cellar user still may not move a vessel, so putting bins in the cold room is an administrator''s job';
+  end if;
+  if position('setpoint_c' in allowed) = 0 then
+    raise exception 'FAIL: the jacket columns were dropped from the cellar allow-list';
+  end if;
+  perform test_ok('a cellar hand may move a vessel and still may not change what it is');
 end $$;
 
 -- ---------------------------------------------------------------------------

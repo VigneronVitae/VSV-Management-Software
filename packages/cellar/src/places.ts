@@ -54,7 +54,8 @@ export type Place =
   // because a link to a day somebody can read and type is worth more than one
   // that resolves faster.
   | { at: "day"; id?: string }
-  | { at: "paper" };
+  | { at: "paper" }
+  | { at: "makers" };
 
 export const HOME: Place = { at: "home" };
 
@@ -83,6 +84,7 @@ const WITHOUT_ID = new Set([
   "vineyards",
   "day",
   "paper",
+  "makers",
 ]);
 
 // A calendar day, which is what the day log is addressed by.

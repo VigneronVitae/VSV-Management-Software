@@ -49,6 +49,7 @@ import {
   resolveVesselTypeNote,
   retirePaperRecord,
   type SiteFields,
+  setMakerMakes,
   setPaperRecordOperations,
   setPartyLogin,
   setVesselTypeBin,
@@ -283,6 +284,8 @@ async function screenFor(place: Place): Promise<HTMLElement> {
       return exportScreen();
     case "vineyards":
       return vineyardsScreen();
+    case "makers":
+      return makersScreen();
     case "day":
       return dayScreen(place.id);
     case "paper":
@@ -749,6 +752,11 @@ async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> 
         name: "Vessel types",
         note: "What each sort of vessel gets asked when you create one.",
         go: () => go({ at: "vessel-types" }),
+      },
+      {
+        name: "Vessel makers",
+        note: "One list, flagged for what each of them builds. Somebody who makes both is entered once.",
+        go: () => go({ at: "makers" }),
       },
       {
         name: "Vineyards",
@@ -4912,6 +4920,106 @@ function paperScreen(): HTMLElement {
               ),
             ),
           ),
+          message,
+          button("Back", () => goBack(), "quiet"),
+        ),
+      );
+    } catch (error) {
+      body.replaceChildren(
+        fail(error),
+        button("Back", () => goBack(), "quiet"),
+      );
+    }
+  })();
+
+  return view;
+}
+
+// --- who builds what -------------------------------------------------------
+
+// `0032` made what a maker builds a set, so that somebody who builds both
+// barrels and tanks is entered once and flagged twice. That was the winemaker's
+// own request and it then had nowhere to be done from: the only route to
+// creating a maker is the inline add on a vessel form, which stamps whichever
+// kind that form happens to be, and nothing could ever add the second flag.
+//
+// Found because the assertion suite used Letina as its example of a tank
+// fabricator that is not offered for barrels, and Letina is the brand in both.
+function makersScreen(): HTMLElement {
+  const body = el("div", {}, empty("Loading."));
+  const message = el("div", {});
+  const view = screen(
+    "Vessel makers",
+    lede(
+      "One list, flagged for what each of them builds. A maker flagged for both " +
+        "is offered on a barrel and on a tank, entered once.",
+    ),
+    body,
+  );
+
+  void (async () => {
+    try {
+      const makers = await terms("vessel_maker");
+
+      // A maker written before 0032 carries a single `contract` string instead
+      // of a set. Read both, so the boxes show what is true rather than what is
+      // in the newer of the two shapes.
+      function buildsNow(m: Term): Set<string> {
+        const bag = m.attributes ?? {};
+        const makes = Array.isArray(bag.makes) ? (bag.makes as string[]) : null;
+        if (makes) return new Set(makes);
+        return typeof bag.contract === "string" ? new Set([bag.contract]) : new Set();
+      }
+
+      body.replaceChildren(
+        rows(
+          makers.length === 0
+            ? empty("No makers yet. They are added from the vessel form as you go.")
+            : el(
+                "div",
+                { class: "rows" },
+                ...makers.map((m) => {
+                  const now = buildsNow(m);
+                  const cooper = checkbox("Barrels", now.has("cooper"));
+                  const maker = checkbox("Tanks and bins", now.has("manufacturer"));
+                  const said = el("div", {});
+                  return el(
+                    "div",
+                    { class: "rows" },
+                    el("h2", { class: "section-head", text: m.label }),
+                    cooper.root,
+                    maker.root,
+                    button(
+                      "Save",
+                      async () => {
+                        const makes = [
+                          ...(cooper.input.checked ? ["cooper"] : []),
+                          ...(maker.input.checked ? ["manufacturer"] : []),
+                        ];
+                        try {
+                          await setMakerMakes(m.id, makes);
+                          said.replaceChildren(
+                            banner(
+                              makes.length === 0
+                                ? // Flagged for nothing is not the same as a
+                                  // mistake: 0032 offers an unflagged maker
+                                  // everywhere, on the reasoning that somebody
+                                  // who has not said is not somebody who said no.
+                                  "Saved. Flagged for neither, so it is offered on both."
+                                : "Saved.",
+                              "good",
+                            ),
+                          );
+                        } catch (error) {
+                          said.replaceChildren(fail(error));
+                        }
+                      },
+                      "secondary",
+                    ),
+                    said,
+                  );
+                }),
+              ),
           message,
           button("Back", () => goBack(), "quiet"),
         ),

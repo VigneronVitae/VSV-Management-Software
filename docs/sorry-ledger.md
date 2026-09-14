@@ -724,6 +724,33 @@ form" and "we decided not to" must not look the same. *Load-bearing:* not yet. I
 load-bearing the first time a form is abandoned rather than kept to the end of a vintage.
 
 
+**S-60. A plan is not connected to the work that fulfils it.**
+`0044` plans processing as tasks: bins, a day, an operation, changeable because a plan is an
+intention rather than an observation. What nothing does is notice when the intention happens.
+Pressing the bins a plan names leaves the tasks open, so the plan has to be closed by hand and
+a board full of things that were done a week ago is a board nobody reads. **Deriving it is
+tempting and wrong in the obvious form**: "the bins are empty so the plan is done" would also
+fire when somebody emptied them for a different reason, and would report work as complete that
+nobody did. *Resolves when:* the press and destem paths accept the plan they are fulfilling, so
+the task closes because the work names it rather than because the world happens to look right
+afterwards. That is a parameter on two functions and a picker on two screens. *Load-bearing:*
+the first week anybody plans more than they do in a day.
+
+
+**S-61. The client's list of vocabularies is hand-maintained against a registry and nothing checks it.**
+`0027` made every vocabulary a row in `term_kind` so that adding one stopped being a migration
+against generated columns. The client still carries the same list as a TypeScript union, written
+by hand, and the two drifted the day `0032` deleted `cooper` and created `vessel_maker`: the
+union kept a vocabulary that no longer existed and lacked one that did, for a day, unnoticed.
+**The two directions fail differently and only one of them is caught.** A missing kind is a
+compile error the first time somebody names it, which is how this was found. A kind that no
+longer exists compiles forever and fails at runtime as a query returning nothing, which is the
+A13 shape: an empty picker and a vocabulary nobody deleted look identical. *Resolves when:*
+either the union is generated from `term_kind`, or a gate compares the two and fails, which is
+one query and one grep and belongs in `green` beside the checks that already compare the tree
+against the database. *Load-bearing:* the next time a vocabulary is renamed or retired.
+
+
 ## Discharged
 
 **S-25. An account belonging to no party is staff, so a client who signs up

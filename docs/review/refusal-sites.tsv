@@ -85,6 +85,12 @@ fill_vessel:raise:1	fill_vessel	raise	raise exception 'no active vessel with id 
 fill_vessel:guard:2	fill_vessel	guard	if occupied is not null then	if false then	1
 fill_vessel:raise:2	fill_vessel	raise	raise exception 'that vessel already holds a lot; rack it out before filling it';	raise notice 'that vessel already holds a lot; rack it out before filling it';	1
 fill_vessel:guard:3	fill_vessel	guard	if p_generate_history then	if false then	1
+finish_pick:guard:1	finish_pick	guard	if n.id is null then	if false then	1
+finish_pick:raise:1	finish_pick	raise	raise exception 'no pick with id %', p_node_id;	raise notice 'no pick with id %', p_node_id;	1
+finish_pick:guard:2	finish_pick	guard	if n.stage <> 'bin' then	if false then	1
+finish_pick:raise:2	finish_pick	raise	raise exception '% is not a pick', n.name;	raise notice '% is not a pick', n.name;	1
+finish_pick:guard:3	finish_pick	guard	if n.status = 'closed' then	if false then	1
+finish_pick:raise:3	finish_pick	raise	raise exception '% is closed; its fruit has already gone somewhere', n.name;	raise notice '% is closed; its fruit has already gone somewhere', n.name;	1
 finish_run:raise:1	finish_run	raise	if v_id is null then raise exception 'no such run'; end if;	if v_id is null then raise notice 'no such run'; end if;	1
 fork_lot:notfound:1	fork_lot	notfound	if not found then	if false then	1
 fork_lot:raise:1	fork_lot	raise	raise exception 'no lot with id %', p_node_id;	raise notice 'no lot with id %', p_node_id;	1
@@ -100,6 +106,12 @@ generate_inferred_history:guard:1	generate_inferred_history	guard	if n.id is nul
 generate_inferred_history:raise:1	generate_inferred_history	raise	raise exception 'no such node %', p_node_id;	raise notice 'no such node %', p_node_id;	1
 generate_inferred_history:guard:2	generate_inferred_history	guard	if n.variety_id is null then	if false then	1
 generate_inferred_history:guard:3	generate_inferred_history	guard	if tmpl is null then	if false then	1
+move_bins:guard:1	move_bins	guard	if coalesce(array_length(p_vessel_ids, 1), 0) = 0 then	if false then	1
+move_bins:raise:1	move_bins	raise	raise exception 'no vessels were named, so there is nothing to move';	raise notice 'no vessels were named, so there is nothing to move';	1
+move_bins:guard:2	move_bins	guard	if not exists (select 1 from location where id = p_location_id) then	if false then	1
+move_bins:raise:2	move_bins	raise	raise exception 'there is no such location to move them to';	raise notice 'there is no such location to move them to';	1
+move_bins:notfound:1	move_bins	notfound	if not found then	if false then	1
+move_bins:raise:3	move_bins	raise	raise exception 'no active vessel with id %', v_id;	raise notice 'no active vessel with id %', v_id;	1
 next_cap_action:guard:1	next_cap_action	guard	if array_length(seq, 1) is null then	if false then	1
 node_bin_shares:notfound:1	node_bin_shares	notfound	if not found then	if false then	1
 node_bin_shares:head:1	node_bin_shares	head	if not coalesce(is_admin() or n.owner_id = current_party_id()\n                  or is_facility_user(), false) then	if false then	1
@@ -113,6 +125,14 @@ node_history:earlyreturn:1	node_history	earlyreturn	return;	null;	2
 node_history:head:2	node_history	head	if 'history' = any(n.hidden)\n     and not coalesce(may_see_all_of(n.owner_id, n.hidden), false) then	if false then	1
 node_history:permissive:1	node_history	permissive	and not coalesce(may_see_all_of(n.owner_id, n.hidden), false) then	and not coalesce(may_see_all_of(n.owner_id, n.hidden), true) then	1
 node_history:earlyreturn:2	node_history	earlyreturn	return;	null;	3
+plan_processing:guard:1	plan_processing	guard	if coalesce(array_length(p_vessel_ids, 1), 0) = 0 then	if false then	1
+plan_processing:raise:1	plan_processing	raise	raise exception 'no bins were named, so there is nothing to plan';	raise notice 'no bins were named, so there is nothing to plan';	1
+plan_processing:guard:2	plan_processing	guard	if p_on is null then	if false then	1
+plan_processing:raise:2	plan_processing	raise	raise exception 'a plan needs a day it is for';	raise notice 'a plan needs a day it is for';	1
+plan_processing:head:1	plan_processing	head	if not exists (\n    select 1 from term where id = p_operation_id and kind = 'operation'\n  ) then	if false then	1
+plan_processing:raise:3	plan_processing	raise	raise exception 'that is not an operation, so it is not something to plan';	raise notice 'that is not an operation, so it is not something to plan';	1
+plan_processing:guard:3	plan_processing	guard	if not exists (select 1 from vessel where id = v_id and active) then	if false then	1
+plan_processing:raise:4	plan_processing	raise	raise exception 'no active vessel with id %', v_id;	raise notice 'no active vessel with id %', v_id;	1
 press:guard:1	press	guard	if p_sources is null or jsonb_array_length(p_sources) = 0 then	if false then	1
 press:raise:1	press	raise	raise exception 'nothing was named to press';	raise notice 'nothing was named to press';	1
 press:guard:2	press	guard	if p_destinations is null or jsonb_array_length(p_destinations) = 0 then	if false then	1
@@ -205,6 +225,14 @@ resolve_subject_name:earlyreturn:1	resolve_subject_name	earlyreturn	return null;
 resolve_subject_name:guard:1	resolve_subject_name	guard	if to_regclass('public.' || quote_ident(r.relation)) is null then	if false then	1
 resolve_subject_name:earlyreturn:2	resolve_subject_name	earlyreturn	return null;	null;	2
 resolve_subject_name:earlyreturn:3	resolve_subject_name	earlyreturn	return null;	null;	3
+send_fruit_away:guard:1	send_fruit_away	guard	if n.id is null then	if false then	1
+send_fruit_away:raise:1	send_fruit_away	raise	raise exception 'no pick with id %', p_node_id;	raise notice 'no pick with id %', p_node_id;	1
+send_fruit_away:guard:2	send_fruit_away	guard	if n.status = 'closed' then	if false then	1
+send_fruit_away:raise:2	send_fruit_away	raise	raise exception '% has already gone somewhere', n.name;	raise notice '% has already gone somewhere', n.name;	1
+send_fruit_away:guard:3	send_fruit_away	guard	if nullif(btrim(coalesce(p_destination, '')), '') is null then	if false then	1
+send_fruit_away:raise:3	send_fruit_away	raise	raise exception 'fruit does not leave to nowhere; say where it went';	raise notice 'fruit does not leave to nowhere; say where it went';	1
+send_fruit_away:silent:1	send_fruit_away	silent	where node_id = p_node_id and to_at is null;	where node_id = p_node_id and true;	1
+send_fruit_away:guard:4	send_fruit_away	guard	if not p_returning then	if false then	1
 set_lot_hidden:guard:1	set_lot_hidden	guard	if not may_set_privacy(p_node_id) then	if false then	1
 set_lot_hidden:raise:1	set_lot_hidden	raise	raise exception 'only the owner of that wine decides what is hidden about it'	raise notice 'only the owner of that wine decides what is hidden about it'	1
 set_lot_hidden:guard:2	set_lot_hidden	guard	if not (coalesce(p_hidden, '{}') <@ hideable_fields()) then	if false then	1
