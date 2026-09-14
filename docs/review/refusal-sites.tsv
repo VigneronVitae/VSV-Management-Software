@@ -135,28 +135,40 @@ plan_processing:guard:3	plan_processing	guard	if not exists (select 1 from vesse
 plan_processing:raise:4	plan_processing	raise	raise exception 'no active vessel with id %', v_id;	raise notice 'no active vessel with id %', v_id;	1
 press:guard:1	press	guard	if p_sources is null or jsonb_array_length(p_sources) = 0 then	if false then	1
 press:raise:1	press	raise	raise exception 'nothing was named to press';	raise notice 'nothing was named to press';	1
-press:guard:2	press	guard	if p_destinations is null or jsonb_array_length(p_destinations) = 0 then	if false then	1
+press:guard:2	press	guard	if p_cuts is null or jsonb_array_length(p_cuts) = 0 then	if false then	1
 press:raise:2	press	raise	raise exception 'the juice has to go somewhere; name at least one vessel';	raise notice 'the juice has to go somewhere; name at least one vessel';	1
-press:guard:3	press	guard	if n.id is null then	if false then	1
-press:raise:3	press	raise	raise exception 'no lot with id %', src ->> 'node_id';	raise notice 'no lot with id %', src ->> 'node_id';	1
-press:guard:4	press	guard	if n.status = 'closed' then	if false then	1
-press:raise:4	press	raise	raise exception '% is closed; there is nothing left in it to press', n.name;	raise notice '% is closed; there is nothing left in it to press', n.name;	1
-press:guard:5	press	guard	if n.quantity is null then	if false then	1
-press:raise:5	press	raise	raise exception	raise notice	5
-press:guard:6	press	guard	if parent_stage is null then	if false then	1
-press:guard:7	press	guard	elsif parent_stage <> n.stage then	elsif false then	1
-press:raise:6	press	raise	raise exception	raise notice	6
-press:guard:8	press	guard	if want <= 0 then	if false then	1
-press:raise:7	press	raise	raise exception 'a press of % from % is not an amount', want, n.name;	raise notice 'a press of % from % is not an amount', want, n.name;	1
-press:guard:9	press	guard	if want > n.quantity then	if false then	1
-press:raise:8	press	raise	raise exception	raise notice	8
-press:guard:10	press	guard	if vol is null or vol <= 0 then	if false then	1
-press:raise:9	press	raise	raise exception 'a volume of % into a vessel is not a filling',	raise notice 'a volume of % into a vessel is not a filling',	1
-press:guard:11	press	guard	if not exists (select 1 from vessel where id = v_id and active) then	if false then	1
-press:raise:10	press	raise	raise exception 'no active vessel with id %', v_id;	raise notice 'no active vessel with id %', v_id;	1
-press:guard:12	press	guard	if exists (select 1 from placement where vessel_id = v_id and to_at is null) then	if false then	1
-press:raise:11	press	raise	raise exception	raise notice	11
-press:guard:13	press	guard	if held - weights[i] <= 0.0001 then	if false then	1
+press:guard:3	press	guard	if wc is not null and (wc < 0 or wc > 100) then	if false then	1
+press:raise:3	press	raise	raise exception 'whole cluster of % percent is not a proportion', wc;	raise notice 'whole cluster of % percent is not a proportion', wc;	1
+press:guard:4	press	guard	if started is not null and ended is not null and ended < started then	if false then	1
+press:raise:4	press	raise	raise exception 'skin contact ended before it started';	raise notice 'skin contact ended before it started';	1
+press:guard:5	press	guard	if ran_from is not null and ran_to is not null and ran_to < ran_from then	if false then	1
+press:raise:5	press	raise	raise exception 'the press finished before it started';	raise notice 'the press finished before it started';	1
+press:head:1	press	head	if (p_detail ->> 'program_id') is not null and not exists (\n    select 1 from term\n     where id = (p_detail ->> 'program_id')::uuid and kind = 'press_program'\n  ) then	if false then	1
+press:raise:6	press	raise	raise exception 'that is not a press program';	raise notice 'that is not a press program';	1
+press:guard:6	press	guard	if n.id is null then	if false then	1
+press:raise:7	press	raise	raise exception 'no lot with id %', src ->> 'node_id';	raise notice 'no lot with id %', src ->> 'node_id';	1
+press:guard:7	press	guard	if n.status = 'closed' then	if false then	1
+press:raise:8	press	raise	raise exception '% is closed; there is nothing left in it to press', n.name;	raise notice '% is closed; there is nothing left in it to press', n.name;	1
+press:guard:8	press	guard	if n.quantity is null then	if false then	1
+press:raise:9	press	raise	raise exception	raise notice	9
+press:guard:9	press	guard	if parent_stage is null then	if false then	1
+press:guard:10	press	guard	elsif parent_stage <> n.stage then	elsif false then	1
+press:raise:10	press	raise	raise exception	raise notice	10
+press:guard:11	press	guard	if want <= 0 then	if false then	1
+press:raise:11	press	raise	raise exception 'a press of % from % is not an amount', want, n.name;	raise notice 'a press of % from % is not an amount', want, n.name;	1
+press:guard:12	press	guard	if want > n.quantity then	if false then	1
+press:raise:12	press	raise	raise exception	raise notice	12
+press:head:2	press	head	if (cut ->> 'cut_id') is not null and not exists (\n      select 1 from term where id = (cut ->> 'cut_id')::uuid and kind = 'press_cut'\n    ) then	if false then	1
+press:raise:13	press	raise	raise exception 'that is not a press cut';	raise notice 'that is not a press cut';	1
+press:head:3	press	head	if cut -> 'destinations' is null\n       or jsonb_array_length(cut -> 'destinations') = 0 then	if false then	1
+press:raise:14	press	raise	raise exception 'a cut with no vessel to go into is not a cut';	raise notice 'a cut with no vessel to go into is not a cut';	1
+press:guard:13	press	guard	if vol is null or vol <= 0 then	if false then	1
+press:raise:15	press	raise	raise exception 'a volume of % into a vessel is not a filling',	raise notice 'a volume of % into a vessel is not a filling',	1
+press:guard:14	press	guard	if not exists (select 1 from vessel where id = v_id and active) then	if false then	1
+press:raise:16	press	raise	raise exception 'no active vessel with id %', v_id;	raise notice 'no active vessel with id %', v_id;	1
+press:guard:15	press	guard	if exists (select 1 from placement where vessel_id = v_id and to_at is null) then	if false then	1
+press:raise:17	press	raise	raise exception	raise notice	17
+press:guard:16	press	guard	if held - weights[i] <= 0.0001 then	if false then	1
 press:silent:1	press	silent	where node_id = parent_ids[i] and to_at is null;	where node_id = parent_ids[i] and true;	1
 rack:guard:1	rack	guard	if jsonb_array_length(plan -> 'overfill') > 0 and not p_allow_overfill then	if false then	1
 rack:raise:1	rack	raise	raise exception 'that puts more in % than it holds; confirm the overfill to record it anyway',	raise notice 'that puts more in % than it holds; confirm the overfill to record it anyway',	1

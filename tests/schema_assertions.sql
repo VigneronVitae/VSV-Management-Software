@@ -34,7 +34,7 @@
 --              supabase/migrations/0029_viewer_scope.sql,
 --              supabase/migrations/0030_writable_columns.sql,
 --              supabase/migrations/0031_scheduling_to_core.sql,
---              supabase/migrations/0032_vessel_maker_and_room_temperature.sql, supabase/migrations/0033_intake.sql, supabase/migrations/0034_press.sql, supabase/migrations/0035_bins_in_bulk.sql, supabase/migrations/0036_bins_on_loan.sql, supabase/migrations/0037_export.sql, supabase/migrations/0038_cancel_a_pick.sql, supabase/migrations/0039_vineyard.sql, supabase/migrations/0040_block_variety_is_history.sql, supabase/migrations/0041_daily_log.sql, supabase/migrations/0042_weighing_photo.sql, supabase/migrations/0043_record_propagation.sql, supabase/migrations/0044_finishing_a_pick.sql]
+--              supabase/migrations/0032_vessel_maker_and_room_temperature.sql, supabase/migrations/0033_intake.sql, supabase/migrations/0034_press.sql, supabase/migrations/0035_bins_in_bulk.sql, supabase/migrations/0036_bins_on_loan.sql, supabase/migrations/0037_export.sql, supabase/migrations/0038_cancel_a_pick.sql, supabase/migrations/0039_vineyard.sql, supabase/migrations/0040_block_variety_is_history.sql, supabase/migrations/0041_daily_log.sql, supabase/migrations/0042_weighing_photo.sql, supabase/migrations/0043_record_propagation.sql, supabase/migrations/0044_finishing_a_pick.sql, supabase/migrations/0045_press_detail.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -3803,8 +3803,11 @@ begin
 
   -- X-3-22: this said six of the eight and asserted at least five, which is two
   -- claims and one number. It asserts the count it names.
-  if (select count(*) from term_kind where module <> 'core') <> 6 then
-    raise exception 'FAIL: % of the kinds are owned by a module other than core, and the claim is six',
+  -- Six until 0045 registered press_cut and press_program, both winemaking: how
+  -- a press was divided and what it was run on are not things core could have an
+  -- opinion about.
+  if (select count(*) from term_kind where module <> 'core') <> 8 then
+    raise exception 'FAIL: % of the kinds are owned by a module other than core, and the claim is eight',
       (select count(*) from term_kind where module <> 'core');
   end if;
   perform test_ok('the registry says which module owns each kind, and six of the eight are not core''s');
@@ -5576,7 +5579,10 @@ begin
   begin
     perform press(
       jsonb_build_array(jsonb_build_object('node_id', pick_id)),
-      jsonb_build_array(jsonb_build_object('vessel_id', tank_id, 'volume_l', 500)));
+      -- One unnamed cut. 0045 replaced the destination list with cuts, and a
+      -- press with nothing to say about fractions is exactly this.
+      jsonb_build_array(jsonb_build_object('destinations',
+        jsonb_build_array(jsonb_build_object('vessel_id', tank_id, 'volume_l', 500)))));
     raise exception 'FAIL: unweighed fruit went through the press and its weight is gone for good';
   exception when others then
     if position('never been weighed' in sqlerrm) = 0 then raise; end if;
@@ -5587,8 +5593,8 @@ begin
 
   out_js := press(
     jsonb_build_array(jsonb_build_object('node_id', pick_id)),
-    jsonb_build_array(jsonb_build_object('vessel_id', tank_id, 'volume_l', 1200)),
-    jsonb_build_object('name', 'Assert pressed'));
+    jsonb_build_array(jsonb_build_object('name', 'Assert pressed', 'destinations',
+      jsonb_build_array(jsonb_build_object('vessel_id', tank_id, 'volume_l', 1200)))));
 
   if (out_js ->> 'lbs_in')::numeric <> 2000 then
     raise exception 'FAIL: the press took % lbs from a pick holding 2000', out_js ->> 'lbs_in';
@@ -6517,6 +6523,226 @@ begin
     raise exception 'FAIL: the jacket columns were dropped from the cellar allow-list';
   end if;
   perform test_ok('a cellar hand may move a vessel and still may not change what it is');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- the cuts a press was divided into'; end $$;
+
+-- 0045, and the discharge of S-52. The resolution was not to change the
+-- arithmetic: proportional by fruit weight is correct, because a hard press is
+-- made of the same fruit as the free run and in the same ratios. What was
+-- missing is that the cut is a fact about the lot.
+do $$
+declare
+  pick_id uuid := '00000000-0000-0000-0000-00000000cd01';
+  tank_a  uuid := '00000000-0000-0000-0000-00000000cd02';
+  tank_b  uuid := '00000000-0000-0000-0000-00000000cd03';
+  out_js  jsonb;
+  n       int;
+  shares  int;
+begin
+  update term set attributes = attributes || '{"tare_lbs": 60}'::jsonb
+   where kind = 'vessel_type' and value = 'picking_bin';
+  insert into vessel (id, type_id, name, capacity_l) values
+    (tank_a, term_id('vessel_type', 'tank'), 'Assert cut tank A', 900),
+    (tank_b, term_id('vessel_type', 'tank'), 'Assert cut tank B', 400);
+
+  -- No program is seeded by the migration, on purpose: they belong to a
+  -- particular press. So the fixture brings its own.
+  insert into term (kind, value, label)
+  values ('press_program', 'assert_program', 'Assert program');
+
+  perform add_bins_to_pick(
+    jsonb_build_object('id', pick_id, 'variety_id', term_id('variety', 'pinot_gris'),
+                       'vintage', 2026),
+    null, 2, term_id('vessel_type', 'picking_bin'), 'ASRTCUT', 100);
+  perform weigh_bins(pick_id,
+    array(select vessel_id from unweighed_bin where node_id = pick_id), 2120);
+
+  out_js := press(
+    jsonb_build_array(jsonb_build_object('node_id', pick_id)),
+    jsonb_build_array(
+      jsonb_build_object('cut_id', term_id('press_cut', 'free_run'),
+        'destinations', jsonb_build_array(
+          jsonb_build_object('vessel_id', tank_a, 'volume_l', 800))),
+      jsonb_build_object('cut_id', term_id('press_cut', 'hard_press'),
+        'destinations', jsonb_build_array(
+          jsonb_build_object('vessel_id', tank_b, 'volume_l', 300)))),
+    '{}'::jsonb,
+    jsonb_build_object(
+      'program_id', (select id from term
+                      where kind = 'press_program' and value = 'assert_program'),
+      'whole_cluster_pct', 100,
+      'skin_contact_start', (timestamptz '2026-09-14 06:00+00')::text,
+      'skin_contact_end',   (timestamptz '2026-09-14 10:00+00')::text,
+      'pressed_from',       (timestamptz '2026-09-14 10:00+00')::text,
+      'pressed_to',         (timestamptz '2026-09-14 10:45+00')::text));
+
+  if jsonb_array_length(out_js -> 'cuts') <> 2 then
+    raise exception 'FAIL: a press into two cuts made % lots', jsonb_array_length(out_js -> 'cuts');
+  end if;
+  perform test_ok('a press into two cuts makes two lots, one for each');
+
+  select count(*) into n from node
+   where id::text = any(array(select jsonb_array_elements_text(out_js -> 'cuts')))
+     and attributes ->> 'cut_label' in ('Free run', 'Hard press');
+  if n <> 2 then
+    raise exception 'FAIL: % of 2 cuts say which cut they are', n;
+  end if;
+  perform test_ok('each cut carries its own name, which is the fact S-52 had nowhere to put');
+
+  -- The arithmetic S-52 said was sound and stays sound. Every cut of one press
+  -- draws the same share from the same parent.
+  select count(distinct fraction) into shares from lineage
+   where child_id::text = any(array(select jsonb_array_elements_text(out_js -> 'cuts')));
+  if shares <> 1 then
+    raise exception
+      'FAIL: the cuts of one press claim % different shares of the same fruit, and they are made of the same fruit', shares;
+  end if;
+  perform test_ok('every cut of one press draws the same share of the same fruit, which is what makes the cut a name rather than a composition');
+
+  -- Named in spec.md since the scaffold and written by nothing until 0045.
+  select count(*) into n from node
+   where id::text = any(array(select jsonb_array_elements_text(out_js -> 'cuts')))
+     and (attributes ->> 'whole_cluster_pct')::numeric = 100;
+  if n <> 2 then
+    raise exception 'FAIL: % of 2 cuts record how much went in whole', n;
+  end if;
+  perform test_ok('whole cluster is recorded on the lot, which spec.md named and nothing wrote until now');
+
+  -- Two timestamps, not three. The total is a subtraction and storing it would
+  -- invite it to disagree with its own inputs.
+  select (data ->> 'skin_contact_minutes')::int into n from event
+   where id = (out_js ->> 'event_id')::uuid;
+  if n <> 240 then
+    raise exception 'FAIL: four hours of skin contact came to % minutes', n;
+  end if;
+  perform test_ok('skin contact is two timestamps and the total is derived from them');
+
+  -- The other duration, and a different fact. A press that ran forty minutes
+  -- against skins that were on for four hours is ordinary, and a record that
+  -- conflated them would answer neither question.
+  select (data ->> 'press_minutes')::int into n from event
+   where id = (out_js ->> 'event_id')::uuid;
+  if n <> 45 then
+    raise exception 'FAIL: a forty five minute press run came to % minutes', n;
+  end if;
+  select count(*) into n from event
+   where id = (out_js ->> 'event_id')::uuid
+     and data ->> 'program_label' = 'Assert program';
+  if n <> 1 then
+    raise exception 'FAIL: the press does not record which program it was run on';
+  end if;
+  perform test_ok('how long the press ran is recorded apart from how long the skins were on, and the program is named');
+
+  delete from lineage where child_id::text = any(array(select jsonb_array_elements_text(out_js -> 'cuts')));
+  delete from event where id = (out_js ->> 'event_id')::uuid;
+  delete from placement where node_id::text = any(array(select jsonb_array_elements_text(out_js -> 'cuts')));
+  delete from node where id::text = any(array(select jsonb_array_elements_text(out_js -> 'cuts')));
+  delete from placement where node_id = pick_id;
+  delete from event where subject_type = 'node' and subject_id = pick_id;
+  delete from node where id = pick_id;
+  delete from vessel where id in (tank_a, tank_b) or name like 'ASRTCUT%';
+  delete from term where kind = 'press_program' and value = 'assert_program';
+  update term set attributes = attributes - 'tare_lbs'
+   where kind = 'vessel_type' and value = 'picking_bin';
+end $$;
+
+-- The refusals that keep the detail honest.
+do $$
+declare
+  lot_id uuid := '00000000-0000-0000-0000-00000000cd11';
+  tank   uuid := '00000000-0000-0000-0000-00000000cd12';
+begin
+  insert into vessel (id, type_id, name, capacity_l)
+  values (tank, term_id('vessel_type', 'tank'), 'Assert detail tank', 900);
+  insert into node (id, stage, status, name, quantity, unit, created_by)
+  values (lot_id, 'bin', 'open', 'Assert detail pick', 1000, 'lbs',
+          '00000000-0000-0000-0000-00000000a001');
+
+  begin
+    perform press(
+      jsonb_build_array(jsonb_build_object('node_id', lot_id)),
+      jsonb_build_array(jsonb_build_object('destinations', jsonb_build_array(
+        jsonb_build_object('vessel_id', tank, 'volume_l', 500)))),
+      '{}'::jsonb,
+      jsonb_build_object(
+        'skin_contact_start', (timestamptz '2026-09-14 10:00+00')::text,
+        'skin_contact_end',   (timestamptz '2026-09-14 06:00+00')::text));
+    raise exception 'FAIL: skins came off before they went on';
+  exception when others then
+    if position('ended before it started' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('skin contact that ended before it started is refused, rather than stored as a negative');
+  end;
+
+  begin
+    perform press(
+      jsonb_build_array(jsonb_build_object('node_id', lot_id)),
+      jsonb_build_array(jsonb_build_object('destinations', jsonb_build_array(
+        jsonb_build_object('vessel_id', tank, 'volume_l', 500)))),
+      '{}'::jsonb,
+      jsonb_build_object('whole_cluster_pct', 140));
+    raise exception 'FAIL: 140 percent of the fruit went in whole';
+  exception when others then
+    if position('is not a proportion' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('whole cluster outside nought to a hundred is refused');
+  end;
+
+  begin
+    perform press(
+      jsonb_build_array(jsonb_build_object('node_id', lot_id)),
+      jsonb_build_array(jsonb_build_object('cut_id', term_id('variety', 'riesling'),
+        'destinations', jsonb_build_array(
+          jsonb_build_object('vessel_id', tank, 'volume_l', 500)))),
+      '{}'::jsonb, '{}'::jsonb);
+    raise exception 'FAIL: a press cut was a grape variety';
+  exception when others then
+    if position('not a press cut' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a cut names the press cut vocabulary and nothing else');
+  end;
+
+  begin
+    perform press(
+      jsonb_build_array(jsonb_build_object('node_id', lot_id)),
+      jsonb_build_array(jsonb_build_object('destinations', jsonb_build_array(
+        jsonb_build_object('vessel_id', tank, 'volume_l', 500)))),
+      '{}'::jsonb,
+      jsonb_build_object('program_id', term_id('variety', 'riesling')));
+    raise exception 'FAIL: a press program was a grape variety';
+  exception when others then
+    if position('not a press program' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a press program names the press program vocabulary and nothing else');
+  end;
+
+  begin
+    perform press(
+      jsonb_build_array(jsonb_build_object('node_id', lot_id)),
+      jsonb_build_array(jsonb_build_object('destinations', jsonb_build_array(
+        jsonb_build_object('vessel_id', tank, 'volume_l', 500)))),
+      '{}'::jsonb,
+      jsonb_build_object(
+        'pressed_from', (timestamptz '2026-09-14 12:00+00')::text,
+        'pressed_to',   (timestamptz '2026-09-14 11:00+00')::text));
+    raise exception 'FAIL: the press finished before it started';
+  exception when others then
+    if position('finished before it started' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a press that finished before it started is refused, rather than stored as a negative');
+  end;
+
+  -- A press with nothing to say about cuts is one cut with no name, which is
+  -- what this function did before 0045. One shape, not two.
+  perform press(
+    jsonb_build_array(jsonb_build_object('node_id', lot_id)),
+    jsonb_build_array(jsonb_build_object('destinations', jsonb_build_array(
+      jsonb_build_object('vessel_id', tank, 'volume_l', 500)))),
+    '{}'::jsonb, '{}'::jsonb);
+  perform test_ok('a press that says nothing about cuts is one unnamed cut, which is what it always was');
+
+  delete from lineage where parent_id = lot_id;
+  delete from event where subject_type = 'node';
+  delete from placement where vessel_id = tank;
+  delete from node where id = lot_id or name like 'Assert detail%';
+  delete from vessel where id = tank;
 end $$;
 
 -- ---------------------------------------------------------------------------

@@ -3864,27 +3864,103 @@ function pressScreen(): HTMLElement {
       on(source, "change", syncWarning);
 
       const empties = kit.filter((v) => v.is_empty);
-      const into = el("select", { class: "input" });
-      into.replaceChildren(
-        ...empties.map((v) =>
-          el("option", {
-            value: v.id,
-            text: v.capacity_l
-              ? `${v.name} (${v.type}, ${v.capacity_l} L)`
-              : `${v.name} (${v.type})`,
-          }),
-        ),
-      );
-      const litres = field({
-        label: "Juice out, litres",
-        type: "number",
-        placeholder: "1200",
-        hint: "What actually went into the vessel.",
+      const cutKinds = await terms("press_cut");
+
+      // One row per cut, added as you pull them. The first row is the whole
+      // press when nobody is separating fractions, which is what this screen
+      // did before 0045 and is still the common case.
+      type CutRow = {
+        root: HTMLElement;
+        cut: () => string;
+        vessel: () => string;
+        litres: () => string;
+      };
+      const cutRows: CutRow[] = [];
+      const cutHolder = el("div", { class: "rows" });
+
+      function addCutRow(): void {
+        const which = el("select", { class: "input" });
+        which.replaceChildren(
+          el("option", { value: "", text: "The whole press" }),
+          ...cutKinds.map((t) => el("option", { value: t.id, text: t.label })),
+        );
+        const vessel = el("select", { class: "input" });
+        vessel.replaceChildren(
+          ...empties.map((v) =>
+            el("option", {
+              value: v.id,
+              text: v.capacity_l
+                ? `${v.name} (${v.type}, ${v.capacity_l} L)`
+                : `${v.name} (${v.type})`,
+            }),
+          ),
+        );
+        const litres = field({
+          label: "Litres",
+          type: "number",
+          placeholder: "1200",
+          hint: "What actually went into the vessel.",
+        });
+        const root = el(
+          "div",
+          { class: "rows" },
+          el(
+            "div",
+            { class: "field" },
+            el("span", { class: "field-label", text: "Cut" }),
+            which,
+          ),
+          el(
+            "div",
+            { class: "field" },
+            el("span", { class: "field-label", text: "Into" }),
+            vessel,
+          ),
+          litres.root,
+        );
+        cutRows.push({
+          root,
+          cut: () => which.value,
+          vessel: () => vessel.value,
+          litres: () => litres.value(),
+        });
+        cutHolder.append(root);
+      }
+      addCutRow();
+
+      // What the processing log asks for beyond the numbers. All optional: a
+      // press nobody timed is still a press, and a form that refused one would
+      // be asking for a lie.
+      // Picked rather than typed, so one run can be compared against another and
+      // "Champagne 1.2 bar" typed three ways is not three programs. Open,
+      // because the programs belong to this press and nobody else's.
+      const program = termPicker("press_program", {
+        label: "Press program",
+        stickyKey: "press_program",
+        allowEmpty: true,
       });
+      const wholeCluster = field({
+        label: "Whole cluster, percent",
+        type: "number",
+        hint: "Blank if nobody counted. 100 is whole cluster, 0 is fully destemmed.",
+      });
+      const skinStart = field({
+        label: "Skin contact started",
+        type: "datetime-local",
+      });
+      const skinEnd = field({ label: "Skin contact ended", type: "datetime-local" });
+      // The other duration. How long the skins were on and how long the press
+      // ran are two different facts, and the form asks for both.
+      const ranFrom = field({ label: "Press started", type: "datetime-local" });
+      const ranTo = field({ label: "Press finished", type: "datetime-local" });
       const name = field({
         label: "Name the lot",
         hint: "Blank names it after the pick.",
       });
+
+      // A picker loads its own rows, and an unloaded one is an empty select
+      // that looks like a winery with no programs rather than one nobody asked.
+      await program.reload();
 
       body.replaceChildren(
         rows(
@@ -3903,24 +3979,46 @@ function pressScreen(): HTMLElement {
                 "Every vessel is full. Rack one out before pressing into it.",
                 "note",
               )
-            : el(
-                "div",
-                { class: "field" },
-                el("span", { class: "field-label", text: "Into" }),
-                into,
+            : cutHolder,
+          empties.length === 0
+            ? el("span", {})
+            : button(
+                "Another cut",
+                () => {
+                  addCutRow();
+                },
+                "quiet",
               ),
-          litres.root,
           name.root,
+          el(
+            "details",
+            { class: "more" },
+            el("summary", { text: "How it was pressed" }),
+            rows(
+              program.root,
+              wholeCluster.root,
+              skinStart.root,
+              skinEnd.root,
+              ranFrom.root,
+              ranTo.root,
+            ),
+          ),
           button("Record the press", async () => {
-            if (!litres.value()) {
+            if (cutRows.some((row) => !row.litres())) {
               message.replaceChildren(banner("How many litres came out?", "error"));
               return;
             }
-            if (!into.value) {
+            if (cutRows.some((row) => !row.vessel())) {
               message.replaceChildren(banner("Pick a vessel for the juice.", "error"));
               return;
             }
             try {
+              // A datetime-local field gives a local wall clock with no zone.
+              // Handing that to Postgres as text would have it read as UTC,
+              // which puts a four hour skin contact seven hours out in Oregon.
+              const asInstant = (raw: string) =>
+                raw ? new Date(raw).toISOString() : null;
+
               const out = await press({
                 sources: [
                   {
@@ -3928,22 +4026,39 @@ function pressScreen(): HTMLElement {
                     weight_lbs: weight.value() ? Number(weight.value()) : null,
                   },
                 ],
-                destinations: [
-                  { vessel_id: into.value, volume_l: Number(litres.value()) },
-                ],
+                cuts: cutRows.map((row) => ({
+                  ...(row.cut() ? { cut_id: row.cut() } : {}),
+                  destinations: [
+                    { vessel_id: row.vessel(), volume_l: Number(row.litres()) },
+                  ],
+                })),
                 ...(name.value() ? { node: { name: name.value() } } : {}),
+                detail: Object.fromEntries(
+                  Object.entries({
+                    program_id: program.value() || null,
+                    whole_cluster_pct: wholeCluster.value()
+                      ? Number(wholeCluster.value())
+                      : null,
+                    skin_contact_start: asInstant(skinStart.value()),
+                    skin_contact_end: asInstant(skinEnd.value()),
+                    pressed_from: asInstant(ranFrom.value()),
+                    pressed_to: asInstant(ranTo.value()),
+                  }).filter(([, v]) => v !== null),
+                ),
               });
+              const first = cutRows[0]?.vessel() ?? "";
               showResult(
                 await resultScreen(
-                  into.value,
+                  first,
                   out.node_id,
                   0,
                   `Pressed. ${out.lbs_in.toLocaleString()} lbs in, ` +
                     `${out.litres_out.toLocaleString()} L out, ` +
-                    `${out.yield_l_per_ton === null ? "yield unknown" : `${out.yield_l_per_ton} L per ton`}. ` +
+                    `${out.yield_l_per_ton === null ? "yield unknown" : `${out.yield_l_per_ton} L per ton`}` +
+                    `${out.cuts.length > 1 ? ` across ${out.cuts.length} cuts` : ""}. ` +
                     `${out.bins_emptied} bin${out.bins_emptied === 1 ? "" : "s"} emptied.`,
                 ),
-                into.value,
+                first,
               );
             } catch (error) {
               message.replaceChildren(fail(error));

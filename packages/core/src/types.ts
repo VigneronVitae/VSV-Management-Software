@@ -15,6 +15,8 @@ export type TermKind =
   | "vessel_maker"
   | "wood"
   | "vessel_type"
+  | "press_cut"
+  | "press_program"
   | "product_type"
   | "material_kind"
   | "operation"
@@ -280,6 +282,9 @@ export type Weighing = {
 
 export type PressResult = {
   node_id: Uuid;
+  // One lot per cut. The first is also `node_id`, so a press with no cuts reads
+  // the same as it did before 0045.
+  cuts: Uuid[];
   stage: string;
   lbs_in: number;
   litres_out: number;

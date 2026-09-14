@@ -5,7 +5,7 @@
 -- Depends on: [supabase/migrations/0030_writable_columns.sql,
 --              supabase/migrations/0033_intake.sql,
 --              supabase/migrations/0043_record_propagation.sql]
--- Depended on by: [tests/schema_assertions.sql]
+-- Depended on by: [tests/schema_assertions.sql, supabase/migrations/0045_press_detail.sql]
 -- Axioms enforced: T0-5 (a departure is an event and is not unmade; a plan is
 --                  not an event and may be changed), T1-4 (finishing says what
 --                  is still incomplete rather than refusing)

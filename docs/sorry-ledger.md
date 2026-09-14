@@ -610,22 +610,6 @@ sentence and changes one policy. *Load-bearing:* yes, during harvest, and the wo
 that he is reachable by phone.
 
 
-**S-52. A press records no cuts, so free run and hard press are one lot unless they are pressed separately.**
-`0034` presses a set of bins into a set of vessels and makes one child. The winemaker's answer
-for the first pick was "one lot, all juice together", which is what this builds, and he added
-that the lot is one portion of a larger Pinot Gris blend later, which lineage already handles.
-What is not built is separating the cuts *within* one pressing: pulling free run into one vessel
-and the hard press into another today means calling `press` twice against the same bins with two
-weights, which records two lots with lineage shares proportional to fruit weight rather than to
-which juice ran when. **That is arithmetically sound and factually wrong**: the shares say the
-hard press is made of a proportional slice of every bin, which it is, and say nothing about it
-being the hard press, which is the thing a winemaker would want to know in March. *Resolves when:*
-a press writes a cut onto each child, at which point the question is whether a cut is a term in a
-vocabulary or an attribute, and that is a five minute conversation rather than a guess.
-*Load-bearing:* not for the first pick, which is one lot by decision. It becomes load-bearing the
-first time somebody separates a press fraction and expects the record to say why.
-
-
 **S-53. A grower is a string in two places and nothing joins them.**
 `block.vineyard` says where fruit came from and `vessel.attributes.on_loan_from` says whose bin
 it arrived in, and both are free text because a vineyard you buy fruit from is not a party at
@@ -751,7 +735,30 @@ one query and one grep and belongs in `green` beside the checks that already com
 against the database. *Load-bearing:* the next time a vocabulary is renamed or retired.
 
 
+**S-62. A cut is named and its position in the run is not.**
+`0045` records which cut a lot is, from a vocabulary: free run, press, hard press. What it does
+not record is the order they came off, or the pressure each was taken at, and the vocabulary's
+sort order is a display preference rather than a fact about a particular press. Two cuts called
+`press` off one run, which is ordinary, are indistinguishable from each other. **So the record can
+say what a lot is and not when in the run it was taken**, and for a press where somebody pulled
+four fractions that is most of what they would want to know later. *Resolves when:* a cut carries
+its sequence within its own press, which is a small column and a decision about whether pressure
+or time or simply order is the thing worth recording, and that is a question for the person
+running the press. *Load-bearing:* the first time more than two fractions come off one run.
+
+
 ## Discharged
+**S-52. A press recorded no cuts.** *Discharged by `0045`.*
+The entry said that pressing free run and hard press separately recorded shares proportional to
+fruit weight, which is arithmetically sound and factually wrong, because the shares say the hard
+press is a proportional slice of every bin and say nothing about it being the hard press.
+**The resolution was not to change the arithmetic.** Proportional by fruit weight is correct: a
+hard press is made of the same fruit as the free run and in the same ratios. What was missing was
+that the cut is a fact about the lot and there was nowhere to put it. `0045` makes each cut its
+own child carrying its own name, from a registered `press_cut` vocabulary so that free run typed
+three ways is not three cuts, and every child of one press draws the same share from every parent.
+What remains is narrower and is filed as S-58's neighbour, S-62.
+
 
 **S-25. An account belonging to no party is staff, so a client who signs up
 before being linked sees the whole cellar.**

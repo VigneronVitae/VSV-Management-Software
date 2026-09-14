@@ -856,15 +856,23 @@ export async function unweighedBins(nodeId?: Uuid): Promise<UnweighedBin[]> {
 // bins presses to a ferment, a ferment presses to maturation.
 export async function press(args: {
   sources: Array<{ node_id: Uuid; weight_lbs?: number | null }>;
-  destinations: Array<{ vessel_id: Uuid; volume_l: number }>;
-  node?: { id?: Uuid; name?: string | null };
-  data?: Record<string, unknown>;
+  // One entry per cut. A press with nothing to say about cuts is a single entry
+  // with no cut_id, which is what this did before 0045.
+  cuts: Array<{
+    cut_id?: Uuid | null;
+    name?: string | null;
+    destinations: Array<{ vessel_id: Uuid; volume_l: number }>;
+  }>;
+  node?: { name?: string | null; attributes?: Record<string, unknown> };
+  // program, whole_cluster_pct, skin_contact_start, skin_contact_end,
+  // temperature_c, note. All optional: a press nobody timed is still a press.
+  detail?: Record<string, unknown>;
 }): Promise<PressResult> {
   const { data, error } = await kernel().rpc("press", {
     p_sources: args.sources,
-    p_destinations: args.destinations,
+    p_cuts: args.cuts,
     p_node: args.node ?? {},
-    p_data: args.data ?? {},
+    p_detail: args.detail ?? {},
   });
   if (error) throw new KernelError(error);
   return data as PressResult;
