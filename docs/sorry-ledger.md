@@ -686,6 +686,29 @@ a later session would divide a shared scale reading by, and three numbers that a
 divide it evenly and wrongly. That is the estimate S-50 is waiting on.
 
 
+**S-57. The winery's timezone is a constant in a function.**
+`day_log` decides which day an event belongs to by converting its timestamp into
+`America/Los_Angeles`, because the database thinks in UTC and an afternoon pressing in Oregon
+would otherwise land on tomorrow. A daily log on the wrong day is worse than no daily log, so
+the conversion is right and the constant is the problem: it is correct for this winery and
+silently wrong for any other, in a way that shows up as events drifting a day rather than as an
+error. Same family as S-49 and S-55, and the same fix: a facility knows where it is.
+*Resolves when:* the facility carries a timezone alongside its weight and area units, which is
+one decision covering all three rather than three. *Load-bearing:* no, for one winery in Oregon.
+
+**S-58. Nothing checks that the photograph is of this weighing.**
+`0042` lets a weighing carry a path to a photograph of the scale, which turns a typed number
+into evidence of a number. What it does not do is verify any relationship between the two: the
+path is whatever the client uploaded and said, so a photograph of yesterday's display, of a
+different scale, or of nothing at all is accepted and looks exactly like a good one. **The value
+of the feature is entirely in the discipline of the person holding the phone**, which is worth
+saying out loud because a photograph carries an air of proof that this one has not earned.
+*Resolves when:* either the upload is bound to the event at the point the kernel writes it,
+rather than being a string handed in, or a reading is transcribed from the image and compared
+with what was typed, which is the version that would actually catch a mistyped weight and is a
+long way off. *Load-bearing:* no. It is weaker evidence than it appears, and that is all.
+
+
 ## Discharged
 
 **S-25. An account belonging to no party is staff, so a client who signs up

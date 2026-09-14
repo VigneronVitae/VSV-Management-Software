@@ -49,7 +49,11 @@ export type Place =
   | { at: "bins-to-return" }
   | { at: "export" }
   | { at: "vineyards" }
-  | { at: "block"; id: string };
+  | { at: "block"; id: string }
+  // The only place whose identifier is not a uuid: a day is named by its date,
+  // because a link to a day somebody can read and type is worth more than one
+  // that resolves faster.
+  | { at: "day"; id?: string };
 
 export const HOME: Place = { at: "home" };
 
@@ -76,7 +80,11 @@ const WITHOUT_ID = new Set([
   "bins-to-return",
   "export",
   "vineyards",
+  "day",
 ]);
+
+// A calendar day, which is what the day log is addressed by.
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 const WITH_ID = new Set([
   "vessel-type",
@@ -96,6 +104,7 @@ export function decode(hash: string): Place {
   const [at, id] = parts;
   if (!at) return HOME;
   if (WITHOUT_ID.has(at) && parts.length === 1) return { at } as Place;
+  if (at === "day" && id && DAY.test(id)) return { at, id } as Place;
   if (WITH_ID.has(at) && id && UUID.test(id)) return { at, id } as Place;
   return HOME;
 }

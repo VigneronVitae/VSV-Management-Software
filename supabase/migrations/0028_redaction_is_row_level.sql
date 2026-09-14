@@ -5,7 +5,7 @@
 -- Depends on: [supabase/migrations/0002_derived_and_rls.sql,
 --              supabase/migrations/0003_parties_and_products.sql,
 --              supabase/migrations/0018_lot_privacy.sql]
--- Depended on by: [tests/schema_assertions.sql]
+-- Depended on by: [tests/schema_assertions.sql, supabase/migrations/0041_daily_log.sql]
 -- Axioms enforced: AR-E10, redaction is row-level.
 -- Open sorries: S-44, a vessel holding wine the viewer may not see now reports
 --               as empty rather than as occupied. AR-E11 is the answer and is

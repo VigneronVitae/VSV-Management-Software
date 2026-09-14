@@ -2,6 +2,7 @@ import {
   type AppUser,
   addBinsToPick,
   addBlock,
+  addDayNote,
   addLocation,
   addParty,
   addPlanting,
@@ -18,6 +19,9 @@ import {
   createVesselWithWine,
   currentAppUser,
   currentSession,
+  type DayNote,
+  dayLog,
+  dayNotes,
   exportCellar,
   facilityParty,
   fillVessel,
@@ -33,6 +37,7 @@ import {
   press,
   rackPlan,
   rackTransfer,
+  removeDayNote,
   removePick,
   removePlanting,
   resolveCode,
@@ -269,6 +274,8 @@ async function screenFor(place: Place): Promise<HTMLElement> {
       return exportScreen();
     case "vineyards":
       return vineyardsScreen();
+    case "day":
+      return dayScreen(place.id);
     case "block": {
       const there = (await blocks()).some((b) => b.id === place.id);
       if (!there) throw new GoneError("That block is not there to open.");
@@ -650,6 +657,11 @@ async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> 
     lede(`${user.name}, ${user.role}. What would you like to do?`),
     el("h2", { class: "section-head", text: "Harvest" }),
     menu([
+      {
+        name: "The day",
+        note: "What happened today, and anything worth writing down about it.",
+        go: () => go({ at: "day" }),
+      },
       {
         name: "Picking",
         note:
@@ -4448,6 +4460,213 @@ function blockScreen(blockId: string): HTMLElement {
                 notes: notes.value() || null,
               });
               message.replaceChildren(banner("Saved.", "good"));
+            } catch (error) {
+              message.replaceChildren(fail(error));
+            }
+          }),
+          message,
+          button("Back", () => goBack(), "quiet"),
+        ),
+      );
+    } catch (error) {
+      body.replaceChildren(
+        fail(error),
+        button("Back", () => goBack(), "quiet"),
+      );
+    }
+  })();
+
+  return view;
+}
+
+// --- the day ---------------------------------------------------------------
+
+// Both halves on one screen, which is what the winemaker asked for. The spine
+// is derived from the record and cannot disagree with it; the notes are the
+// things the schema has no column for and never will.
+
+// A local date, not a UTC one. `toISOString().slice(0, 10)` is the obvious
+// wrong answer here: at five in the afternoon in Oregon it names tomorrow, and
+// a daily log on the wrong day is worse than none. The kernel does the same
+// conversion for the same reason, in `day_log`.
+function localDay(when: Date): string {
+  const y = when.getFullYear();
+  const m = String(when.getMonth() + 1).padStart(2, "0");
+  const d = String(when.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function shiftDay(iso: string, by: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const when = new Date(y ?? 2026, (m ?? 1) - 1, (d ?? 1) + by);
+  return localDay(when);
+}
+
+// The numbers a person would want off a weighing or a press, in words. Anything
+// this does not recognise is shown as it was stored rather than dropped: a log
+// that quietly omits what it cannot format is a log you cannot trust.
+function describeDetail(detail: Record<string, unknown> | null): string {
+  if (!detail) return "";
+  const parts: string[] = [];
+  const num = (k: string) =>
+    typeof detail[k] === "number" ? (detail[k] as number).toLocaleString() : null;
+
+  if (num("net_lbs")) {
+    parts.push(
+      `${num("net_lbs")} lbs of fruit, from ${num("gross_lbs")} gross less ${num("tare_lbs")} of bin`,
+    );
+  }
+  if (num("litres_out")) {
+    parts.push(`${num("lbs_in")} lbs in, ${num("litres_out")} L out`);
+  }
+  if (typeof detail.note === "string" && detail.note) parts.push(detail.note);
+  if (typeof detail.stage === "string" && parts.length === 0) {
+    parts.push(num("quantity") ? `${num("quantity")} ${detail.unit}` : "no weight yet");
+  }
+  if (parts.length > 0) return parts.join(". ");
+
+  const rest = Object.entries(detail).filter(([k]) => k !== "bins" && k !== "parents");
+  return rest.length === 0 ? "" : rest.map(([k, v]) => `${k}: ${String(v)}`).join(", ");
+}
+
+function dayScreen(on?: string): HTMLElement {
+  const day = on ?? localDay(new Date());
+  const body = el("div", {}, empty("Loading."));
+  const message = el("div", {});
+  const view = screen("The day", body);
+
+  void (async () => {
+    try {
+      const [entries, notes, user] = await Promise.all([
+        dayLog(day),
+        dayNotes(day),
+        currentAppUser(),
+      ]);
+
+      const today = localDay(new Date());
+      const heading =
+        day === today
+          ? "Today"
+          : new Date(`${day}T12:00:00`).toLocaleDateString(undefined, {
+              weekday: "long",
+              day: "numeric",
+              month: "long",
+            });
+      view.replaceChildren(el("h1", { text: heading }), body);
+
+      const written = field({
+        label: "Write something",
+        placeholder: "Fruit came in clean. Press ran slow after lunch.",
+      });
+      const isPrivate = checkbox("Only I can see this", false);
+
+      function noteRow(n: DayNote): HTMLElement {
+        const mine = n.author_id === user?.id;
+        return el(
+          "li",
+          { class: "vessel-row" },
+          el("span", { class: "vessel-name", text: n.body }),
+          el("span", {
+            class: "vessel-detail",
+            text: n.private ? "private" : "on the board",
+          }),
+          ...(mine
+            ? [
+                button(
+                  "Delete",
+                  async () => {
+                    try {
+                      await removeDayNote(n.id);
+                      go({ at: "day" });
+                    } catch (error) {
+                      message.replaceChildren(fail(error));
+                    }
+                  },
+                  "quiet",
+                ),
+              ]
+            : []),
+        );
+      }
+
+      body.replaceChildren(
+        rows(
+          el(
+            "div",
+            { class: "day-move" },
+            button("Earlier", () => go({ at: "day", id: shiftDay(day, -1) }), "quiet"),
+            el("span", { class: "field-hint", text: day }),
+            ...(day < today
+              ? [
+                  button(
+                    "Later",
+                    () => go({ at: "day", id: shiftDay(day, 1) }),
+                    "quiet",
+                  ),
+                ]
+              : []),
+          ),
+
+          el("h2", { class: "section-head", text: "What happened" }),
+          entries.length === 0
+            ? empty("Nothing recorded on this day.")
+            : el(
+                "ul",
+                { class: "vessel-list" },
+                ...entries.map((e) =>
+                  el(
+                    "li",
+                    { class: "vessel-row" },
+                    el("span", {
+                      class: "vessel-detail",
+                      text: new Date(e.at).toLocaleTimeString(undefined, {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      }),
+                    }),
+                    el("span", { class: "vessel-name", text: e.headline }),
+                    el("span", { class: "vessel-detail", text: e.subject }),
+                    describeDetail(e.detail)
+                      ? el("span", {
+                          class: "vessel-detail",
+                          text: describeDetail(e.detail),
+                        })
+                      : null,
+                    // T0-3 on the screen. An inferred event and one somebody
+                    // stood in front of must not read the same.
+                    e.provenance === "observed"
+                      ? null
+                      : el("span", { class: "tag tag-inherited", text: e.provenance }),
+                  ),
+                ),
+              ),
+
+          el("h2", { class: "section-head", text: "Notes" }),
+          notes.length === 0
+            ? empty("Nothing written about this day yet.")
+            : el("ul", { class: "vessel-list" }, ...notes.map(noteRow)),
+          written.root,
+          isPrivate.root,
+          button("Add it", async () => {
+            if (!written.value().trim()) {
+              message.replaceChildren(banner("Write something first.", "error"));
+              return;
+            }
+            if (!user) {
+              message.replaceChildren(
+                banner("A note is signed, and this sign-in has no name here.", "error"),
+              );
+              return;
+            }
+            try {
+              await addDayNote({
+                id: newId(),
+                on_date: day,
+                body: written.value().trim(),
+                private: isPrivate.input.checked,
+                author_id: user.id,
+              });
+              go({ at: "day", id: day });
             } catch (error) {
               message.replaceChildren(fail(error));
             }

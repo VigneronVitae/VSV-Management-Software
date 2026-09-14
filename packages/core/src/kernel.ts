@@ -5,6 +5,8 @@ import type {
   BinToReturn,
   Block,
   CodePayload,
+  DayEntry,
+  DayNote,
   EventRow,
   HistoryRow,
   Location,
@@ -953,5 +955,44 @@ export async function cancelPick(
 // condition under which deleting it destroys no record. Administrators only.
 export async function removePick(nodeId: Uuid): Promise<void> {
   const { error } = await kernel().rpc("remove_pick", { p_node_id: nodeId });
+  if (error) throw new KernelError(error);
+}
+
+// --- the day ---------------------------------------------------------------
+
+// What happened on a day, asked rather than stored. Runs as the caller, so two
+// people get two different days and both are correct. See 0041.
+export async function dayLog(on?: string): Promise<DayEntry[]> {
+  const { data, error } = await kernel().rpc("day_log", { p_on: on ?? null });
+  if (error) throw new KernelError(error);
+  return (data ?? []) as DayEntry[];
+}
+
+export async function dayNotes(on: string): Promise<DayNote[]> {
+  const { data, error } = await kernel()
+    .from("day_note")
+    .select("id,on_date,body,private,author_id,created_at")
+    .eq("on_date", on)
+    .order("created_at");
+  if (error) throw new KernelError(error);
+  return (data ?? []) as DayNote[];
+}
+
+// The author is written here rather than defaulted in the database, because the
+// insert policy requires it to be the caller: a note nobody signed is a note
+// nobody can be asked about.
+export async function addDayNote(note: {
+  id: Uuid;
+  on_date: string;
+  body: string;
+  private: boolean;
+  author_id: Uuid;
+}): Promise<void> {
+  const { error } = await kernel().from("day_note").insert(note);
+  if (error) throw new KernelError(error);
+}
+
+export async function removeDayNote(id: Uuid): Promise<void> {
+  const { error } = await kernel().from("day_note").delete().eq("id", id);
   if (error) throw new KernelError(error);
 }

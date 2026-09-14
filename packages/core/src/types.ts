@@ -293,3 +293,27 @@ export type BinToReturn = {
   owed_to: string | null;
   location_id: Uuid | null;
 };
+
+// --- the day ---------------------------------------------------------------
+
+// One thing that happened, derived from the record rather than written down a
+// second time. `kind` says which sort: an event, or a lot coming into being.
+export type DayEntry = {
+  at: string;
+  kind: string;
+  headline: string;
+  subject: string;
+  detail: Record<string, unknown> | null;
+  provenance: string;
+};
+
+// What somebody wrote about a day. Private notes are their author's alone; the
+// rest are the facility's board and are hidden from clients by policy.
+export type DayNote = {
+  id: Uuid;
+  on_date: string;
+  body: string;
+  private: boolean;
+  author_id: Uuid | null;
+  created_at: string;
+};

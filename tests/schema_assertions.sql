@@ -34,7 +34,7 @@
 --              supabase/migrations/0029_viewer_scope.sql,
 --              supabase/migrations/0030_writable_columns.sql,
 --              supabase/migrations/0031_scheduling_to_core.sql,
---              supabase/migrations/0032_vessel_maker_and_room_temperature.sql, supabase/migrations/0033_intake.sql, supabase/migrations/0034_press.sql, supabase/migrations/0035_bins_in_bulk.sql, supabase/migrations/0036_bins_on_loan.sql, supabase/migrations/0037_export.sql, supabase/migrations/0038_cancel_a_pick.sql, supabase/migrations/0039_vineyard.sql, supabase/migrations/0040_block_variety_is_history.sql]
+--              supabase/migrations/0032_vessel_maker_and_room_temperature.sql, supabase/migrations/0033_intake.sql, supabase/migrations/0034_press.sql, supabase/migrations/0035_bins_in_bulk.sql, supabase/migrations/0036_bins_on_loan.sql, supabase/migrations/0037_export.sql, supabase/migrations/0038_cancel_a_pick.sql, supabase/migrations/0039_vineyard.sql, supabase/migrations/0040_block_variety_is_history.sql, supabase/migrations/0041_daily_log.sql, supabase/migrations/0042_weighing_photo.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -2426,7 +2426,10 @@ begin
   -- 57 before 0027, which added a read and an admin-write policy to the new
   -- term_kind registry.
   -- 59 before 0039, which added read and admin write on vineyard and planting.
-  want := '63';
+  -- 63 before 0041, which added four on day_note: read, insert, and update and
+  -- delete restricted to the author. None of them reads blanket true, because a
+  -- note is scoped either to the facility or to whoever wrote it.
+  want := '67';
   if have <> want then
     raise exception
       'FAIL: there are % policies in public and this suite was written against %. If that is deliberate, update this number, and judge the new policy in the disposition list below if it reads or writes blanket true', have, want;
@@ -2673,7 +2676,10 @@ begin
   -- primary keys, two uniques (vineyard.name, one planting per variety per
   -- block), and three foreign keys, being block to vineyard, planting to block,
   -- and the composite that pins a planting's term to the variety vocabulary.
-  want := 'c=23 f=47 p=25 u=16';
+  -- c=23 f=47 p=25 u=16 before 0041, which added day_note: its primary key, the
+  -- foreign key to its author, and the check that a note says something, because
+  -- an empty note is not a note.
+  want := 'c=24 f=48 p=26 u=16';
   if have <> want then
     raise exception
       E'FAIL: the constraint inventory changed.\nnow:  %\nwas:  %\nIf that is deliberate, update this line in the same commit that changed the schema.', have, want;
@@ -2832,7 +2838,10 @@ begin
   -- no meaning without the block it is in, so deleting the block takes what was
   -- planted in it. The two new no-actions are block to vineyard and the
   -- composite pinning a planting to the variety vocabulary.
-  want := 'a=29 c=9 n=1 r=8';
+  -- a=29 before 0041. The new one is day_note to its author: no action, because
+  -- a note outliving the account that wrote it is still a record of the day, and
+  -- losing the winery's notes because somebody left would be the wrong answer.
+  want := 'a=30 c=9 n=1 r=8';
   if have <> want then
     raise exception
       E'FAIL: foreign key delete behaviour changed.\nnow:  %\nwas:  %\na is no action, c is cascade, n is set null, r is restrict.', have, want;
@@ -5979,13 +5988,168 @@ begin
     from pg_class c
     join pg_namespace ns on ns.oid = c.relnamespace
    where ns.nspname = 'public' and c.relkind = 'v'
-     and c.relname in ('planting_detail', 'bin_to_return', 'unweighed_bin')
+     and c.relname in ('planting_detail', 'bin_to_return', 'unweighed_bin',
+                       'weighing_without_photo')
      and (c.reloptions is null or not ('security_invoker=true' = any(c.reloptions)));
   if leaky is not null then
     raise exception
       'FAIL: these views run as their owner rather than their caller, so they hand a client somebody else data: %', leaky;
   end if;
   perform test_ok('every view added for intake and the vineyard runs as whoever asks');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- the day, and what somebody wrote about it'; end $$;
+
+-- 0041. The spine is derived, so the only things worth asserting about it are
+-- that it finds what happened, that it puts it on the right day, and that it
+-- shows the asker only what the asker may see.
+do $$
+declare n int; when_local date;
+begin
+  -- The timezone is the part that is easy to get wrong and impossible to notice.
+  -- An event at five in the afternoon in Oregon is the next day in UTC, so a log
+  -- that asked naively would file the afternoon's pressing under tomorrow.
+  select (timestamptz '2026-09-14 23:30:00+00' at time zone 'America/Los_Angeles')::date
+    into when_local;
+  if when_local <> date '2026-09-14' then
+    raise exception
+      'FAIL: half past eleven UTC lands on % in Oregon, so the day log would file an evening pressing under the wrong day', when_local;
+  end if;
+  perform test_ok('a day is the winery''s day rather than the database''s, which is what puts an evening on the right one');
+
+  insert into node (id, stage, status, name, created_by)
+  values ('00000000-0000-0000-0000-00000000da11', 'maturation', 'open', 'Assert day lot',
+          '00000000-0000-0000-0000-00000000a001');
+
+  select count(*) into n from day_log()
+   where subject = 'Assert day lot' and kind = 'lot';
+  if n <> 1 then
+    raise exception
+      'FAIL: a lot created today does not appear in today''s log, so a pick started in a vineyard would be absent from its own first day';
+  end if;
+  perform test_ok('a lot coming into existence appears in the day it appeared, which no event would have recorded');
+
+  delete from node where id = '00000000-0000-0000-0000-00000000da11';
+end $$;
+
+-- The two visibilities the winemaker asked for. Both are row level security
+-- rather than a screen choosing what to draw, because a screen that decides is
+-- a screen somebody can go around.
+do $$
+declare seen int;
+begin
+  insert into day_note (id, on_date, body, private, author_id) values
+    ('00000000-0000-0000-0000-00000000da21', current_date,
+     'Assert board note', false, '00000000-0000-0000-0000-00000000a001'),
+    ('00000000-0000-0000-0000-00000000da22', current_date,
+     'Assert private note', true, '00000000-0000-0000-0000-00000000a001');
+
+  -- The author, who wrote both.
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+  set local role authenticated;
+  select count(*) into seen from day_note where id in (
+    '00000000-0000-0000-0000-00000000da21', '00000000-0000-0000-0000-00000000da22');
+  reset role;
+  if seen <> 2 then
+    raise exception 'FAIL: the person who wrote both notes can see % of them', seen;
+  end if;
+
+  -- Another cellar user: the board, and not the private one.
+  perform test_act_as('00000000-0000-0000-0000-00000000a002');
+  set local role authenticated;
+  select count(*) into seen from day_note where id in (
+    '00000000-0000-0000-0000-00000000da21', '00000000-0000-0000-0000-00000000da22');
+  reset role;
+  if seen <> 1 then
+    raise exception
+      'FAIL: another cellar user sees % of the two notes, and should see the board and not the private one', seen;
+  end if;
+  perform test_ok('a private note is its author''s alone, and the board is everybody who works here');
+
+  -- A custom crush client: neither. They sign in to see their own wine and have
+  -- no business reading the winery's day, which may be about other people's fruit.
+  perform test_act_as('00000000-0000-0000-0000-00000000a003');
+  set local role authenticated;
+  select count(*) into seen from day_note;
+  reset role;
+  if seen <> 0 then
+    raise exception 'FAIL: a client can read % of the winery''s daily notes', seen;
+  end if;
+  perform test_ok('a client reads none of the winery''s daily notes, board or private');
+
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+  delete from day_note where id in (
+    '00000000-0000-0000-0000-00000000da21', '00000000-0000-0000-0000-00000000da22');
+end $$;
+
+-- 0042. A photograph of the scale turns a typed number into evidence of a
+-- number. Wanting it and requiring it differ in what happens next, not in
+-- whether anybody mentions it.
+do $$
+declare
+  pick_id uuid := '00000000-0000-0000-0000-00000000da31';
+  out_js  jsonb;
+  n       int;
+begin
+  update term set attributes = attributes || '{"tare_lbs": 50}'::jsonb
+   where kind = 'vessel_type' and value = 'picking_bin';
+
+  perform add_bins_to_pick(
+    jsonb_build_object('id', pick_id, 'variety_id', term_id('variety', 'riesling'),
+                       'vintage', 2026),
+    null, 2, term_id('vessel_type', 'picking_bin'), 'ASRTPHOTO', 100);
+
+  out_js := weigh_bins(pick_id,
+    array(select vessel_id from unweighed_bin where node_id = pick_id limit 1),
+    400, null, null, 'weighing/assert.jpg');
+  if (out_js ->> 'photographed')::boolean is not true then
+    raise exception 'FAIL: a weighing given a photograph does not say it has one';
+  end if;
+
+  out_js := weigh_bins(pick_id,
+    array(select vessel_id from unweighed_bin where node_id = pick_id),
+    300);
+  if (out_js ->> 'photographed')::boolean is not false then
+    raise exception 'FAIL: a weighing with no photograph claims to have one';
+  end if;
+  perform test_ok('a weighing says whether anybody photographed the scale, which is what wanting rather than requiring needs');
+
+  -- Absent rather than empty. "Nobody photographed this" and "somebody
+  -- photographed nothing" must not be the same row, which is why the path is
+  -- stripped rather than stored as an empty string.
+  select count(*) into n from event
+   where subject_type = 'node' and subject_id = pick_id
+     and operation_id = term_id('operation', 'weigh')
+     and data ? 'photo_path' and btrim(data ->> 'photo_path') = '';
+  if n <> 0 then
+    raise exception 'FAIL: % weighing(s) carry an empty photograph path, which reads as evidence and is not', n;
+  end if;
+  perform test_ok('a weighing nobody photographed carries no path at all rather than an empty one');
+
+  select count(*) into n from weighing_without_photo where node_id = pick_id;
+  if n <> 1 then
+    raise exception
+      'FAIL: % of the two weighings are listed as unphotographed, and exactly one was', n;
+  end if;
+  perform test_ok('the weighings whose numbers cannot be checked against anything are the ones listed');
+
+  -- One name, one function. 0036 shipped two `add_bins_to_pick` by adding
+  -- parameters with defaults, and every call then failed with "is not unique".
+  select count(*) into n from pg_proc p
+    join pg_namespace ns on ns.oid = p.pronamespace
+   where ns.nspname = 'public' and p.proname = 'weigh_bins';
+  if n <> 1 then
+    raise exception 'FAIL: there are % versions of weigh_bins, so a call cannot choose between them', n;
+  end if;
+  perform test_ok('weighing has exactly one signature, so adding the photograph did not fork it');
+
+  delete from event where subject_type = 'node' and subject_id = pick_id;
+  delete from placement where node_id = pick_id;
+  delete from node where id = pick_id;
+  delete from vessel where name like 'ASRTPHOTO%';
+  update term set attributes = attributes - 'tare_lbs'
+   where kind = 'vessel_type' and value = 'picking_bin';
 end $$;
 
 -- ---------------------------------------------------------------------------
