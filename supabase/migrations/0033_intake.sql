@@ -10,7 +10,7 @@
 --              supabase/migrations/0027_term_kind_registry.sql,
 --              supabase/migrations/0032_vessel_maker_and_room_temperature.sql,
 --              packages/cellar/docs/spec.md]
--- Depended on by: [tests/schema_assertions.sql, supabase/migrations/0034_press.sql]
+-- Depended on by: [tests/schema_assertions.sql, supabase/migrations/0034_press.sql, supabase/migrations/0035_bins_in_bulk.sql]
 -- Axioms enforced: T0-1 (one node type: a bin of fruit is a node like any
 --                  other), T0-2 (composition is derived, never stored),
 --                  T0-5 (events are append only, a correction is a new event),

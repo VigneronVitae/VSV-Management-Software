@@ -34,7 +34,7 @@
 --              supabase/migrations/0029_viewer_scope.sql,
 --              supabase/migrations/0030_writable_columns.sql,
 --              supabase/migrations/0031_scheduling_to_core.sql,
---              supabase/migrations/0032_vessel_maker_and_room_temperature.sql, supabase/migrations/0033_intake.sql, supabase/migrations/0034_press.sql]
+--              supabase/migrations/0032_vessel_maker_and_room_temperature.sql, supabase/migrations/0033_intake.sql, supabase/migrations/0034_press.sql, supabase/migrations/0035_bins_in_bulk.sql, supabase/migrations/0036_bins_on_loan.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -5587,6 +5587,135 @@ begin
   delete from vessel where id in (bin_a, bin_b, tank_id);
   update term set attributes = attributes - 'tare_lbs'
    where kind = 'vessel_type' and value = 'picking_bin';
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- bins by the stack, and bins that are not yours'; end $$;
+
+-- 0035 and 0036, both asked for during the first pick, which is when the cost of
+-- doing a thing six times is being paid rather than imagined.
+do $$
+declare
+  pick_id uuid := '00000000-0000-0000-0000-00000000e301';
+  made    jsonb;
+  n       int;
+  who     text;
+begin
+  -- Named so they cannot collide with whatever the winery has: the numbering
+  -- reads existing names, so an assertion using a real prefix would be an
+  -- assertion about production data, which is the fragility the first pick
+  -- already found once in this suite.
+  made := add_bins_to_pick(
+    jsonb_build_object('id', pick_id, 'variety_id', term_id('variety', 'chardonnay'),
+                       'vintage', 2026),
+    null, 3, term_id('vessel_type', 'picking_bin'), 'ASRTBIN', 100);
+
+  if made -> 'registered' <> '["ASRTBIN1", "ASRTBIN2", "ASRTBIN3"]'::jsonb then
+    raise exception 'FAIL: three new bins were named %', made -> 'registered';
+  end if;
+  if (made ->> 'bins')::int <> 3 then
+    raise exception 'FAIL: % bins landed on the pick from one action', made ->> 'bins';
+  end if;
+  perform test_ok('three bins are registered and put on one pick in a single action');
+
+  -- The gap rule. A retired bin leaves its number behind rather than handing it
+  -- to a different physical object, which is what makes a bin name worth
+  -- reading in a record two vintages later.
+  update vessel set name = 'ASRTBIN2-retired' where name = 'ASRTBIN2';
+  made := add_bins_to_pick(jsonb_build_object('id', pick_id),
+                           null, 1, term_id('vessel_type', 'picking_bin'), 'ASRTBIN', 100);
+  if made -> 'registered' <> '["ASRTBIN4"]'::jsonb then
+    raise exception 'FAIL: after retiring ASRTBIN2 the next bin was named %',
+      made -> 'registered';
+  end if;
+  perform test_ok('a retired bin does not hand its number to a different object');
+
+  -- A fermentation bin is a destination, so it is not something a pick is
+  -- registered into however many are asked for at once.
+  begin
+    perform add_bins_to_pick(jsonb_build_object('id', pick_id),
+      null, 1, term_id('vessel_type', 'fermentation_bin'), 'ASRTFB', 100);
+    raise exception 'FAIL: bulk registration made fermentation bins for a pick';
+  exception when others then
+    if position('not a picking bin type' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('bulk registration refuses a type fruit is not weighed in');
+  end;
+
+  begin
+    perform add_bins_to_pick(jsonb_build_object('id', pick_id), null, 0, null, null, null);
+    raise exception 'FAIL: a call naming no bins and asking for none did something';
+  exception when others then
+    if position('nothing to add' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a bulk call that names no bins and asks for none refuses rather than passing');
+  end;
+
+  -- 0036. Fruit bought in arrives in the grower's bins, and the grower is not a
+  -- party here: `party.kind` is facility or client, and a client is somebody
+  -- whose wine this is and who signs in to see it. So the lender is a name.
+  made := add_bins_to_pick(
+    jsonb_build_object('id', '00000000-0000-0000-0000-00000000e302',
+                       'variety_id', term_id('variety', 'chardonnay'), 'vintage', 2026),
+    null, 2, term_id('vessel_type', 'picking_bin'), 'ASRTLOAN', 100,
+    null, 'Assert Vineyards');
+
+  select count(*) into n from vessel
+   where name like 'ASRTLOAN%'
+     and (attributes ->> 'borrowed')::boolean
+     and attributes ->> 'on_loan_from' = 'Assert Vineyards';
+  if n <> 2 then
+    raise exception 'FAIL: % of 2 bins on loan say whose they are', n;
+  end if;
+  perform test_ok('bins registered for bought-in fruit record the grower they belong to');
+
+  -- Empty is not the same as available. This is the moment a borrowed bin stops
+  -- being a container and starts being something owed to somebody.
+  update placement set to_at = now()
+   where node_id = '00000000-0000-0000-0000-00000000e302';
+  select string_agg(distinct owed_to, ', ') into who
+    from bin_to_return where bin_name like 'ASRTLOAN%';
+  if who is distinct from 'Assert Vineyards' then
+    raise exception 'FAIL: emptied bins on loan are owed to %', coalesce(who, 'nobody');
+  end if;
+  perform test_ok('an emptied bin on loan is owed back to the grower by name, not to this winery');
+
+  -- Ours empty into being available rather than into being owed.
+  select count(*) into n from bin_to_return where bin_name like 'ASRTBIN%';
+  if n <> 0 then
+    raise exception 'FAIL: % of our own bins are listed as owed back', n;
+  end if;
+  perform test_ok('a bin this winery owns empties into being free rather than into being owed');
+
+  -- The two situations the winemaker separated stay separate. A row claiming
+  -- both would make the view pick one silently, which is the A13 shape.
+  begin
+    perform add_bins_to_pick(
+      jsonb_build_object('id', '00000000-0000-0000-0000-00000000e303',
+                         'variety_id', term_id('variety', 'chardonnay'), 'vintage', 2026),
+      null, 1, term_id('vessel_type', 'picking_bin'), 'ASRTBOTH', 100,
+      facility_party_id(), 'Assert Vineyards');
+    raise exception 'FAIL: a bin was recorded as both on loan from a grower and owned by a party';
+  exception when others then
+    if position('and this says both' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a bin is on loan from a grower or owned by a party here, never recorded as both');
+  end;
+
+  -- One name, one function. Adding parameters with defaults creates a second
+  -- function rather than replacing the first, and every caller then fails with
+  -- "is not unique": found by the test doing what the client would have done.
+  select count(*) into n from pg_proc p
+    join pg_namespace ns on ns.oid = p.pronamespace
+   where ns.nspname = 'public' and p.proname = 'add_bins_to_pick';
+  if n <> 1 then
+    raise exception
+      'FAIL: there are % versions of add_bins_to_pick, so a call cannot choose between them', n;
+  end if;
+  perform test_ok('bulk registration has exactly one signature, so no call is ambiguous');
+
+  delete from placement where node_id in ('00000000-0000-0000-0000-00000000e301',
+                                          '00000000-0000-0000-0000-00000000e302');
+  delete from node where id in ('00000000-0000-0000-0000-00000000e301',
+                                '00000000-0000-0000-0000-00000000e302');
+  delete from vessel where name like 'ASRTBIN%' or name like 'ASRTLOAN%';
 end $$;
 
 -- ---------------------------------------------------------------------------

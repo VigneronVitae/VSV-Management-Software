@@ -6,7 +6,7 @@
 -- Depends on: [supabase/migrations/0013_close_on_empty.sql,
 --              supabase/migrations/0014_rack.sql,
 --              supabase/migrations/0033_intake.sql]
--- Depended on by: [tests/schema_assertions.sql]
+-- Depended on by: [tests/schema_assertions.sql, supabase/migrations/0036_bins_on_loan.sql]
 -- Axioms enforced: T0-1 (one node type), T0-2 (composition is derived by
 --                  walking lineage, never copied), T0-5 (append only)
 -- Open sorries: S-52 (a press records no cuts, so free run and hard press are

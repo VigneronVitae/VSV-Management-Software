@@ -10,6 +10,22 @@ add_bin_to_pick:guard:4	add_bin_to_pick	guard	elsif existing.stage <> 'bin' then
 add_bin_to_pick:raise:4	add_bin_to_pick	raise	raise exception 'that lot is not a pick, so bins cannot be added to it';	raise notice 'that lot is not a pick, so bins cannot be added to it';	1
 add_bin_to_pick:guard:5	add_bin_to_pick	guard	elsif existing.status = 'closed' then	elsif false then	1
 add_bin_to_pick:raise:5	add_bin_to_pick	raise	raise exception 'that pick is closed; its fruit has already gone somewhere';	raise notice 'that pick is closed; its fruit has already gone somewhere';	1
+add_bins_to_pick:head:1	add_bins_to_pick	head	if coalesce(p_new_count, 0) = 0\n     and coalesce(array_length(p_vessel_ids, 1), 0) = 0 then	if false then	1
+add_bins_to_pick:raise:1	add_bins_to_pick	raise	raise exception 'no bins were named and none were asked for, so there is nothing to add';	raise notice 'no bins were named and none were asked for, so there is nothing to add';	1
+add_bins_to_pick:guard:1	add_bins_to_pick	guard	if coalesce(p_new_count, 0) < 0 or coalesce(p_new_count, 0) > 40 then	if false then	1
+add_bins_to_pick:raise:2	add_bins_to_pick	raise	raise exception '% is not a number of bins to register at once', p_new_count;	raise notice '% is not a number of bins to register at once', p_new_count;	1
+add_bins_to_pick:guard:2	add_bins_to_pick	guard	if lender is not null and p_owner_id is not null then	if false then	1
+add_bins_to_pick:raise:3	add_bins_to_pick	raise	raise exception	raise notice	3
+add_bins_to_pick:guard:3	add_bins_to_pick	guard	if coalesce(p_new_count, 0) > 0 then	if false then	1
+add_bins_to_pick:guard:4	add_bins_to_pick	guard	if prefix = '' then	if false then	1
+add_bins_to_pick:raise:4	add_bins_to_pick	raise	raise exception 'new bins need something to be called';	raise notice 'new bins need something to be called';	1
+add_bins_to_pick:guard:5	add_bins_to_pick	guard	if p_new_type_id is null then	if false then	1
+add_bins_to_pick:raise:5	add_bins_to_pick	raise	raise exception 'new bins need a type, so the scale knows what they weigh empty';	raise notice 'new bins need a type, so the scale knows what they weigh empty';	1
+add_bins_to_pick:head:2	add_bins_to_pick	head	if not exists (\n      select 1 from term\n       where id = p_new_type_id and kind = 'vessel_type'\n         and coalesce((attributes ->> 'intake_bin')::boolean, false)\n    ) then	if false then	1
+add_bins_to_pick:permissive:1	add_bins_to_pick	permissive	and coalesce((attributes ->> 'intake_bin')::boolean, false)	and coalesce((attributes ->> 'intake_bin')::boolean, true)	1
+add_bins_to_pick:raise:6	add_bins_to_pick	raise	raise exception 'that is not a picking bin type, so fruit is not weighed in it';	raise notice 'that is not a picking bin type, so fruit is not weighed in it';	1
+add_bins_to_pick:guard:6	add_bins_to_pick	guard	if lender is not null then	if false then	1
+add_bins_to_pick:guard:7	add_bins_to_pick	guard	elsif p_owner_id is not null and p_owner_id is distinct from facility_party_id() then	elsif false then	1
 apply_owner_privacy:guard:1	apply_owner_privacy	guard	if new.hidden = '{}' and new.owner_id is not null then	if false then	1
 bin_tare_lbs:guard:1	bin_tare_lbs	guard	if t is null then	if false then	1
 bin_tare_lbs:raise:1	bin_tare_lbs	raise	raise exception 'no vessel with id %', p_vessel_id;	raise notice 'no vessel with id %', p_vessel_id;	1

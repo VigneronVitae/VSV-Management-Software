@@ -1,12 +1,13 @@
 import {
   type AppUser,
-  addBinToPick,
+  addBinsToPick,
   addBlock,
   addLocation,
   addParty,
   addVessel,
   addVesselTypeNote,
   appUsers,
+  type Block,
   bindCode,
   binsToReturn,
   blocks,
@@ -2872,16 +2873,6 @@ let pendingPick: {
   vintage: number | null;
 } | null = null;
 
-// Vessels that fruit is weighed in. The flag is on the type and this is the one
-// place the client reads it, so "which vessels are picking bins" has one answer
-// rather than one per screen.
-async function pickingBinTypeIds(): Promise<Set<string>> {
-  const types = await terms("vessel_type");
-  return new Set(
-    types.filter((t) => t.attributes?.intake_bin === true).map((t) => t.id),
-  );
-}
-
 // The block a pick came from, with a way to add one without leaving the screen.
 // S-51: block carries an admin-write policy, so a cellar hand gets a refusal
 // here rather than a row, and the refusal says what it is.
@@ -3115,9 +3106,14 @@ function pickBinsScreen(openOn?: string): HTMLElement {
 
   void (async () => {
     try {
-      const [kit, binTypes] = await Promise.all([vessels(), pickingBinTypeIds()]);
+      const [kit, types, blockRows] = await Promise.all([
+        vessels(),
+        terms("vessel_type"),
+        blocks(),
+      ]);
+      const binTypes = types.filter((t) => t.attributes?.intake_bin === true);
 
-      if (binTypes.size === 0) {
+      if (binTypes.length === 0) {
         body.replaceChildren(
           banner(
             "No vessel type is marked as weighed at intake, so there are no " +
@@ -3129,79 +3125,19 @@ function pickBinsScreen(openOn?: string): HTMLElement {
         return;
       }
 
-      const free = kit.filter((v) => binTypes.has(v.type_id) && v.is_empty);
-      const bin = el("select", { class: "input" });
-      const exhausted = el("div", {});
+      const binTypeIds = new Set(binTypes.map((t) => t.id));
+      const free = kit.filter((v) => binTypeIds.has(v.type_id) && v.is_empty);
+
       const fill = field({
         label: "How full, percent",
         type: "number",
         value: "100",
         hint: "By eye. A bin weighed on its own later turns this into a real number.",
       });
-
-      const addButton = button("Add this bin", () => void addOne());
-
-      // An empty picker with a live button beside it is an offer the kernel is
-      // about to refuse. Saying so here costs nothing and saves a round trip in
-      // the one place somebody is moving fast.
-      function loadBins(): void {
-        bin.replaceChildren(
-          ...free.map((v) =>
-            el("option", { value: v.id, text: `${v.name} (${v.type})` }),
-          ),
-        );
-        addButton.disabled = free.length === 0;
-        exhausted.replaceChildren(
-          free.length === 0
-            ? banner(
-                "Every picking bin already holds fruit. Weigh and empty one, or register more.",
-                "note",
-              )
-            : el("span", {}),
-        );
-      }
-
-      async function addOne(): Promise<void> {
-        const pick = nodeId ? { id: nodeId } : pendingPick ? { ...pendingPick } : null;
-        if (!pick) {
-          message.replaceChildren(
-            banner("Start a pick first, so the bin has something to join.", "error"),
-          );
-          return;
-        }
-        const chosen = bin.value;
-        try {
-          const raw = fill.value();
-          const result = await addBinToPick({
-            pick,
-            vesselId: chosen,
-            fillPct: raw ? Number(raw) : null,
-          });
-          // The pick exists now, so later bins join it by id rather than
-          // re-sending the description.
-          pendingPick = null;
-          nodeId = result.node_id;
-          const at = free.findIndex((v) => v.id === chosen);
-          if (at >= 0) free.splice(at, 1);
-          loadBins();
-          await refreshTally(result.node_id);
-          message.replaceChildren(
-            banner(
-              `Recorded. ${result.bins} bin${result.bins === 1 ? "" : "s"} on this pick.`,
-              "good",
-            ),
-          );
-          // The pick has an id worth resuming on now, which it did not have when
-          // this screen opened.
-          window.history.replaceState(
-            null,
-            "",
-            encode({ at: "pick-bins", id: result.node_id }),
-          );
-        } catch (error) {
-          message.replaceChildren(fail(error));
-        }
-      }
+      const fillPct = (): number | null => {
+        const raw = fill.value();
+        return raw ? Number(raw) : null;
+      };
 
       async function refreshTally(id: string): Promise<void> {
         const waiting = await unweighedBins(id);
@@ -3217,16 +3153,188 @@ function pickBinsScreen(openOn?: string): HTMLElement {
         );
       }
 
-      loadBins();
+      // The pick's description travels with the first bin that joins it, and by
+      // id after that, so a second call does not make a second pick.
+      function pickPayload(): Record<string, unknown> | null {
+        if (nodeId) return { id: nodeId };
+        return pendingPick ? { ...pendingPick } : null;
+      }
+
+      async function landed(result: { node_id: string; bins: number }, said: string) {
+        pendingPick = null;
+        nodeId = result.node_id;
+        await refreshTally(result.node_id);
+        message.replaceChildren(
+          banner(
+            `${said} ${result.bins} bin${result.bins === 1 ? "" : "s"} on this pick.`,
+            "good",
+          ),
+        );
+        // The pick has an id worth resuming on now, which it did not have when
+        // this screen opened.
+        window.history.replaceState(
+          null,
+          "",
+          encode({ at: "pick-bins", id: result.node_id }),
+        );
+      }
+
+      // --- bins that already exist -----------------------------------------
+
+      // Checkboxes rather than one picker, because bins arrive by the stack. The
+      // winemaker registered three and added them one at a time, which is six
+      // actions for one decision.
+      const existing = free.map((v) => ({
+        vessel: v,
+        box: checkbox(`${v.name} (${v.type})`, false),
+      }));
+      const existingBlock = el("div", { class: "rows" });
+      const addExisting = button("Add ticked bins", () => void attachTicked());
+
+      function drawExisting(): void {
+        const left = existing.filter((e) => !e.box.input.disabled);
+        existingBlock.replaceChildren(
+          el("h2", { class: "section-head", text: "Bins you already have" }),
+          left.length === 0
+            ? empty("Every picking bin already holds fruit.")
+            : el("div", { class: "rows" }, ...left.map((e) => e.box.root)),
+        );
+        addExisting.disabled = left.length === 0;
+      }
+
+      async function attachTicked(): Promise<void> {
+        const chosen = existing
+          .filter((e) => e.box.input.checked && !e.box.input.disabled)
+          .map((e) => e.vessel.id);
+        if (chosen.length === 0) {
+          message.replaceChildren(
+            banner("Tick the bins that have fruit in them.", "error"),
+          );
+          return;
+        }
+        const pick = pickPayload();
+        if (!pick) {
+          message.replaceChildren(
+            banner("Start a pick first, so the bins have something to join.", "error"),
+          );
+          return;
+        }
+        try {
+          const result = await addBinsToPick({
+            pick,
+            vesselIds: chosen,
+            fillPct: fillPct(),
+          });
+          for (const e of existing) {
+            if (chosen.includes(e.vessel.id)) {
+              e.box.input.checked = false;
+              e.box.input.disabled = true;
+            }
+          }
+          drawExisting();
+          await landed(result, "Added.");
+        } catch (error) {
+          message.replaceChildren(fail(error));
+        }
+      }
+
+      drawExisting();
+
+      // --- bins that do not exist yet --------------------------------------
+
+      // Three empty bins and three bins of fruit in one action. The naming is the
+      // kernel's, not this screen's: "the next bin after PB3" is a rule, and a
+      // rule a client computes is a rule the next client gets wrong.
+      const howMany = field({
+        label: "How many new bins",
+        type: "number",
+        value: "3",
+        hint: "Registered and put on this pick together.",
+      });
+      const prefix = field({
+        label: "Call them",
+        value: commonPrefix(kit.filter((v) => binTypeIds.has(v.type_id))) || "PB",
+        hint: "Numbered on from the highest one you already have.",
+      });
+      const newType = el("select", { class: "input" });
+      newType.replaceChildren(
+        ...binTypes.map((t) => el("option", { value: t.id, text: t.label })),
+      );
+
+      // Whose bins these are. Fruit bought in arrives in the grower's bins and
+      // those go back, which is a different situation from a client's bins
+      // living in the barn, so the two are asked separately.
+      //
+      // The grower is free text rather than a picker, because a vineyard you buy
+      // fruit from is not a party at this winery and making it one would put a
+      // row in the table lot visibility is scoped by. That is S-53, and the cost
+      // is that the name is typed rather than chosen.
+      const ours = checkbox("These are our bins", true);
+      const lender = field({
+        label: "On loan from",
+        // The pick already knows which vineyard it came from, and fruit usually
+        // arrives in the bins of whoever grew it.
+        value: vineyardOfPick(blockRows),
+        placeholder: "Pearlstaad",
+        hint: "They go back. Empty ones show up under Bins to return.",
+      });
+      const lenderBox = el("div", {}, lender.root);
+      const syncOurs = () => {
+        lenderBox.hidden = ours.input.checked;
+      };
+      syncOurs();
+      on(ours.input, "change", syncOurs);
+
+      const makeBins = button("Register and add", async () => {
+        const count = howMany.value() ? Number(howMany.value()) : 0;
+        if (!count) {
+          message.replaceChildren(banner("How many bins?", "error"));
+          return;
+        }
+        const pick = pickPayload();
+        if (!pick) {
+          message.replaceChildren(
+            banner("Start a pick first, so the bins have something to join.", "error"),
+          );
+          return;
+        }
+        try {
+          const result = await addBinsToPick({
+            pick,
+            newCount: count,
+            newTypeId: newType.value,
+            namePrefix: prefix.value(),
+            fillPct: fillPct(),
+            onLoanFrom: ours.input.checked ? null : lender.value(),
+          });
+          await landed(result, `Registered ${result.registered.join(", ")}.`);
+        } catch (error) {
+          message.replaceChildren(fail(error));
+        }
+      });
+
       if (nodeId) await refreshTally(nodeId);
 
       body.replaceChildren(
         rows(
           tally,
-          exhausted,
-          bin,
           fill.root,
-          addButton,
+          el("h2", { class: "section-head", text: "New bins" }),
+          howMany.root,
+          prefix.root,
+          binTypes.length > 1
+            ? el(
+                "div",
+                { class: "field" },
+                el("span", { class: "field-label", text: "Type" }),
+                newType,
+              )
+            : el("span", {}),
+          ours.root,
+          lenderBox,
+          makeBins,
+          existingBlock,
+          addExisting,
           button("Weigh bins", () => go({ at: "scale" }), "secondary"),
           button("Done", () => go({ at: "intake" }), "quiet"),
           message,
@@ -3241,6 +3349,37 @@ function pickBinsScreen(openOn?: string): HTMLElement {
   })();
 
   return view;
+}
+
+// Which vineyard the pick in hand came from, so "on loan from" starts with the
+// name somebody would otherwise type. Only useful while a pick is being
+// described, which is the one moment this screen is open.
+function vineyardOfPick(blockRows: Block[]): string {
+  const id = pendingPick?.block_id;
+  if (!id) return "";
+  return blockRows.find((b) => b.id === id)?.vineyard ?? "";
+}
+
+// What this winery calls its bins, read off what it has rather than assumed.
+// Purely a default in a text box: the kernel is what decides the number, and a
+// wrong guess here costs one edit rather than a wrong name in the record.
+function commonPrefix(binsHere: VesselState[]): string {
+  const counts = new Map<string, number>();
+  for (const v of binsHere) {
+    const m = /^([A-Za-z][A-Za-z\s-]*?)\s*\d+$/.exec(v.name);
+    if (!m?.[1]) continue;
+    const p = m[1].trim();
+    counts.set(p, (counts.get(p) ?? 0) + 1);
+  }
+  let best = "";
+  let most = 0;
+  for (const [p, n] of counts) {
+    if (n > most) {
+      most = n;
+      best = p;
+    }
+  }
+  return best;
 }
 
 // The scale. Tick whatever went on it together, read the gross off the display,

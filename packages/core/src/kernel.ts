@@ -803,3 +803,38 @@ export async function binsToReturn(): Promise<BinToReturn[]> {
   if (error) throw new KernelError(error);
   return (data ?? []) as BinToReturn[];
 }
+
+// Bins arrive by the stack. Registering three and putting them on the same pick
+// is one call, atomic, and the numbering is the kernel's rule rather than a
+// client's guess: see 0035.
+export async function addBinsToPick(args: {
+  pick: Record<string, unknown>;
+  vesselIds?: Uuid[];
+  newCount?: number;
+  newTypeId?: Uuid;
+  namePrefix?: string;
+  fillPct: number | null;
+  // Whose bins. A party where the owner has standing here, a name where the
+  // grower is somebody you only buy fruit from. The kernel refuses both at
+  // once, because they are two different situations. See 0036.
+  ownerId?: Uuid | null;
+  onLoanFrom?: string | null;
+}): Promise<{ node_id: Uuid; registered: string[]; bins: number; unweighed: number }> {
+  const { data, error } = await kernel().rpc("add_bins_to_pick", {
+    p_pick: args.pick,
+    p_vessel_ids: args.vesselIds ?? null,
+    p_new_count: args.newCount ?? 0,
+    p_new_type_id: args.newTypeId ?? null,
+    p_name_prefix: args.namePrefix ?? null,
+    p_fill_pct: args.fillPct,
+    p_owner_id: args.ownerId ?? null,
+    p_on_loan_from: args.onLoanFrom ?? null,
+  });
+  if (error) throw new KernelError(error);
+  return data as {
+    node_id: Uuid;
+    registered: string[];
+    bins: number;
+    unweighed: number;
+  };
+}

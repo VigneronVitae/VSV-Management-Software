@@ -626,6 +626,22 @@ vocabulary or an attribute, and that is a five minute conversation rather than a
 first time somebody separates a press fraction and expects the record to say why.
 
 
+**S-53. A grower is a string in two places and nothing joins them.**
+`block.vineyard` says where fruit came from and `vessel.attributes.on_loan_from` says whose bin
+it arrived in, and both are free text because a vineyard you buy fruit from is not a party at
+this winery: making one a `party` to borrow its bins would put a row in the table `node_read`
+scopes lot visibility by, in order to record a fact about a plastic box. **That decision is
+right and its cost is that "Pearlstaad" typed twice is two unrelated strings.** Nothing reports
+how many of their bins are out, nothing catches "Pearlstaad" against "Pearlstadt", and the two
+fields cannot be joined to ask which grower's fruit is still in which grower's bins.
+*Resolves when:* either a `grower` party kind exists with no login and no lot visibility, which
+is the honest version and is a schema decision rather than a harvest one, or a vineyard becomes
+a registered vocabulary the way `0027` made every other list a row, at which point both fields
+point at the same term. *Load-bearing:* not for one delivery. It becomes load-bearing the first
+time somebody has to answer "whose bins do we still have", which is the question the returning
+of them turns on.
+
+
 ## Discharged
 
 **S-25. An account belonging to no party is staff, so a client who signs up
