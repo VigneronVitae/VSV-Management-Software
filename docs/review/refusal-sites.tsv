@@ -75,6 +75,10 @@ confirm_event:raise:1	confirm_event	raise	raise exception 'only a verifier may c
 confirm_event:silent:1	confirm_event	silent	where id = p_event_id and provenance = 'inferred'	where id = p_event_id and true	1
 confirm_event:guard:2	confirm_event	guard	if e.id is null then	if false then	1
 confirm_event:raise:2	confirm_event	raise	raise exception 'event % is not an inferred event awaiting confirmation', p_event_id;	raise notice 'event % is not an inferred event awaiting confirmation', p_event_id;	1
+count_supply:guard:1	count_supply	guard	if s.id is null then	if false then	1
+count_supply:raise:1	count_supply	raise	raise exception 'no supply with id %', p_supply_id;	raise notice 'no supply with id %', p_supply_id;	1
+count_supply:guard:2	count_supply	guard	if p_counted is null or p_counted < 0 then	if false then	1
+count_supply:raise:2	count_supply	raise	raise exception 'a count of % is not an amount on a shelf',	raise notice 'a count of % is not an amount on a shelf',	1
 create_vessel_with_wine:permissive:1	create_vessel_with_wine	permissive	coalesce((p_vessel ->> 'has_glycol')::boolean, false),	coalesce((p_vessel ->> 'has_glycol')::boolean, true),	1
 create_vessel_with_wine:guard:1	create_vessel_with_wine	guard	if p_generate_history then	if false then	1
 end_run_step:silent:1	end_run_step	silent	where run_id = p_run_id and step_id = p_step_id	where run_id = p_run_id and true	1

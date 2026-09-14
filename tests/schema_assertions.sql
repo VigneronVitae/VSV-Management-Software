@@ -34,7 +34,7 @@
 --              supabase/migrations/0029_viewer_scope.sql,
 --              supabase/migrations/0030_writable_columns.sql,
 --              supabase/migrations/0031_scheduling_to_core.sql,
---              supabase/migrations/0032_vessel_maker_and_room_temperature.sql, supabase/migrations/0033_intake.sql, supabase/migrations/0034_press.sql, supabase/migrations/0035_bins_in_bulk.sql, supabase/migrations/0036_bins_on_loan.sql, supabase/migrations/0037_export.sql, supabase/migrations/0038_cancel_a_pick.sql, supabase/migrations/0039_vineyard.sql, supabase/migrations/0040_block_variety_is_history.sql, supabase/migrations/0041_daily_log.sql, supabase/migrations/0042_weighing_photo.sql, supabase/migrations/0043_record_propagation.sql, supabase/migrations/0044_finishing_a_pick.sql, supabase/migrations/0045_press_detail.sql]
+--              supabase/migrations/0032_vessel_maker_and_room_temperature.sql, supabase/migrations/0033_intake.sql, supabase/migrations/0034_press.sql, supabase/migrations/0035_bins_in_bulk.sql, supabase/migrations/0036_bins_on_loan.sql, supabase/migrations/0037_export.sql, supabase/migrations/0038_cancel_a_pick.sql, supabase/migrations/0039_vineyard.sql, supabase/migrations/0040_block_variety_is_history.sql, supabase/migrations/0041_daily_log.sql, supabase/migrations/0042_weighing_photo.sql, supabase/migrations/0043_record_propagation.sql, supabase/migrations/0044_finishing_a_pick.sql, supabase/migrations/0045_press_detail.sql, supabase/migrations/0046_supply_inventory.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -2443,7 +2443,10 @@ begin
   -- and propagation. None reads blanket true either: paperwork is scoped to
   -- facility users, because a client has no reason to learn which of this
   -- winery's forms are behind.
-  want := '74';
+  -- 74 before 0046, which added nine across supply, its sorts, supply_movement
+  -- and shopping_item. None reads blanket true: the stores are the facility's
+  -- business and a client has no reason to know what is on its shelves.
+  want := '83';
   if have <> want then
     raise exception
       'FAIL: there are % policies in public and this suite was written against %. If that is deliberate, update this number, and judge the new policy in the disposition list below if it reads or writes blanket true', have, want;
@@ -2698,7 +2701,16 @@ begin
   -- started, its operation list with a composite primary key and the composite
   -- foreign key pinning the term to the operation vocabulary, and propagation
   -- with two foreign keys and one measurement written onto a given form once.
-  want := 'c=25 f=53 p=29 u=18';
+  -- c=25 f=53 p=29 u=18 before 0046, which added three tables. supply brings a
+  -- unique name, a check that it has a unit, and the composite pinning its kind
+  -- to the material vocabulary. supply_movement brings checks that a kind is
+  -- known, that a quantity is an amount, and that only a count carries what was
+  -- expected. shopping_item brings a check that a note says something, and both
+  -- carry foreign keys to supply and to whoever recorded them.
+  -- The sorts of a supply are a join table of their own, which is what lets a
+  -- hose head be two things at once: its composite primary key and the
+  -- composite foreign key pinning a sort to the material vocabulary.
+  want := 'c=30 f=59 p=33 u=19';
   if have <> want then
     raise exception
       E'FAIL: the constraint inventory changed.\nnow:  %\nwas:  %\nIf that is deliberate, update this line in the same commit that changed the schema.', have, want;
@@ -2737,6 +2749,10 @@ begin
        -- pointer into term has been since 0027.
        || 'planting.planting_variety_is_a_variety, '
        || 'procedure_step.step_material_is_a_material, '
+       -- 0046. A supply is of material kinds, plural: the vocabulary 0027
+       -- registered to the inventory module and nothing had used until now, on a
+       -- join table so a hose head can be two things at once.
+       || 'supply_material_kind.supply_kind_is_a_material, '
        || 'task.task_operation_is_an_operation, '
        || 'template.template_applies_to_a_registered_kind, '
        || 'template_step.template_step_operation_is_an_operation, '
@@ -2774,6 +2790,8 @@ begin
        -- 0039, pinning a planting's term to the variety vocabulary.
        || 'planting.variety_kind=''variety''::text '
        || 'procedure_step.material_kind=''material_kind''::text '
+       -- 0046, pinning a supply's sorts to the material vocabulary.
+       || 'supply_material_kind.kind_kind=''material_kind''::text '
        || 'task.operation_kind=''operation''::text '
        || 'template_step.operation_kind=''operation''::text '
        || 'vessel.type_kind=''vessel_type''::text';
@@ -2869,7 +2887,14 @@ begin
   -- propagation has none without the event it is about. The two new no-actions
   -- are who wrote it, which outlives their account, and the composite pinning a
   -- form's operation list to the vocabulary.
-  want := 'a=32 c=12 n=1 r=8';
+  -- a=32 c=12 n=1 before 0046. The new cascade is supply_movement to supply: a
+  -- movement has no meaning without the thing it moved. The new set-null is
+  -- shopping_item to supply, because "buy more DAP" is still a useful line on a
+  -- list after somebody retires the supply record it pointed at. The three new
+  -- no-actions are who recorded each of the three, which outlive their accounts.
+  -- The extra cascade is a supply's sorts to the supply: what something is, is
+  -- meaningless without the something.
+  want := 'a=35 c=14 n=2 r=8';
   if have <> want then
     raise exception
       E'FAIL: foreign key delete behaviour changed.\nnow:  %\nwas:  %\na is no action, c is cascade, n is set null, r is restrict.', have, want;
@@ -6030,7 +6055,7 @@ begin
    where ns.nspname = 'public' and c.relkind = 'v'
      and c.relname in ('planting_detail', 'bin_to_return', 'unweighed_bin',
                        'weighing_without_photo', 'measurement_to_propagate',
-                       'processing_plan')
+                       'processing_plan', 'supply_on_hand', 'supply_below_level')
      and (c.reloptions is null or not ('security_invoker=true' = any(c.reloptions)));
   if leaky is not null then
     raise exception
@@ -6743,6 +6768,192 @@ begin
   delete from placement where vessel_id = tank;
   delete from node where id = lot_id or name like 'Assert detail%';
   delete from vessel where id = tank;
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- what is on the shelf, and what to buy'; end $$;
+
+-- 0046. On hand is derived from what came in and went out since the last count,
+-- which is the winemaker's shape: "derived from what came in and went out with
+-- reconciliation".
+do $$
+declare
+  dap  uuid := '00000000-0000-0000-0000-00000000ba01';
+  kmbs uuid := '00000000-0000-0000-0000-00000000ba02';
+  out_js jsonb;
+  n    numeric;
+begin
+  insert into supply (id, name, unit, reorder_level) values
+    (dap,  'Assert DAP',  'g', 500),
+    (kmbs, 'Assert KMBS', 'g', 1000);
+
+  insert into supply_movement (supply_id, kind, quantity, by_user) values
+    (dap, 'received', 2000, '00000000-0000-0000-0000-00000000a001'),
+    (dap, 'used',      300, '00000000-0000-0000-0000-00000000a001'),
+    (dap, 'used',      300, '00000000-0000-0000-0000-00000000a001');
+
+  select on_hand into n from supply_on_hand where supply_id = dap;
+  if n <> 1400 then
+    raise exception 'FAIL: two kilos in and six hundred out leaves % grams', n;
+  end if;
+  perform test_ok('what is on the shelf is what came in less what went out, asked rather than stored');
+
+  -- The gap is the point. A count that quietly wrote a correcting movement
+  -- would destroy the one number that says whether any of this is believable.
+  out_js := count_supply(dap, 1200, 'assertion count');
+  if (out_js ->> 'expected')::numeric <> 1400 then
+    raise exception 'FAIL: the count expected % where the movements said 1400', out_js ->> 'expected';
+  end if;
+  if (out_js ->> 'difference')::numeric <> -200 then
+    raise exception 'FAIL: counting 1200 against 1400 gave a difference of %', out_js ->> 'difference';
+  end if;
+  perform test_ok('a count records what was found beside what was expected, so the gap is a measurement rather than a correction');
+
+  select on_hand into n from supply_on_hand where supply_id = dap;
+  if n <> 1200 then
+    raise exception 'FAIL: after counting 1200 the shelf reads %', n;
+  end if;
+  perform test_ok('a count is the floor the running total starts again from');
+
+  -- The reason `seq` exists. A transaction sees one `now()` for its whole
+  -- length, so a use recorded in the same instant as a count would have been
+  -- silently dropped from the total if this ordered by time. Counting a shelf
+  -- and then recording the scoop you just took is the ordinary case.
+  insert into supply_movement (supply_id, kind, quantity, by_user)
+  values (dap, 'used', 300, '00000000-0000-0000-0000-00000000a001');
+  select on_hand into n from supply_on_hand where supply_id = dap;
+  if n <> 900 then
+    raise exception
+      'FAIL: a use recorded in the same instant as the count left the shelf at % rather than 900', n;
+  end if;
+  perform test_ok('a movement in the same instant as a count still lands after it, because the order is a sequence and not a clock');
+
+  -- Broken is a quantity and a date, not a label on the thing. Two of six hose
+  -- heads are broken, which a flag could not say, and it happened on a day,
+  -- which a flag could not say either.
+  insert into supply_movement (supply_id, kind, quantity, by_user)
+  values (dap, 'broken', 200, '00000000-0000-0000-0000-00000000a001');
+  select on_hand into n from supply_on_hand where supply_id = dap;
+  if n <> 700 then
+    raise exception 'FAIL: two hundred grams broken left % usable rather than 700', n;
+  end if;
+  select broken into n from supply_on_hand where supply_id = dap;
+  if n <> 200 then
+    raise exception 'FAIL: % is reported broken where 200 was', n;
+  end if;
+  perform test_ok('broken stock comes off what is usable and is still counted, because four good and two broken is not four');
+
+  insert into supply_movement (supply_id, kind, quantity, by_user)
+  values (dap, 'repaired', 200, '00000000-0000-0000-0000-00000000a001');
+  select broken into n from supply_on_hand where supply_id = dap;
+  if n <> 0 then
+    raise exception 'FAIL: repairing left % broken', n;
+  end if;
+  select on_hand into n from supply_on_hand where supply_id = dap;
+  if n <> 900 then
+    raise exception 'FAIL: repairing left % usable rather than 900', n;
+  end if;
+  perform test_ok('repairing puts it back, so breaking something is not a one way door');
+
+  -- Flags rather than a category, which is the hose head argument: the thing
+  -- nobody anticipated is exactly the thing a single category gets wrong.
+  insert into supply_material_kind (supply_id, kind_id)
+  select dap, id from term
+   where kind = 'material_kind' and value in ('addition', 'consumable');
+  select array_length(kinds, 1) into n from supply_on_hand where supply_id = dap;
+  if n <> 2 then
+    raise exception 'FAIL: a supply flagged as two sorts of thing reports %', n;
+  end if;
+  perform test_ok('a supply carries several sorts at once, so the thing that is neither one nor the other can say so');
+
+  begin
+    insert into supply_material_kind (supply_id, kind_id)
+    values (dap, term_id('variety', 'riesling'));
+    raise exception 'FAIL: a supply was flagged as a grape variety';
+  exception when foreign_key_violation then
+    perform test_ok('a sort of supply names the material vocabulary and nothing else');
+  end;
+
+  delete from supply_material_kind where supply_id = dap;
+
+  -- A suggestion, not the list.
+  select count(*) into n from supply_below_level where supply_id = kmbs;
+  if n <> 1 then
+    raise exception 'FAIL: a supply at zero against a level of 1000 is not being suggested';
+  end if;
+  select count(*) into n from supply_below_level where supply_id = dap;
+  if n <> 0 then
+    raise exception 'FAIL: a supply above its level is being suggested';
+  end if;
+  perform test_ok('a supply under the level somebody set is suggested, and one above it is not');
+
+  -- A prompt that keeps prompting what somebody has acted on is noise.
+  insert into shopping_item (supply_id, what, added_by)
+  values (kmbs, 'Assert KMBS', '00000000-0000-0000-0000-00000000a001');
+  select count(*) into n from supply_below_level where supply_id = kmbs;
+  if n <> 0 then
+    raise exception 'FAIL: something already on the shopping list is still being suggested';
+  end if;
+  perform test_ok('a supply already on the list stops being suggested, so a prompt does not become noise');
+
+  -- A level nobody set is not a reason to buy anything, and is not zero.
+  update supply set reorder_level = null where id = kmbs;
+  delete from shopping_item where supply_id = kmbs;
+  select count(*) into n from supply_below_level where supply_id = kmbs;
+  if n <> 0 then
+    raise exception 'FAIL: a supply with no level set is being suggested, and nobody said what low means for it';
+  end if;
+  perform test_ok('a supply nobody set a level for is never suggested, because no level is not a level of zero');
+
+  delete from shopping_item where supply_id in (dap, kmbs);
+  delete from supply_movement where supply_id in (dap, kmbs);
+  delete from supply where id in (dap, kmbs);
+end $$;
+
+-- The refusals, and who may do what.
+do $$
+declare dap uuid := '00000000-0000-0000-0000-00000000ba11'; seen int;
+begin
+  insert into supply (id, name, unit) values (dap, 'Assert refusal supply', 'g');
+
+  begin
+    perform count_supply(dap, -5);
+    raise exception 'FAIL: a shelf was counted at minus five';
+  exception when others then
+    if position('is not an amount on a shelf' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a negative count is refused, because a shelf does not hold less than nothing');
+  end;
+
+  begin
+    insert into supply_movement (supply_id, kind, quantity, by_user)
+    values (dap, 'borrowed', 10, '00000000-0000-0000-0000-00000000a001');
+    raise exception 'FAIL: a movement of an unknown kind was accepted';
+  exception when check_violation then
+    perform test_ok('a movement is received, used, discarded or counted, and nothing else');
+  end;
+
+  -- Only a count has something to have expected, so the column cannot be used
+  -- to smuggle an expectation onto a delivery.
+  begin
+    insert into supply_movement (supply_id, kind, quantity, expected, by_user)
+    values (dap, 'received', 10, 5, '00000000-0000-0000-0000-00000000a001');
+    raise exception 'FAIL: a delivery carried an expectation';
+  exception when check_violation then
+    perform test_ok('only a count records what was expected, so the reconciliation cannot be faked onto a delivery');
+  end;
+
+  -- The stores are the facility's business and none of a client's.
+  perform test_act_as('00000000-0000-0000-0000-00000000a003');
+  set local role authenticated;
+  select count(*) into seen from supply;
+  reset role;
+  if seen <> 0 then
+    raise exception 'FAIL: a client can read % of this winery''s supplies', seen;
+  end if;
+  perform test_ok('a client reads none of the winery''s stores');
+
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+  delete from supply where id = dap;
 end $$;
 
 -- ---------------------------------------------------------------------------

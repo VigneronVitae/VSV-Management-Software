@@ -16,6 +16,9 @@ import type {
   Pick,
   PlantingDetail,
   PressResult,
+  ShoppingItem,
+  SupplyCount,
+  SupplyOnHand,
   Term,
   TermKind,
   ToPropagate,
@@ -1121,4 +1124,163 @@ export async function setMakerMakes(makerId: Uuid, makes: string[]): Promise<voi
     .update({ attributes })
     .eq("id", makerId);
   if (writeError) throw new KernelError(writeError);
+}
+
+// --- the stores ------------------------------------------------------------
+
+export async function suppliesOnHand(): Promise<SupplyOnHand[]> {
+  const { data, error } = await kernel()
+    .from("supply_on_hand")
+    .select(
+      "supply_id,name,kinds,unit,reorder_level,supplier,retired_at,counted_at,on_hand,broken",
+    )
+    .order("name");
+  if (error) throw new KernelError(error);
+  return (data ?? []) as SupplyOnHand[];
+}
+
+// A suggestion, not the list. Under the level somebody set, and not already on
+// the shopping list, because a prompt that keeps prompting becomes noise.
+export async function suppliesBelowLevel(): Promise<SupplyOnHand[]> {
+  const { data, error } = await kernel()
+    .from("supply_below_level")
+    .select(
+      "supply_id,name,kinds,unit,reorder_level,supplier,retired_at,counted_at,on_hand,broken",
+    )
+    .order("name");
+  if (error) throw new KernelError(error);
+  return (data ?? []) as SupplyOnHand[];
+}
+
+export async function addSupply(supply: {
+  id: Uuid;
+  name: string;
+  unit: string;
+  reorder_level?: number | null;
+  supplier?: string | null;
+}): Promise<void> {
+  const { error } = await kernel().from("supply").insert(supply);
+  if (error) throw new KernelError(error);
+}
+
+export async function updateSupply(
+  id: Uuid,
+  patch: { reorder_level?: number | null; supplier?: string | null; unit?: string },
+): Promise<void> {
+  const { error } = await kernel().from("supply").update(patch).eq("id", id);
+  if (error) throw new KernelError(error);
+}
+
+// Received, used or discarded. A count goes through `countSupply` instead,
+// because a count has to read what was expected before it writes.
+export async function moveSupply(args: {
+  supplyId: Uuid;
+  kind: "received" | "used" | "discarded" | "broken" | "repaired";
+  quantity: number;
+  note?: string | null;
+  byUser: Uuid;
+}): Promise<void> {
+  const { error } = await kernel()
+    .from("supply_movement")
+    .insert({
+      supply_id: args.supplyId,
+      kind: args.kind,
+      quantity: args.quantity,
+      note: args.note ?? null,
+      by_user: args.byUser,
+    });
+  if (error) throw new KernelError(error);
+}
+
+// Returns what was found beside what was expected, so the screen can show the
+// gap rather than quietly absorbing it.
+export async function countSupply(
+  supplyId: Uuid,
+  counted: number,
+  note?: string | null,
+): Promise<SupplyCount> {
+  const { data, error } = await kernel().rpc("count_supply", {
+    p_supply_id: supplyId,
+    p_counted: counted,
+    p_note: note ?? null,
+  });
+  if (error) throw new KernelError(error);
+  return data as SupplyCount;
+}
+
+export async function shoppingList(): Promise<ShoppingItem[]> {
+  const { data, error } = await kernel()
+    .from("shopping_item")
+    .select("id,supply_id,what,quantity,note,added_by,bought_at,created_at")
+    .is("bought_at", null)
+    .order("created_at");
+  if (error) throw new KernelError(error);
+  return (data ?? []) as ShoppingItem[];
+}
+
+export async function addShoppingItem(item: {
+  id: Uuid;
+  what: string;
+  supply_id?: Uuid | null;
+  quantity?: string | null;
+  added_by: Uuid;
+}): Promise<void> {
+  const { error } = await kernel().from("shopping_item").insert(item);
+  if (error) throw new KernelError(error);
+}
+
+// Ticked off rather than deleted, so what was bought and when is still a record.
+export async function markBought(id: Uuid): Promise<void> {
+  const { error } = await kernel()
+    .from("shopping_item")
+    .update({ bought_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) throw new KernelError(error);
+}
+
+export async function removeShoppingItem(id: Uuid): Promise<void> {
+  const { error } = await kernel().from("shopping_item").delete().eq("id", id);
+  if (error) throw new KernelError(error);
+}
+
+// What sort of thing a supply is. Flags rather than a category, because the
+// hose head is neither infrastructure nor consumable and a single category
+// forces a wrong answer for exactly the things nobody anticipated. See 0046.
+export async function supplyKinds(supplyId: Uuid): Promise<Uuid[]> {
+  const { data, error } = await kernel()
+    .from("supply_material_kind")
+    .select("kind_id")
+    .eq("supply_id", supplyId);
+  if (error) throw new KernelError(error);
+  return ((data ?? []) as Array<{ kind_id: Uuid }>).map((r) => r.kind_id);
+}
+
+// Replaces the set rather than diffing it. The list is short and a diff is a
+// second opinion about what the caller meant.
+export async function setSupplyKinds(supplyId: Uuid, kindIds: Uuid[]): Promise<void> {
+  const { error } = await kernel()
+    .from("supply_material_kind")
+    .delete()
+    .eq("supply_id", supplyId);
+  if (error) throw new KernelError(error);
+  if (kindIds.length === 0) return;
+  const { error: writeError } = await kernel()
+    .from("supply_material_kind")
+    .insert(kindIds.map((kind_id) => ({ supply_id: supplyId, kind_id })));
+  if (writeError) throw new KernelError(writeError);
+}
+
+// The vocabulary itself, which the winemaker asked to be editable: the category
+// somebody needs is the one nobody wrote down in advance. Adding one already
+// exists as `addTerm`, which the pickers use.
+export async function renameTerm(id: Uuid, label: string): Promise<void> {
+  const { error } = await kernel().from("term").update({ label }).eq("id", id);
+  if (error) throw new KernelError(error);
+}
+
+// Retired rather than deleted, so a supply that was flagged with it keeps
+// meaning what it meant.
+export async function retireTerm(id: Uuid, active: boolean): Promise<void> {
+  const { error } = await kernel().from("term").update({ active }).eq("id", id);
+  if (error) throw new KernelError(error);
 }

@@ -747,6 +747,30 @@ or time or simply order is the thing worth recording, and that is a question for
 running the press. *Load-bearing:* the first time more than two fractions come off one run.
 
 
+**S-63. A supply has a unit and nothing converts between units.**
+`0046` records what one of a supply is, as free text: g, kg, L, mL, each. What it does not do is
+convert, so a supply bought in kilograms and used in grams is two numbers that cannot be added,
+and `supply_on_hand` will cheerfully sum them into nonsense if somebody records a delivery in one
+and a scoop in the other. **The unit is recorded rather than enforced**, which means the figure is
+only as good as everybody using the same word every time. *Resolves when:* a supply names a unit
+from a registered vocabulary with a conversion factor to a base, which is the same decision as
+S-49 and S-55 and should be made once for weight, volume, area and count together rather than
+four times. *Load-bearing:* the first delivery recorded in a different unit from the uses, which
+will not announce itself.
+
+**S-64. Nothing consumes a supply automatically.**
+On hand falls when somebody records that it fell. There is no path from an addition or a press
+or a procedure run to the supply it used, so every scoop has to be entered twice: once as what
+was done to the wine and once as what left the shelf. **Nobody does a thing twice during
+harvest**, so the honest prediction is that uses will go unrecorded and the counts will carry the
+correction. That is survivable because `0046` was built for it: a count resets the derivation and
+the gap it reveals is kept rather than smoothed. But the gap will be large, and a large gap is a
+number nobody trusts. *Resolves when:* the additions work lands and an addition names the supply
+it drew from, which writes the movement as a consequence rather than as a second chore. That is
+the winemaker's item 4 and this is the argument for it. *Load-bearing:* yes, immediately, in the
+sense that the inventory's accuracy is bounded by discipline rather than by the schema.
+
+
 ## Discharged
 **S-52. A press recorded no cuts.** *Discharged by `0045`.*
 The entry said that pressing free run and hard press separately recorded shares proportional to

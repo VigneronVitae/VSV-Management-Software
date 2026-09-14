@@ -55,7 +55,8 @@ export type Place =
   // that resolves faster.
   | { at: "day"; id?: string }
   | { at: "paper" }
-  | { at: "makers" };
+  | { at: "makers" }
+  | { at: "stores" };
 
 export const HOME: Place = { at: "home" };
 
@@ -85,6 +86,7 @@ const WITHOUT_ID = new Set([
   "day",
   "paper",
   "makers",
+  "stores",
 ]);
 
 // A calendar day, which is what the day log is addressed by.

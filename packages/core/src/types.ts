@@ -355,3 +355,47 @@ export type ToPropagate = {
   data: Record<string, unknown> | null;
   provenance: string;
 };
+
+// --- the stores ------------------------------------------------------------
+
+// What is on a shelf, worked out from what came in and went out since the last
+// time somebody counted. Derived on every read: see 0046.
+export type SupplyOnHand = {
+  supply_id: Uuid;
+  name: string;
+  // What sort of thing it is, as labels. Several, or none: a hose head is
+  // neither infrastructure nor consumable and a category would force a choice.
+  kinds: string[];
+  unit: string;
+  reorder_level: number | null;
+  supplier: string | null;
+  retired_at: string | null;
+  counted_at: string | null;
+  on_hand: number;
+  // Broken and not yet repaired or thrown out. Separate from on hand, because
+  // six of which two are broken is four to anybody reaching for one.
+  broken: number;
+};
+
+// A list somebody keeps, prompted by the derivation rather than filled by it.
+export type ShoppingItem = {
+  id: Uuid;
+  supply_id: Uuid | null;
+  what: string;
+  quantity: string | null;
+  note: string | null;
+  added_by: Uuid | null;
+  bought_at: string | null;
+  created_at: string;
+};
+
+// What a count found, and what the movements had said. The difference is a
+// measurement of how much use goes unrecorded.
+export type SupplyCount = {
+  supply_id: Uuid;
+  name: string;
+  counted: number;
+  expected: number;
+  difference: number;
+  unit: string;
+};

@@ -7,6 +7,8 @@ import {
   addPaperRecord,
   addParty,
   addPlanting,
+  addShoppingItem,
+  addSupply,
   addVessel,
   addVesselTypeNote,
   addVineyard,
@@ -17,6 +19,7 @@ import {
   blocks,
   cancelPick,
   claimAccount,
+  countSupply,
   createVesselWithWine,
   currentAppUser,
   currentSession,
@@ -27,7 +30,9 @@ import {
   facilityParty,
   fillVessel,
   locations,
+  markBought,
   markPropagated,
+  moveSupply,
   type NodePayload,
   newId,
   nodeHistory,
@@ -49,15 +54,19 @@ import {
   resolveVesselTypeNote,
   retirePaperRecord,
   type SiteFields,
+  type SupplyOnHand,
   setMakerMakes,
   setPaperRecordOperations,
   setPartyLogin,
   setVesselTypeBin,
   setVesselTypeFields,
+  shoppingList,
   signIn,
   signOut,
   signUp,
   slug,
+  suppliesBelowLevel,
+  suppliesOnHand,
   type Term,
   type TermKind,
   type ThermalMode,
@@ -286,6 +295,8 @@ async function screenFor(place: Place): Promise<HTMLElement> {
       return vineyardsScreen();
     case "makers":
       return makersScreen();
+    case "stores":
+      return storesScreen();
     case "day":
       return dayScreen(place.id);
     case "paper":
@@ -653,12 +664,13 @@ function menu(items: MenuItem[]): HTMLElement {
 }
 
 async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> {
-  const [places, kit, unweighed, owedBins, owedPaper] = await Promise.all([
+  const [places, kit, unweighed, owedBins, owedPaper, buying] = await Promise.all([
     locations(),
     vessels(),
     unweighedBins(),
     binsToReturn(),
     toPropagate(),
+    shoppingList(),
   ]);
   const filled = kit.filter((v) => !v.is_empty).length;
   // On the home screen on purpose. T1-4 allows a bin to exist with no weight,
@@ -669,6 +681,7 @@ async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> 
   // On the home screen for the same reason the unweighed bin count is: a list
   // that must be empty only works if nobody has to go looking for it.
   const owedToPaper = owedPaper.length;
+  const toBuy = buying.length;
 
   return screen(
     facility.name,
@@ -679,6 +692,12 @@ async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> 
         name: "The day",
         note: "What happened today, and anything worth writing down about it.",
         go: () => go({ at: "day" }),
+      },
+      {
+        name: "Stores",
+        note: "What is on the shelf, and what to buy.",
+        ...(toBuy > 0 ? { badge: String(toBuy) } : {}),
+        go: () => go({ at: "stores" }),
       },
       {
         name: "On paper",
@@ -5135,6 +5154,307 @@ function makersScreen(): HTMLElement {
                   );
                 }),
               ),
+          message,
+          button("Back", () => goBack(), "quiet"),
+        ),
+      );
+    } catch (error) {
+      body.replaceChildren(
+        fail(error),
+        button("Back", () => goBack(), "quiet"),
+      );
+    }
+  })();
+
+  return view;
+}
+
+// --- the stores ------------------------------------------------------------
+
+// What is on the shelf and what to buy, on one screen, because during harvest
+// they are one question asked twice.
+//
+// On hand is derived from what came in and what went out since the last count,
+// which is the winemaker's own shape. The number is therefore only as good as
+// the recording, and the screen says so rather than presenting it as fact: a
+// supply nobody has counted shows when it was last counted as "never".
+function storesScreen(): HTMLElement {
+  const body = el("div", {}, empty("Loading."));
+  const message = el("div", {});
+  const view = screen(
+    "Stores",
+    lede(
+      "What is on the shelf, worked out from what came in and went out. Counting " +
+        "one sets it straight and records by how much it was off.",
+    ),
+    body,
+  );
+
+  void (async () => {
+    try {
+      const [stock, suggestions, list, user] = await Promise.all([
+        suppliesOnHand(),
+        suppliesBelowLevel(),
+        shoppingList(),
+        currentAppUser(),
+      ]);
+
+      function amount(s: SupplyOnHand): string {
+        return `${Number(s.on_hand).toLocaleString()} ${s.unit}`;
+      }
+
+      // Counting and using, in place, because walking the shelf with a phone is
+      // the moment both happen.
+      function supplyRow(s: SupplyOnHand): HTMLElement {
+        const said = el("div", {});
+        const used = field({ label: `Used, ${s.unit}`, type: "number" });
+        const got = field({ label: `Arrived, ${s.unit}`, type: "number" });
+        const counted = field({ label: `Counted, ${s.unit}`, type: "number" });
+        const broke = field({ label: `Broken, ${s.unit}`, type: "number" });
+        const brokeNote = field({
+          label: "What is wrong with it",
+          hint:
+            "Partly broken and still usable goes here rather than in the number, " +
+            "because something usable should not come off what is usable.",
+        });
+
+        async function move(
+          kind: "used" | "received" | "broken" | "repaired",
+          raw: string,
+          note?: string,
+        ): Promise<void> {
+          if (!raw || !user) return;
+          try {
+            await moveSupply({
+              supplyId: s.supply_id,
+              kind,
+              quantity: Number(raw),
+              note: note ?? null,
+              byUser: user.id,
+            });
+            go({ at: "stores" });
+          } catch (error) {
+            said.replaceChildren(fail(error));
+          }
+        }
+
+        return el(
+          "details",
+          { class: "more" },
+          el("summary", {
+            text:
+              s.reorder_level !== null && s.on_hand < s.reorder_level
+                ? `${s.name}: ${amount(s)}, below ${s.reorder_level}`
+                : `${s.name}: ${amount(s)}`,
+          }),
+          rows(
+            summaryRow(
+              "Last counted",
+              // Never counted and counted today are different states and a blank
+              // would read as the second.
+              s.counted_at ? new Date(s.counted_at).toLocaleDateString() : "never",
+            ),
+            ...(s.supplier ? [summaryRow("From", s.supplier)] : []),
+            used.root,
+            button("Record use", () => void move("used", used.value()), "secondary"),
+            got.root,
+            button(
+              "Record a delivery",
+              () => void move("received", got.value()),
+              "secondary",
+            ),
+            broke.root,
+            brokeNote.root,
+            button(
+              "Mark broken",
+              () => void move("broken", broke.value(), brokeNote.value()),
+              "secondary",
+            ),
+            ...(s.broken > 0
+              ? [
+                  button(
+                    `Repair ${s.broken} ${s.unit}`,
+                    () => void move("repaired", String(s.broken)),
+                    "quiet",
+                  ),
+                ]
+              : []),
+            counted.root,
+            button(
+              "Count it",
+              async () => {
+                if (!counted.value()) return;
+                try {
+                  const out = await countSupply(s.supply_id, Number(counted.value()));
+                  // The gap is the point. Absorbing it silently would destroy
+                  // the one signal that says whether this inventory is worth
+                  // believing.
+                  said.replaceChildren(
+                    banner(
+                      out.difference === 0
+                        ? `Counted ${out.counted} ${out.unit}, which is exactly what was expected.`
+                        : `Counted ${out.counted} ${out.unit} where ${out.expected} was expected, ` +
+                            `${out.difference > 0 ? "a surplus" : "a shortfall"} of ` +
+                            `${Math.abs(out.difference)} ${out.unit}. That gap is how much use is going unrecorded.`,
+                      out.difference === 0 ? "good" : "note",
+                    ),
+                  );
+                } catch (error) {
+                  said.replaceChildren(fail(error));
+                }
+              },
+              "secondary",
+            ),
+            said,
+          ),
+        );
+      }
+
+      const newName = field({ label: "Name", placeholder: "DAP" });
+      const newUnit = field({ label: "Unit", placeholder: "g" });
+      const newLevel = field({
+        label: "Tell me below",
+        type: "number",
+        hint: "Optional. Blank means never suggest it, which is not the same as zero.",
+      });
+      const newItem = field({ label: "Add to the list", placeholder: "Filter pads" });
+
+      body.replaceChildren(
+        rows(
+          el("h2", { class: "section-head", text: "Shopping list" }),
+          list.length === 0
+            ? empty("Nothing on the list.")
+            : el(
+                "ul",
+                { class: "vessel-list" },
+                ...list.map((item) =>
+                  el(
+                    "li",
+                    { class: "vessel-row" },
+                    el("span", { class: "vessel-name", text: item.what }),
+                    ...(item.quantity
+                      ? [el("span", { class: "vessel-detail", text: item.quantity })]
+                      : []),
+                    button(
+                      "Bought",
+                      async () => {
+                        try {
+                          await markBought(item.id);
+                          go({ at: "stores" });
+                        } catch (error) {
+                          message.replaceChildren(fail(error));
+                        }
+                      },
+                      "secondary",
+                    ),
+                  ),
+                ),
+              ),
+          newItem.root,
+          button("Add it", async () => {
+            if (!newItem.value().trim() || !user) return;
+            try {
+              await addShoppingItem({
+                id: newId(),
+                what: newItem.value().trim(),
+                added_by: user.id,
+              });
+              go({ at: "stores" });
+            } catch (error) {
+              message.replaceChildren(fail(error));
+            }
+          }),
+
+          // Suggestions, kept visibly apart from the list. The winemaker asked
+          // for a list he keeps that is prompted by the derivation, not one that
+          // fills itself, so these sit here until somebody agrees with them.
+          ...(suggestions.length === 0
+            ? []
+            : [
+                el("h2", { class: "section-head", text: "Running low" }),
+                el("p", {
+                  class: "lede",
+                  text: "Under the level you set. Nothing goes on the list until you say so.",
+                }),
+                el(
+                  "ul",
+                  { class: "vessel-list" },
+                  ...suggestions.map((s) =>
+                    el(
+                      "li",
+                      { class: "vessel-row" },
+                      el("span", { class: "vessel-name", text: s.name }),
+                      el("span", {
+                        class: "vessel-detail",
+                        text: `${amount(s)}, below ${s.reorder_level}`,
+                      }),
+                      button(
+                        "Add to list",
+                        async () => {
+                          if (!user) return;
+                          try {
+                            await addShoppingItem({
+                              id: newId(),
+                              what: s.name,
+                              supply_id: s.supply_id,
+                              added_by: user.id,
+                            });
+                            go({ at: "stores" });
+                          } catch (error) {
+                            message.replaceChildren(fail(error));
+                          }
+                        },
+                        "secondary",
+                      ),
+                    ),
+                  ),
+                ),
+              ]),
+
+          el("h2", { class: "section-head", text: "On the shelf" }),
+          stock.length === 0
+            ? empty("No supplies set up yet.")
+            : el("div", {}, ...stock.filter((s) => !s.retired_at).map(supplyRow)),
+
+          el(
+            "details",
+            { class: "more" },
+            el("summary", { text: "Add a supply" }),
+            rows(
+              newName.root,
+              newUnit.root,
+              newLevel.root,
+              el("p", {
+                class: "field-hint",
+                text:
+                  "Nothing converts between units yet, so record deliveries and " +
+                  "use in the same one. That is sorry S-63.",
+              }),
+              button(
+                "Add it",
+                async () => {
+                  if (!newName.value() || !newUnit.value()) {
+                    message.replaceChildren(
+                      banner("A supply needs a name and a unit.", "error"),
+                    );
+                    return;
+                  }
+                  try {
+                    await addSupply({
+                      id: newId(),
+                      name: newName.value(),
+                      unit: newUnit.value(),
+                      reorder_level: newLevel.value() ? Number(newLevel.value()) : null,
+                    });
+                    go({ at: "stores" });
+                  } catch (error) {
+                    message.replaceChildren(fail(error));
+                  }
+                },
+                "secondary",
+              ),
+            ),
+          ),
           message,
           button("Back", () => goBack(), "quiet"),
         ),

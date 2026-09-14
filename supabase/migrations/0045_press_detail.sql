@@ -6,7 +6,7 @@
 -- Depends on: [supabase/migrations/0027_term_kind_registry.sql,
 --              supabase/migrations/0034_press.sql,
 --              supabase/migrations/0044_finishing_a_pick.sql]
--- Depended on by: [tests/schema_assertions.sql]
+-- Depended on by: [tests/schema_assertions.sql, supabase/migrations/0046_supply_inventory.sql]
 -- Axioms enforced: T0-2 (composition is derived from fruit weight and a cut is
 --                  a fact about a lot, not a second composition)
 -- Open sorries: S-62 (a cut is named and its position in the run is not)
