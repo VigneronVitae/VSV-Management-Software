@@ -53,7 +53,8 @@ export type Place =
   // The only place whose identifier is not a uuid: a day is named by its date,
   // because a link to a day somebody can read and type is worth more than one
   // that resolves faster.
-  | { at: "day"; id?: string };
+  | { at: "day"; id?: string }
+  | { at: "paper" };
 
 export const HOME: Place = { at: "home" };
 
@@ -81,6 +82,7 @@ const WITHOUT_ID = new Set([
   "export",
   "vineyards",
   "day",
+  "paper",
 ]);
 
 // A calendar day, which is what the day log is addressed by.

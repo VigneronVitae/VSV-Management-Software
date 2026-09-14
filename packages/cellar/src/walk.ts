@@ -4,6 +4,7 @@ import {
   addBlock,
   addDayNote,
   addLocation,
+  addPaperRecord,
   addParty,
   addPlanting,
   addVessel,
@@ -26,12 +27,16 @@ import {
   facilityParty,
   fillVessel,
   locations,
+  markPropagated,
   type NodePayload,
   newId,
   nodeHistory,
   openPicks,
+  type PaperRecord,
   type Party,
   type PlantingDetail,
+  paperRecordOperations,
+  paperRecords,
   parties,
   plantings,
   press,
@@ -42,7 +47,9 @@ import {
   removePlanting,
   resolveCode,
   resolveVesselTypeNote,
+  retirePaperRecord,
   type SiteFields,
+  setPaperRecordOperations,
   setPartyLogin,
   setVesselTypeBin,
   setVesselTypeFields,
@@ -53,8 +60,10 @@ import {
   type Term,
   type TermKind,
   type ThermalMode,
+  type ToPropagate,
   terms,
   termsForVesselField,
+  toPropagate,
   type UnweighedBin,
   unweighedBins,
   updateBlock,
@@ -276,6 +285,8 @@ async function screenFor(place: Place): Promise<HTMLElement> {
       return vineyardsScreen();
     case "day":
       return dayScreen(place.id);
+    case "paper":
+      return paperScreen();
     case "block": {
       const there = (await blocks()).some((b) => b.id === place.id);
       if (!there) throw new GoneError("That block is not there to open.");
@@ -639,11 +650,12 @@ function menu(items: MenuItem[]): HTMLElement {
 }
 
 async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> {
-  const [places, kit, unweighed, owedBins] = await Promise.all([
+  const [places, kit, unweighed, owedBins, owedPaper] = await Promise.all([
     locations(),
     vessels(),
     unweighedBins(),
     binsToReturn(),
+    toPropagate(),
   ]);
   const filled = kit.filter((v) => !v.is_empty).length;
   // On the home screen on purpose. T1-4 allows a bin to exist with no weight,
@@ -651,6 +663,9 @@ async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> 
   // looking for it.
   const waiting = unweighed.length;
   const owed = owedBins.length;
+  // On the home screen for the same reason the unweighed bin count is: a list
+  // that must be empty only works if nobody has to go looking for it.
+  const owedToPaper = owedPaper.length;
 
   return screen(
     facility.name,
@@ -661,6 +676,12 @@ async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> 
         name: "The day",
         note: "What happened today, and anything worth writing down about it.",
         go: () => go({ at: "day" }),
+      },
+      {
+        name: "On paper",
+        note: "Measurements that also have to go on a physical form, and have not yet.",
+        ...(owedToPaper > 0 ? { badge: String(owedToPaper) } : {}),
+        go: () => go({ at: "paper" }),
       },
       {
         name: "Picking",
@@ -4671,6 +4692,226 @@ function dayScreen(on?: string): HTMLElement {
               message.replaceChildren(fail(error));
             }
           }),
+          message,
+          button("Back", () => goBack(), "quiet"),
+        ),
+      );
+    } catch (error) {
+      body.replaceChildren(
+        fail(error),
+        button("Back", () => goBack(), "quiet"),
+      );
+    }
+  })();
+
+  return view;
+}
+
+// --- what is still owed to paper -------------------------------------------
+
+// The `unweighed_bin` pattern pointed at paperwork, which is what the winemaker
+// asked for: a list that should be empty, derived rather than remembered.
+//
+// Grouped by document rather than by measurement, because the work is done a
+// form at a time: you pick up the weight sheet, and then you write everything
+// that belongs on it.
+function paperScreen(): HTMLElement {
+  const body = el("div", {}, empty("Loading."));
+  const message = el("div", {});
+  const view = screen(
+    "On paper",
+    lede(
+      "Measurements that also have to go on a physical form, and have not yet. " +
+        "This list should be empty at the end of a day.",
+    ),
+    body,
+  );
+
+  void (async () => {
+    try {
+      const [owed, records, user, operations] = await Promise.all([
+        toPropagate(),
+        paperRecords(),
+        currentAppUser(),
+        terms("operation"),
+      ]);
+
+      const byRecord = new Map<string, ToPropagate[]>();
+      for (const row of owed) {
+        byRecord.set(row.paper_record_id, [
+          ...(byRecord.get(row.paper_record_id) ?? []),
+          row,
+        ]);
+      }
+
+      function owedRow(row: ToPropagate): HTMLElement {
+        const said = el("span", {});
+        const line = el(
+          "li",
+          { class: "vessel-row" },
+          el("span", {
+            class: "vessel-detail",
+            text: new Date(row.at).toLocaleString(undefined, {
+              day: "numeric",
+              month: "short",
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+          }),
+          el("span", { class: "vessel-name", text: row.operation }),
+          el("span", { class: "vessel-detail", text: row.subject }),
+          describeDetail(row.data)
+            ? el("span", { class: "vessel-detail", text: describeDetail(row.data) })
+            : null,
+          button(
+            "Wrote it",
+            async () => {
+              if (!user) {
+                said.replaceChildren(
+                  banner("This sign-in has no name to put against it.", "error"),
+                );
+                return;
+              }
+              try {
+                await markPropagated({
+                  eventId: row.event_id,
+                  paperRecordId: row.paper_record_id,
+                  writtenBy: user.id,
+                });
+                line.remove();
+              } catch (error) {
+                said.replaceChildren(fail(error));
+              }
+            },
+            "secondary",
+          ),
+          said,
+        );
+        return line;
+      }
+
+      // Which kinds of measurement belong on a form. Rows rather than a rule in
+      // code, so the next form somebody is handed is a row.
+      function recordEditor(r: PaperRecord): HTMLElement {
+        const said = el("div", {});
+        const boxes = operations.map((op) => ({
+          op,
+          box: checkbox(op.label, false),
+        }));
+        const holder = el("div", { class: "rows" });
+
+        void (async () => {
+          const chosen = new Set(await paperRecordOperations(r.id));
+          for (const b of boxes) b.box.input.checked = chosen.has(b.op.id);
+          holder.replaceChildren(...boxes.map((b) => b.box.root));
+        })();
+
+        return el(
+          "details",
+          { class: "more" },
+          el("summary", {
+            text: r.retired_at ? `${r.name} (retired)` : r.name,
+          }),
+          rows(
+            el("p", {
+              class: "field-hint",
+              text: "Which measurements belong on this form.",
+            }),
+            holder,
+            button(
+              "Save what goes on it",
+              async () => {
+                try {
+                  await setPaperRecordOperations(
+                    r.id,
+                    boxes.filter((b) => b.box.input.checked).map((b) => b.op.id),
+                  );
+                  said.replaceChildren(banner("Saved.", "good"));
+                } catch (error) {
+                  said.replaceChildren(fail(error));
+                }
+              },
+              "secondary",
+            ),
+            button(
+              r.retired_at ? "Start keeping it again" : "Stop keeping this form",
+              async () => {
+                try {
+                  await retirePaperRecord(r.id, !r.retired_at);
+                  go({ at: "paper" });
+                } catch (error) {
+                  said.replaceChildren(fail(error));
+                }
+              },
+              "quiet",
+            ),
+            el("p", {
+              class: "field-hint",
+              text: r.retired_at
+                ? "Retired, so it collects nothing new. Anything still owed from while it was kept stays owed: see sorry S-59."
+                : "Retiring stops new work appearing. It does not clear what is already owed.",
+            }),
+            said,
+          ),
+        );
+      }
+
+      const newName = field({ label: "Name", placeholder: "Harvest weight sheet" });
+
+      body.replaceChildren(
+        rows(
+          owed.length === 0
+            ? banner(
+                records.length === 0
+                  ? "No physical forms are set up yet, so nothing is owed to paper."
+                  : "Nothing is waiting to be written onto a form.",
+                records.length === 0 ? "note" : "good",
+              )
+            : el("span", {}),
+
+          ...[...byRecord.values()].flatMap((list) => [
+            el("h2", {
+              class: "section-head",
+              text: `${list[0]?.paper_record ?? "Form"} (${list.length})`,
+            }),
+            el("ul", { class: "vessel-list" }, ...list.map(owedRow)),
+          ]),
+
+          el("h2", { class: "section-head", text: "The forms" }),
+          records.length === 0
+            ? empty("None set up.")
+            : el("div", {}, ...records.map(recordEditor)),
+
+          el(
+            "details",
+            { class: "more" },
+            el("summary", { text: "Add a form" }),
+            rows(
+              newName.root,
+              el("p", {
+                class: "field-hint",
+                text:
+                  "It starts owing from now, so adding one today does not invent " +
+                  "a backlog stretching to the start of the vintage.",
+              }),
+              button(
+                "Add it",
+                async () => {
+                  if (!newName.value()) {
+                    message.replaceChildren(banner("It needs a name.", "error"));
+                    return;
+                  }
+                  try {
+                    await addPaperRecord({ id: newId(), name: newName.value() });
+                    go({ at: "paper" });
+                  } catch (error) {
+                    message.replaceChildren(fail(error));
+                  }
+                },
+                "secondary",
+              ),
+            ),
+          ),
           message,
           button("Back", () => goBack(), "quiet"),
         ),

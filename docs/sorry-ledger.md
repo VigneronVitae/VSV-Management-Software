@@ -709,6 +709,21 @@ with what was typed, which is the version that would actually catch a mistyped w
 long way off. *Load-bearing:* no. It is weaker evidence than it appears, and that is all.
 
 
+**S-59. Retiring a form does not forgive its backlog, and nothing can.**
+`0043` gives a physical document a span: obligations exist for measurements that happened while
+the form was being kept. Retiring it stops new ones, which is right. What it deliberately does
+not do is clear the ones already outstanding, because a weighing that should have gone on
+September's weight sheet still should have, and a system that made that disappear when somebody
+stopped using the form would be a system for hiding exactly the thing this list exists to show.
+**The cost is that there is no way to say "we abandoned this form mid-season and those twenty
+entries are not going to happen"**, so the list can carry work nobody intends to do, and a list
+that is permanently non-empty stops being read. That is the failure mode of every queue.
+*Resolves when:* somebody can close an outstanding obligation with a reason rather than by
+ticking it as done, which is a different verb and wants its own row, because "written on the
+form" and "we decided not to" must not look the same. *Load-bearing:* not yet. It becomes
+load-bearing the first time a form is abandoned rather than kept to the end of a vintage.
+
+
 ## Discharged
 
 **S-25. An account belonging to no party is staff, so a client who signs up

@@ -34,7 +34,7 @@
 --              supabase/migrations/0029_viewer_scope.sql,
 --              supabase/migrations/0030_writable_columns.sql,
 --              supabase/migrations/0031_scheduling_to_core.sql,
---              supabase/migrations/0032_vessel_maker_and_room_temperature.sql, supabase/migrations/0033_intake.sql, supabase/migrations/0034_press.sql, supabase/migrations/0035_bins_in_bulk.sql, supabase/migrations/0036_bins_on_loan.sql, supabase/migrations/0037_export.sql, supabase/migrations/0038_cancel_a_pick.sql, supabase/migrations/0039_vineyard.sql, supabase/migrations/0040_block_variety_is_history.sql, supabase/migrations/0041_daily_log.sql, supabase/migrations/0042_weighing_photo.sql]
+--              supabase/migrations/0032_vessel_maker_and_room_temperature.sql, supabase/migrations/0033_intake.sql, supabase/migrations/0034_press.sql, supabase/migrations/0035_bins_in_bulk.sql, supabase/migrations/0036_bins_on_loan.sql, supabase/migrations/0037_export.sql, supabase/migrations/0038_cancel_a_pick.sql, supabase/migrations/0039_vineyard.sql, supabase/migrations/0040_block_variety_is_history.sql, supabase/migrations/0041_daily_log.sql, supabase/migrations/0042_weighing_photo.sql, supabase/migrations/0043_record_propagation.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -2429,7 +2429,11 @@ begin
   -- 63 before 0041, which added four on day_note: read, insert, and update and
   -- delete restricted to the author. None of them reads blanket true, because a
   -- note is scoped either to the facility or to whoever wrote it.
-  want := '67';
+  -- 67 before 0043, which added seven across paper_record, its operation list
+  -- and propagation. None reads blanket true either: paperwork is scoped to
+  -- facility users, because a client has no reason to learn which of this
+  -- winery's forms are behind.
+  want := '74';
   if have <> want then
     raise exception
       'FAIL: there are % policies in public and this suite was written against %. If that is deliberate, update this number, and judge the new policy in the disposition list below if it reads or writes blanket true', have, want;
@@ -2679,7 +2683,12 @@ begin
   -- c=23 f=47 p=25 u=16 before 0041, which added day_note: its primary key, the
   -- foreign key to its author, and the check that a note says something, because
   -- an empty note is not a note.
-  want := 'c=24 f=48 p=26 u=16';
+  -- c=24 f=48 p=26 u=16 before 0043, which added three tables: paper_record with
+  -- its name unique and the check that a form cannot be retired before it
+  -- started, its operation list with a composite primary key and the composite
+  -- foreign key pinning the term to the operation vocabulary, and propagation
+  -- with two foreign keys and one measurement written onto a given form once.
+  want := 'c=25 f=53 p=29 u=18';
   if have <> want then
     raise exception
       E'FAIL: the constraint inventory changed.\nnow:  %\nwas:  %\nIf that is deliberate, update this line in the same commit that changed the schema.', have, want;
@@ -2712,6 +2721,8 @@ begin
        || 'location.location_kind_is_a_location_kind, '
        || 'node.node_product_type_is_a_product_type, '
        || 'node.node_variety_is_a_variety, '
+       -- 0043. A physical form says which kinds of measurement belong on it.
+       || 'paper_record_operation.paper_record_operation_is_an_operation, '
        -- 0039. A block is planted to a variety, pinned the same way every other
        -- pointer into term has been since 0027.
        || 'planting.planting_variety_is_a_variety, '
@@ -2748,6 +2759,8 @@ begin
        || 'location.kind_kind=''location_kind''::text '
        || 'node.product_kind=''product_type''::text '
        || 'node.variety_kind=''variety''::text '
+       -- 0043, pinning a form's operation list to the operation vocabulary.
+       || 'paper_record_operation.operation_kind=''operation''::text '
        -- 0039, pinning a planting's term to the variety vocabulary.
        || 'planting.variety_kind=''variety''::text '
        || 'procedure_step.material_kind=''material_kind''::text '
@@ -2841,7 +2854,12 @@ begin
   -- a=29 before 0041. The new one is day_note to its author: no action, because
   -- a note outliving the account that wrote it is still a record of the day, and
   -- losing the winery's notes because somebody left would be the wrong answer.
-  want := 'a=30 c=9 n=1 r=8';
+  -- a=30 c=9 before 0043. The three new cascades all hang off a form: its
+  -- operation list and its propagations have no meaning without it, and a
+  -- propagation has none without the event it is about. The two new no-actions
+  -- are who wrote it, which outlives their account, and the composite pinning a
+  -- form's operation list to the vocabulary.
+  want := 'a=32 c=12 n=1 r=8';
   if have <> want then
     raise exception
       E'FAIL: foreign key delete behaviour changed.\nnow:  %\nwas:  %\na is no action, c is cascade, n is set null, r is restrict.', have, want;
@@ -5989,7 +6007,7 @@ begin
     join pg_namespace ns on ns.oid = c.relnamespace
    where ns.nspname = 'public' and c.relkind = 'v'
      and c.relname in ('planting_detail', 'bin_to_return', 'unweighed_bin',
-                       'weighing_without_photo')
+                       'weighing_without_photo', 'measurement_to_propagate')
      and (c.reloptions is null or not ('security_invoker=true' = any(c.reloptions)));
   if leaky is not null then
     raise exception
@@ -6150,6 +6168,142 @@ begin
   delete from vessel where name like 'ASRTPHOTO%';
   update term set attributes = attributes - 'tare_lbs'
    where kind = 'vessel_type' and value = 'picking_bin';
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- what is still owed to paper'; end $$;
+
+-- 0043. The `unweighed_bin` pattern pointed at paperwork: a derived list that
+-- should be empty, which is the only mechanism in this app that has reliably
+-- caught anything, because it does not depend on somebody remembering to look.
+--
+-- **Every timestamp here is written out rather than taken from `now()`.** A
+-- transaction sees one `now()` for its whole length, so a document retired at
+-- `now()` and an event recorded at `now()` are the same instant and no
+-- comparison between them can distinguish anything. The first version of this
+-- test did exactly that and reported a number that meant nothing.
+do $$
+declare
+  sheet_a uuid := '00000000-0000-0000-0000-00000000fa11';
+  sheet_b uuid := '00000000-0000-0000-0000-00000000fa12';
+  lot_id  uuid := '00000000-0000-0000-0000-00000000fa13';
+  ev_in   uuid := '00000000-0000-0000-0000-00000000fa14';
+  ev_early uuid := '00000000-0000-0000-0000-00000000fa15';
+  ev_late uuid := '00000000-0000-0000-0000-00000000fa16';
+  n       int;
+begin
+  insert into node (id, stage, status, name, created_by)
+  values (lot_id, 'maturation', 'open', 'Assert paper lot',
+          '00000000-0000-0000-0000-00000000a001');
+
+  -- Kept through September, and one of them abandoned at the end of it.
+  insert into paper_record (id, name, effective_from, retired_at) values
+    (sheet_a, 'Assert weight sheet', timestamptz '2026-09-01 00:00+00', null),
+    (sheet_b, 'Assert ticket book',  timestamptz '2026-09-01 00:00+00',
+                                     timestamptz '2026-09-20 00:00+00');
+  insert into paper_record_operation (paper_record_id, operation_id)
+  select id, term_id('operation', 'weigh') from paper_record
+   where id in (sheet_a, sheet_b);
+
+  insert into event (id, operation_id, subject_type, subject_id, at, by_user, data)
+  values
+    -- Before either form existed.
+    (ev_early, term_id('operation', 'weigh'), 'node', lot_id,
+     timestamptz '2026-08-15 12:00+00', '00000000-0000-0000-0000-00000000a001', '{}'),
+    -- While both were being kept.
+    (ev_in, term_id('operation', 'weigh'), 'node', lot_id,
+     timestamptz '2026-09-10 12:00+00', '00000000-0000-0000-0000-00000000a001', '{}'),
+    -- After one was retired.
+    (ev_late, term_id('operation', 'weigh'), 'node', lot_id,
+     timestamptz '2026-09-25 12:00+00', '00000000-0000-0000-0000-00000000a001', '{}');
+
+  -- One measurement, two forms, two pieces of work. Doing one of two sheets is
+  -- not doing both, which is the case a queue exists for.
+  select count(*) into n from measurement_to_propagate where event_id = ev_in;
+  if n <> 2 then
+    raise exception
+      'FAIL: a weighing due on two forms appears % time(s), and each form is its own piece of work', n;
+  end if;
+  perform test_ok('a measurement due on two documents is two pieces of work, not one');
+
+  -- Adding a form must not invent a backlog stretching to the start of the
+  -- vintage.
+  select count(*) into n from measurement_to_propagate where event_id = ev_early;
+  if n <> 0 then
+    raise exception
+      'FAIL: a measurement from before any of these forms existed is owed to % of them', n;
+  end if;
+  perform test_ok('a form starts owing from when it started being kept, so adding one invents no backlog');
+
+  -- Retiring stops new obligations and forgives none of the old ones. S-59 is
+  -- that there is no way to forgive them at all.
+  select count(*) into n from measurement_to_propagate
+   where event_id = ev_late and paper_record_id = sheet_b;
+  if n <> 0 then
+    raise exception 'FAIL: a retired form is still collecting new work';
+  end if;
+  select count(*) into n from measurement_to_propagate
+   where event_id = ev_in and paper_record_id = sheet_b;
+  if n <> 1 then
+    raise exception
+      'FAIL: retiring a form forgave work that was outstanding while it was being kept, which is the thing this list exists to show';
+  end if;
+  perform test_ok('retiring a document stops new obligations and forgives none of the ones already owed');
+
+  -- Writing it on one form takes it off that form and no other.
+  insert into propagation (event_id, paper_record_id, written_by)
+  values (ev_in, sheet_a, '00000000-0000-0000-0000-00000000a001');
+
+  select count(*) into n from measurement_to_propagate where event_id = ev_in;
+  if n <> 1 then
+    raise exception
+      'FAIL: writing a measurement on one of two forms left % owing, and one was expected', n;
+  end if;
+  perform test_ok('writing a measurement onto one document clears it from that one and no other');
+
+  -- Twice on the same form is the same claim, not two.
+  begin
+    insert into propagation (event_id, paper_record_id, written_by)
+    values (ev_in, sheet_a, '00000000-0000-0000-0000-00000000a001');
+    raise exception 'FAIL: the same measurement was written onto the same form twice';
+  exception when unique_violation then
+    perform test_ok('a measurement is written onto a given form once, and saying so twice is refused');
+  end;
+
+  delete from propagation where event_id = ev_in;
+  delete from event where id in (ev_early, ev_in, ev_late);
+  delete from paper_record_operation where paper_record_id in (sheet_a, sheet_b);
+  delete from paper_record where id in (sheet_a, sheet_b);
+  delete from node where id = lot_id;
+end $$;
+
+-- Paperwork is the facility's business and none of a client's.
+do $$
+declare seen int;
+begin
+  insert into paper_record (id, name) values
+    ('00000000-0000-0000-0000-00000000fa21', 'Assert private form');
+
+  perform test_act_as('00000000-0000-0000-0000-00000000a003');
+  set local role authenticated;
+  select count(*) into seen from paper_record;
+  reset role;
+  if seen <> 0 then
+    raise exception 'FAIL: a client can read % of this winery''s physical forms', seen;
+  end if;
+
+  perform test_act_as('00000000-0000-0000-0000-00000000a002');
+  set local role authenticated;
+  select count(*) into seen from paper_record
+   where id = '00000000-0000-0000-0000-00000000fa21';
+  reset role;
+  if seen <> 1 then
+    raise exception 'FAIL: somebody who works here cannot see the forms they are meant to fill in';
+  end if;
+  perform test_ok('the winery''s paperwork is readable by the people who keep it and by no client');
+
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+  delete from paper_record where id = '00000000-0000-0000-0000-00000000fa21';
 end $$;
 
 -- ---------------------------------------------------------------------------

@@ -317,3 +317,30 @@ export type DayNote = {
   author_id: Uuid | null;
   created_at: string;
 };
+
+// --- what is owed to paper -------------------------------------------------
+
+// A physical document this winery keeps, and the span over which it kept it.
+// Retired rather than deleted: a form kept in September is still what was
+// required in September.
+export type PaperRecord = {
+  id: Uuid;
+  name: string;
+  notes: string | null;
+  effective_from: string;
+  retired_at: string | null;
+  created_at: string;
+};
+
+// One measurement, owed to one document. A weighing due on two sheets is two of
+// these, because doing one of them is not doing both.
+export type ToPropagate = {
+  event_id: Uuid;
+  paper_record_id: Uuid;
+  paper_record: string;
+  at: string;
+  operation: string;
+  subject: string;
+  data: Record<string, unknown> | null;
+  provenance: string;
+};

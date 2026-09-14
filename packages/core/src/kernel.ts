@@ -11,12 +11,14 @@ import type {
   HistoryRow,
   Location,
   NodePayload,
+  PaperRecord,
   Party,
   Pick,
   PlantingDetail,
   PressResult,
   Term,
   TermKind,
+  ToPropagate,
   UnweighedBin,
   Uuid,
   VesselPayload,
@@ -994,5 +996,94 @@ export async function addDayNote(note: {
 
 export async function removeDayNote(id: Uuid): Promise<void> {
   const { error } = await kernel().from("day_note").delete().eq("id", id);
+  if (error) throw new KernelError(error);
+}
+
+// --- what is owed to paper -------------------------------------------------
+
+// See migration 0043. The queue is derived, so it cannot be forgotten to update
+// and cannot disagree with what has actually been written down.
+
+export async function paperRecords(): Promise<PaperRecord[]> {
+  const { data, error } = await kernel()
+    .from("paper_record")
+    .select("id,name,notes,effective_from,retired_at,created_at")
+    .order("name");
+  if (error) throw new KernelError(error);
+  return (data ?? []) as PaperRecord[];
+}
+
+export async function addPaperRecord(record: {
+  id: Uuid;
+  name: string;
+  notes?: string | null;
+}): Promise<void> {
+  const { error } = await kernel().from("paper_record").insert(record);
+  if (error) throw new KernelError(error);
+}
+
+// Retired, never deleted, which is why this sets a date rather than removing a
+// row: the obligations it created while it was being kept are still real.
+export async function retirePaperRecord(id: Uuid, retired: boolean): Promise<void> {
+  const { error } = await kernel()
+    .from("paper_record")
+    .update({ retired_at: retired ? new Date().toISOString() : null })
+    .eq("id", id);
+  if (error) throw new KernelError(error);
+}
+
+export async function paperRecordOperations(id: Uuid): Promise<Uuid[]> {
+  const { data, error } = await kernel()
+    .from("paper_record_operation")
+    .select("operation_id")
+    .eq("paper_record_id", id);
+  if (error) throw new KernelError(error);
+  return ((data ?? []) as Array<{ operation_id: Uuid }>).map((r) => r.operation_id);
+}
+
+// Replaces the list rather than diffing it, because the list is short and a
+// diff is a second opinion about what the caller meant.
+export async function setPaperRecordOperations(
+  id: Uuid,
+  operationIds: Uuid[],
+): Promise<void> {
+  const { error } = await kernel()
+    .from("paper_record_operation")
+    .delete()
+    .eq("paper_record_id", id);
+  if (error) throw new KernelError(error);
+  if (operationIds.length === 0) return;
+  const { error: writeError } = await kernel()
+    .from("paper_record_operation")
+    .insert(
+      operationIds.map((operation_id) => ({ paper_record_id: id, operation_id })),
+    );
+  if (writeError) throw new KernelError(writeError);
+}
+
+export async function toPropagate(): Promise<ToPropagate[]> {
+  const { data, error } = await kernel()
+    .from("measurement_to_propagate")
+    .select(
+      "event_id,paper_record_id,paper_record,at,operation,subject,data,provenance",
+    )
+    .order("at");
+  if (error) throw new KernelError(error);
+  return (data ?? []) as ToPropagate[];
+}
+
+// Somebody wrote it on the form. The author is written here rather than
+// defaulted, because the insert policy requires it to be the caller: a tick
+// nobody signed is a tick nobody can be asked about.
+export async function markPropagated(args: {
+  eventId: Uuid;
+  paperRecordId: Uuid;
+  writtenBy: Uuid;
+}): Promise<void> {
+  const { error } = await kernel().from("propagation").insert({
+    event_id: args.eventId,
+    paper_record_id: args.paperRecordId,
+    written_by: args.writtenBy,
+  });
   if (error) throw new KernelError(error);
 }
