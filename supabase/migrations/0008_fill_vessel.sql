@@ -8,7 +8,7 @@
 -- Depends on: [supabase/migrations/0001_core_schema.sql,
 --              supabase/migrations/0005_account_and_walk.sql,
 --              packages/cellar/docs/spec.md]
--- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql]
+-- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql, supabase/migrations/0033_intake.sql]
 -- Axioms enforced: T0-3 (provenance on every event), T0-4 (a producer cannot
 --                  grant itself standing)
 -- Open sorries: S-19 (this records wine arriving with no source, which is

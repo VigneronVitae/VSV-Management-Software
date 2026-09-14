@@ -6,7 +6,7 @@
 -- Depends on: [supabase/migrations/0009_vessel_type_form.sql,
 --              supabase/migrations/0017_vessel_state_rls.sql,
 --              supabase/migrations/0027_term_kind_registry.sql]
--- Depended on by: [tests/schema_assertions.sql]
+-- Depended on by: [tests/schema_assertions.sql, supabase/migrations/0033_intake.sql]
 -- Axioms enforced: none new. AR-E7's registry is what makes the rename one row.
 -- Open sorries: none.
 -- ---------------------------------------------------------------------------

@@ -576,6 +576,40 @@ serialisable read, or the seam moves into `ui.ts` so that a form gets a draft by
 already physically happened with no record of it.
 
 
+**S-49. Fruit weight is pounds because a constant says so, not because anybody chose it per winery.**
+`0033` records every pick in `lbs` and the winemaker asked for a setting. `node.unit` is
+already per row, so the schema is not what is missing: what is missing is a facility level
+default and a screen to set it, and building a settings system the night before the first pick
+would be the generalisation `CLAUDE.md` forbids on a worked case. The number is stored with its
+unit beside it, so nothing here is ambiguous and nothing has to be reinterpreted later.
+*Resolves when:* there is a second winery, or a scale that reads kilograms, whichever comes
+first, at which point the default belongs with the other facility settings rather than in a
+function body. *Load-bearing:* no, while there is one winery and one scale.
+
+**S-50. Forking a pick would produce a weight of zero, so it is refused instead.**
+`fork_lot` computes the child's quantity as the sum of `placement.volume_l` across the vessels
+being split off. A pick deliberately stores nothing there: one measured weight lives on the
+node and the bins carry no per bin number, because a scale reading covering three bins does not
+contain three weights. So forking a bin stage lot would hand the child a quantity of zero and
+close nothing, which is a wrong number rather than a missing one. `0033` makes that case raise.
+**The refusal is the honest half of a feature that is not built:** the winemaker asked for one
+measured record now with the option to split later, and later is not tonight. *Resolves when:*
+`fork_lot` learns that a bin stage parent divides its quantity across the bins being separated
+and writes the pieces as `inferred`, which is the moment the estimate is created and the only
+moment it is honest to create it. *Load-bearing:* the first time a pick has to be separated bin
+by bin, which is the first time one bin of a pick goes somewhere the others do not.
+
+**S-51. Only an administrator can create a block, so intake can stall on a vineyard nobody entered.**
+A pick carries a `block_id` and `block` has admin write. If fruit arrives from a block that is
+not in the database and the person at the scale is a cellar hand, they cannot enter the pick,
+and T1-4 says the bin that was never weighed cannot be recovered. Loosening the policy is a
+decision about who may define the facility's own vocabulary and was not made tonight, so the
+screen offers the inline create and a cellar hand gets a legible refusal rather than a dead
+form. *Resolves when:* the winemaker says whether a cellar hand may add a block, which is one
+sentence and changes one policy. *Load-bearing:* yes, during harvest, and the workaround is
+that he is reachable by phone.
+
+
 ## Discharged
 
 **S-25. An account belonging to no party is staff, so a client who signs up

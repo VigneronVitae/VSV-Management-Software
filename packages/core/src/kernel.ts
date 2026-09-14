@@ -2,20 +2,24 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { readConfig } from "./env.ts";
 import type {
   AppUser,
+  Block,
   CodePayload,
   EventRow,
   HistoryRow,
   Location,
   NodePayload,
   Party,
+  Pick,
   Term,
   TermKind,
+  UnweighedBin,
   Uuid,
   VesselPayload,
   VesselRow,
   VesselState,
   ViewerScope,
   WalkResult,
+  Weighing,
 } from "./types.ts";
 
 // Everything here is a thin pass through to the database. No rule is computed
@@ -320,7 +324,43 @@ export async function setVesselTypeFields(
     .from("term")
     .update({ attributes })
     .eq("id", vesselTypeId);
-  if (writeError) throw new Error(writeError.message);
+  // Was `new Error(writeError.message)`, which threw away the SQLSTATE and with
+  // it the difference between a refusal and a failure. See W-9 and refusal.ts.
+  if (writeError) throw new KernelError(writeError);
+}
+
+// Whether this vessel type is a picking bin, and what one weighs empty. Both
+// live on the type rather than on each vessel, because every bin of a type
+// weighs the same: slotted and unslotted are different types, which is the
+// granularity the winemaker described. See 0033.
+//
+// The tare is deliberately allowed to be null. A type flagged as a bin with no
+// tare yet is a real state, and `bin_tare_lbs` refuses at the scale rather than
+// treating a missing tare as zero, which would make every pick read heavy by the
+// weight of its own containers.
+export async function setVesselTypeBin(
+  vesselTypeId: Uuid,
+  bin: { intakeBin: boolean; tareLbs: number | null },
+): Promise<void> {
+  const { data, error } = await kernel()
+    .from("term")
+    .select("attributes")
+    .eq("id", vesselTypeId)
+    .single();
+  if (error) throw new KernelError(error);
+  const attributes: Record<string, unknown> = {
+    ...((data as { attributes: Record<string, unknown> }).attributes ?? {}),
+  };
+  if (bin.intakeBin) attributes.intake_bin = true;
+  else delete attributes.intake_bin;
+  if (bin.tareLbs === null) delete attributes.tare_lbs;
+  else attributes.tare_lbs = bin.tareLbs;
+
+  const { error: writeError } = await kernel()
+    .from("term")
+    .update({ attributes })
+    .eq("id", vesselTypeId);
+  if (writeError) throw new KernelError(writeError);
 }
 
 export type VesselTypeNote = {
@@ -631,4 +671,102 @@ export async function vesselPhotoUrl(path: string): Promise<string | null> {
     .createSignedUrl(path, 60 * 10);
   if (error) return null;
   return data?.signedUrl ?? null;
+}
+
+// --- intake ----------------------------------------------------------------
+
+// Build order 2, and the one where a missed record cannot be reconstructed. See
+// migration 0033 for why a pick is one node and a weighing is an event.
+
+export async function blocks(): Promise<Block[]> {
+  const { data, error } = await kernel()
+    .from("block")
+    .select("id,vineyard,name,variety,notes")
+    .order("vineyard")
+    .order("name");
+  if (error) throw new KernelError(error);
+  return (data ?? []) as Block[];
+}
+
+// S-51: block carries an admin-write policy, so a cellar hand gets a refusal
+// here rather than a row. The refusal is legible, which is the most this can do
+// until somebody decides who may name a vineyard.
+export async function addBlock(block: {
+  id: Uuid;
+  vineyard: string;
+  name: string;
+  variety: string;
+}): Promise<void> {
+  const { error } = await kernel().from("block").insert(block);
+  if (error) throw new KernelError(error);
+}
+
+// Picks that are still open: fruit at bin stage that has not been pressed away.
+export async function openPicks(): Promise<Pick[]> {
+  const { data, error } = await kernel()
+    .from("node")
+    .select("id,name,stage,status,vintage,block_id,variety_id,quantity,unit,created_at")
+    .eq("stage", "bin")
+    .neq("status", "closed")
+    .order("created_at", { ascending: false });
+  if (error) throw new KernelError(error);
+  return (data ?? []) as Pick[];
+}
+
+// One tap in a vineyard. Safe to repeat: the pick id is generated here, so a
+// phone that is unsure whether the call landed can send it again and find the
+// bin already recorded rather than creating a second pick.
+export async function addBinToPick(args: {
+  pick: {
+    id: Uuid;
+    block_id?: Uuid | null;
+    variety_id?: Uuid | null;
+    vintage?: number | null;
+    name?: string | null;
+    owner_id?: Uuid | null;
+  };
+  vesselId: Uuid;
+  fillPct: number | null;
+}): Promise<{ node_id: Uuid; placement_id: Uuid; bins: number; unweighed: number }> {
+  const { data, error } = await kernel().rpc("add_bin_to_pick", {
+    p_pick: args.pick,
+    p_vessel_id: args.vesselId,
+    p_fill_pct: args.fillPct,
+  });
+  if (error) throw new KernelError(error);
+  return data as { node_id: Uuid; placement_id: Uuid; bins: number; unweighed: number };
+}
+
+// One scale reading, however many bins were on it. `supersedes` is how a
+// misread number is corrected: the kernel writes a new event naming the old one
+// and recomputes the total, so nothing is edited and nothing double counts.
+export async function weighBins(args: {
+  nodeId: Uuid;
+  vesselIds: Uuid[];
+  grossLbs: number;
+  note?: string | null;
+  supersedes?: Uuid | null;
+}): Promise<Weighing> {
+  const { data, error } = await kernel().rpc("weigh_bins", {
+    p_node_id: args.nodeId,
+    p_vessel_ids: args.vesselIds,
+    p_gross_lbs: args.grossLbs,
+    p_note: args.note ?? null,
+    p_supersedes: args.supersedes ?? null,
+  });
+  if (error) throw new KernelError(error);
+  return data as Weighing;
+}
+
+// The list that has to be empty before a pick is finished. Whole-cellar by
+// default, because "is anything out there unweighed" is the question somebody
+// asks at the end of the day without knowing which pick to look at.
+export async function unweighedBins(nodeId?: Uuid): Promise<UnweighedBin[]> {
+  let q = kernel()
+    .from("unweighed_bin")
+    .select("node_id,pick_name,vessel_id,bin_name,bin_type,fill_pct,filled_at");
+  if (nodeId) q = q.eq("node_id", nodeId);
+  const { data, error } = await q.order("filled_at");
+  if (error) throw new KernelError(error);
+  return (data ?? []) as UnweighedBin[];
 }

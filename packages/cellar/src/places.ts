@@ -36,7 +36,15 @@ export type Place =
   | { at: "vessel-type"; id: string }
   | { at: "vessel"; id: string }
   | { at: "vessel-edit"; id: string }
-  | { at: "vessel-fill"; id: string };
+  | { at: "vessel-fill"; id: string }
+  // Intake. `pick-bins` is the one place whose identifier is optional: the
+  // tapping screen is reachable before the pick exists, because the pick is
+  // created by its first bin. Once the first bin lands the screen rewrites its
+  // own place to carry the id, so a restart after that resumes on the pick.
+  | { at: "intake" }
+  | { at: "pick-new" }
+  | { at: "pick-bins"; id?: string }
+  | { at: "scale" };
 
 export const HOME: Place = { at: "home" };
 
@@ -55,12 +63,22 @@ const WITHOUT_ID = new Set([
   "locations",
   "clients",
   "vessel-types",
+  "intake",
+  "pick-new",
+  "pick-bins",
+  "scale",
 ]);
 
-const WITH_ID = new Set(["vessel-type", "vessel", "vessel-edit", "vessel-fill"]);
+const WITH_ID = new Set([
+  "vessel-type",
+  "vessel",
+  "vessel-edit",
+  "vessel-fill",
+  "pick-bins",
+]);
 
 export function encode(place: Place): string {
-  return "id" in place ? `#/${place.at}/${place.id}` : `#/${place.at}`;
+  return "id" in place && place.id ? `#/${place.at}/${place.id}` : `#/${place.at}`;
 }
 
 export function decode(hash: string): Place {

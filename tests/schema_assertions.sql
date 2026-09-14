@@ -34,7 +34,7 @@
 --              supabase/migrations/0029_viewer_scope.sql,
 --              supabase/migrations/0030_writable_columns.sql,
 --              supabase/migrations/0031_scheduling_to_core.sql,
---              supabase/migrations/0032_vessel_maker_and_room_temperature.sql]
+--              supabase/migrations/0032_vessel_maker_and_room_temperature.sql, supabase/migrations/0033_intake.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -2661,7 +2661,10 @@ begin
   -- with three foreign keys into the resolver registry plus a bare-name check.
   -- c=19 f=43 p=22 before 0027, which added the term_kind registry: two bare-name
   -- checks, its primary key, and the foreign key from term.kind into it.
-  want := 'c=22 f=44 p=23 u=14';
+  -- c=22 before 0033, which added placement_fill_pct_is_a_percentage: the visual
+  -- fill estimate is nullable, because a bin nobody estimated is still a bin,
+  -- and bounded, because a percentage outside nought to a hundred is not one.
+  want := 'c=23 f=44 p=23 u=14';
   if have <> want then
     raise exception
       E'FAIL: the constraint inventory changed.\nnow:  %\nwas:  %\nIf that is deliberate, update this line in the same commit that changed the schema.', have, want;
@@ -3609,6 +3612,14 @@ declare
     'validate_vessel_type_fields',
     -- covered by behavioural assertions elsewhere in this file:
     'refuse_self_granted_standing',
+    -- The null branch is unreachable rather than covered, which is a different
+    -- account and the honest one. Both subselects read `node.stage` by an id
+    -- that lineage constrains with a foreign key into `node`, so a row reaching
+    -- this trigger cannot name a parent or child that is not there. If those
+    -- foreign keys ever go, this becomes A25's shape and permits the fork it
+    -- exists to refuse, which is why the reason is written down rather than the
+    -- conclusion. Asserted in the intake block below.
+    'refuse_forking_a_pick',
     -- NOT covered, and filed as ledger A26. The `required` guard reads
     -- `coalesce((f ->> 'required')::boolean, false)`, which is the defensive
     -- form, but the `kind` guard above it is `(f ->> 'kind') not in (...)`,
@@ -4578,7 +4589,7 @@ do $$ begin
     $q$insert into term (kind, value, label, attributes)
        values ('vessel_type','w7_badkind','W7 bad kind',
                '{"fields": [{"key":"a","kind":"colour"}]}'::jsonb)$q$,
-    '%which is not term, number or text%',
+    '%which is not term, number, text or boolean%',
     'a vessel type field of an unknown kind is refused');
 
   perform test_refuses(
@@ -5221,6 +5232,232 @@ begin
 
   delete from vessel where id in ('00000000-0000-0000-0000-000000003201',
                                   '00000000-0000-0000-0000-000000003202');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- intake: a bin of fruit before anybody weighs it'; end $$;
+
+-- 0033. Build order 2, and the one place where a missed record cannot be
+-- reconstructed. These assertions are arranged around the two things intake has
+-- that racking does not: a weight that is not known yet, and a scale reading
+-- covering more than one container.
+
+-- The type split the winemaker asked for. `macrobin` was one vessel type doing
+-- three jobs and the brand was one of them, which is the wrong-way knowledge
+-- AR-E7 took out of two enums and 0032 took out of the maker list.
+do $$
+declare n int;
+begin
+  select count(*) into n from term where kind = 'vessel_type' and value = 'macrobin';
+  if n <> 0 then
+    raise exception 'FAIL: macrobin is still a vessel type, so a brand is still a kind of vessel';
+  end if;
+  select count(*) into n from term where kind = 'vessel_maker' and value = 'macrobin';
+  if n <> 1 then
+    raise exception 'FAIL: Macrobin is not a vessel maker, so the brand went nowhere';
+  end if;
+  perform test_ok('a brand is a maker rather than a kind of vessel, which is where 0032 put the others');
+
+  select count(*) into n from term
+   where kind = 'vessel_type' and value = 'picking_bin'
+     and (attributes ->> 'intake_bin')::boolean;
+  if n <> 1 then
+    raise exception 'FAIL: a picking bin is not flagged as weighed at intake';
+  end if;
+  select count(*) into n from term
+   where kind = 'vessel_type' and value = 'fermentation_bin'
+     and coalesce((attributes ->> 'intake_bin')::boolean, false);
+  if n <> 0 then
+    raise exception 'FAIL: a fermentation bin is flagged for the scale, and it is a destination';
+  end if;
+  perform test_ok('only the bin fruit is weighed in is flagged for the scale, which is what intake_bin decides');
+end $$;
+
+-- The A25 class, in the place it would be most expensive. A missing tare read as
+-- zero is a pick that weighs its own containers, silently, for a whole vintage.
+do $$
+declare v_id uuid := '00000000-0000-0000-0000-00000000c101';
+begin
+  insert into vessel (id, type_id, name, capacity_l)
+  values (v_id, term_id('vessel_type', 'picking_bin'), 'Assert bin A', 400);
+
+  begin
+    perform bin_tare_lbs(v_id);
+    raise exception 'FAIL: a bin type with no tare returned a number, so fruit would weigh its own bin';
+  exception when others then
+    if position('no tare weight' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a bin type with no tare refuses rather than permitting, which is A25 below the gate');
+  end;
+
+  -- A fermentation bin has no tare and should not: it is a destination.
+  insert into vessel (id, type_id, name, capacity_l)
+  values ('00000000-0000-0000-0000-00000000c103',
+          term_id('vessel_type', 'fermentation_bin'), 'Assert ferm bin', 900);
+  begin
+    perform bin_tare_lbs('00000000-0000-0000-0000-00000000c103');
+    raise exception 'FAIL: a fermentation bin answered a question about its tare';
+  exception when others then
+    if position('not a picking bin' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a vessel that is not a picking bin says so rather than returning a weight');
+  end;
+end $$;
+
+-- A bin recorded in a vineyard, with no weight. The state T1-4 exists to allow.
+do $$
+declare
+  pick_id uuid := '00000000-0000-0000-0000-00000000c201';
+  q       numeric;
+  n       int;
+begin
+  update term set attributes = attributes || '{"tare_lbs": 60}'::jsonb
+   where kind = 'vessel_type' and value = 'picking_bin';
+
+  insert into vessel (id, type_id, name, capacity_l)
+  values ('00000000-0000-0000-0000-00000000c102',
+          term_id('vessel_type', 'picking_bin'), 'Assert bin B', 400);
+
+  perform add_bin_to_pick(
+    jsonb_build_object('id', pick_id, 'variety_id', term_id('variety', 'pinot_noir'),
+                       'vintage', 2026),
+    '00000000-0000-0000-0000-00000000c101', 100);
+  perform add_bin_to_pick(jsonb_build_object('id', pick_id),
+                          '00000000-0000-0000-0000-00000000c102', 50);
+
+  select quantity into q from node where id = pick_id;
+  -- B11's lesson, one table down. Zero is a weight and this is the absence of
+  -- one, and a pick reading 0 lbs until somebody weighs it is indistinguishable
+  -- from a pick that arrived empty.
+  if q is not null then
+    raise exception 'FAIL: a pick nobody has weighed reports a quantity of %', q;
+  end if;
+  perform test_ok('a pick with no weighing has no weight, rather than a weight of zero');
+
+  select count(*) into n from unweighed_bin where node_id = pick_id;
+  if n <> 2 then
+    raise exception 'FAIL: % of 2 unweighed bins are visible, so one could be lost', n;
+  end if;
+  perform test_ok('a bin with fruit and no weight is a row somebody can see, which is what makes T1-4 safe');
+
+  -- A destination is not a picking bin, and intake says so rather than
+  -- accepting fruit into something that is never carried to a scale.
+  begin
+    perform add_bin_to_pick(jsonb_build_object('id', pick_id),
+                            '00000000-0000-0000-0000-00000000c103', 100);
+    raise exception 'FAIL: fruit was recorded into a fermentation bin at intake';
+  exception when others then
+    if position('not an active picking bin' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('intake refuses a vessel that is not a picking bin');
+  end;
+end $$;
+
+-- The scale. One reading over several bins, and one tare subtracted per bin.
+do $$
+declare
+  pick_id uuid := '00000000-0000-0000-0000-00000000c201';
+  out_js  jsonb;
+  q       numeric;
+  n       int;
+  first   uuid;
+begin
+  out_js := weigh_bins(pick_id,
+    array['00000000-0000-0000-0000-00000000c101',
+          '00000000-0000-0000-0000-00000000c102']::uuid[],
+    1000, 'one full one half');
+
+  if (out_js ->> 'tare_lbs')::numeric <> 120 then
+    raise exception 'FAIL: two bins of 60 tared %, so the tare is not per bin', out_js ->> 'tare_lbs';
+  end if;
+  if (out_js ->> 'net_lbs')::numeric <> 880 then
+    raise exception 'FAIL: 1000 gross less 120 of bin came to %', out_js ->> 'net_lbs';
+  end if;
+  perform test_ok('a scale reading over several bins subtracts one tare for each of them');
+
+  select quantity into q from node where id = pick_id;
+  if q <> 880 then
+    raise exception 'FAIL: the pick holds % lbs after a reading of 880', q;
+  end if;
+  select count(*) into n from unweighed_bin where node_id = pick_id;
+  if n <> 0 then
+    raise exception 'FAIL: % bins still read as unweighed after being weighed', n;
+  end if;
+  perform test_ok('weighing a bin takes it off the list of bins waiting for a weight');
+
+  -- The guard that stops a pick from silently doubling. Without it a second
+  -- reading of the same bins adds its fruit again and no screen shows it.
+  begin
+    perform weigh_bins(pick_id,
+      array['00000000-0000-0000-0000-00000000c101']::uuid[], 500);
+    raise exception 'FAIL: the same bin was weighed twice and the pick doubled';
+  exception when others then
+    if position('weighed already' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('weighing a bin that has been weighed is refused rather than added');
+  end;
+
+  -- T0-5. A correction is a new event naming the one it replaces, so the wrong
+  -- number stays in the record and stops counting. Nothing is edited.
+  select id into first from event
+   where subject_type = 'node' and subject_id = pick_id
+     and operation_id = term_id('operation', 'weigh')
+   order by created_at limit 1;
+
+  out_js := weigh_bins(pick_id,
+    array['00000000-0000-0000-0000-00000000c101',
+          '00000000-0000-0000-0000-00000000c102']::uuid[],
+    1200, 'misread the scale', first);
+
+  if (out_js ->> 'total_lbs')::numeric <> 1080 then
+    raise exception
+      'FAIL: correcting 1000 to 1200 left the pick at % lbs, so the first reading is still counted',
+      out_js ->> 'total_lbs';
+  end if;
+  select count(*) into n from event
+   where subject_type = 'node' and subject_id = pick_id
+     and operation_id = term_id('operation', 'weigh');
+  if n <> 2 then
+    raise exception 'FAIL: correcting a weighing left % events, so something was edited', n;
+  end if;
+  perform test_ok('a corrected weighing supersedes rather than adds, and the first reading is still in the record');
+end $$;
+
+-- S-50, asserted rather than only filed. fork_lot sums placement.volume_l, which
+-- a pick deliberately leaves null, so forking one would hand the child a weight
+-- of zero. A wrong number is worse than a missing feature.
+do $$
+begin
+  begin
+    insert into lineage (parent_id, child_id, fraction)
+    values ('00000000-0000-0000-0000-00000000c201',
+            '00000000-0000-0000-0000-00000000c201', 1.0);
+    raise exception 'FAIL: a pick was split bin by bin and the pieces would weigh nothing';
+  exception when others then
+    if position('cannot be split bin by bin' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('S-50, asserted: splitting a pick is refused rather than producing a weight of zero');
+  end;
+end $$;
+
+-- S-26, the leak 0017 closed and 0032 briefly re-opened. Every view added since
+-- then has to carry the option, and this is the newest one.
+do $$
+declare opts text[];
+begin
+  select c.reloptions into opts
+    from pg_class c join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'public' and c.relname = 'unweighed_bin';
+  if opts is null or not ('security_invoker=true' = any(opts)) then
+    raise exception
+      'FAIL: unweighed_bin does not run as its caller, so it hands a client somebody else fruit';
+  end if;
+  perform test_ok('the unweighed bin list runs as whoever asks, so it shows one client their own fruit');
+
+  delete from event where subject_type = 'node'
+     and subject_id = '00000000-0000-0000-0000-00000000c201';
+  delete from placement where node_id = '00000000-0000-0000-0000-00000000c201';
+  delete from node where id = '00000000-0000-0000-0000-00000000c201';
+  delete from vessel where id in ('00000000-0000-0000-0000-00000000c101',
+                                  '00000000-0000-0000-0000-00000000c102',
+                                  '00000000-0000-0000-0000-00000000c103');
+  update term set attributes = attributes - 'tare_lbs'
+   where kind = 'vessel_type' and value = 'picking_bin';
 end $$;
 
 -- ---------------------------------------------------------------------------

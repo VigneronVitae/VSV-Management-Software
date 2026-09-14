@@ -1,11 +1,14 @@
 import {
   type AppUser,
+  addBinToPick,
+  addBlock,
   addLocation,
   addParty,
   addVessel,
   addVesselTypeNote,
   appUsers,
   bindCode,
+  blocks,
   claimAccount,
   createVesselWithWine,
   currentAppUser,
@@ -16,6 +19,7 @@ import {
   type NodePayload,
   newId,
   nodeHistory,
+  openPicks,
   type Party,
   parties,
   rackPlan,
@@ -23,6 +27,7 @@ import {
   resolveCode,
   resolveVesselTypeNote,
   setPartyLogin,
+  setVesselTypeBin,
   setVesselTypeFields,
   signIn,
   signOut,
@@ -33,6 +38,8 @@ import {
   type ThermalMode,
   terms,
   termsForVesselField,
+  type UnweighedBin,
+  unweighedBins,
   updateVessel,
   uploadVesselPhoto,
   type VesselRow,
@@ -44,6 +51,7 @@ import {
   vessels,
   vesselTypeNotes,
   viewerScope,
+  weighBins,
   writableColumns,
 } from "core";
 import { locationPicker, partyPicker, termPicker } from "./pickers.ts";
@@ -199,6 +207,14 @@ async function screenFor(place: Place): Promise<HTMLElement> {
       return clientsScreen();
     case "vessel-types":
       return vesselTypeListScreen(user);
+    case "intake":
+      return intakeScreen();
+    case "pick-new":
+      return newPickScreen();
+    case "pick-bins":
+      return pickBinsScreen(place.id);
+    case "scale":
+      return scaleScreen();
     case "vessel-type": {
       const type = (await terms("vessel_type")).find((t) => t.id === place.id);
       if (!type) throw new GoneError("That vessel type no longer exists.");
@@ -555,12 +571,36 @@ function menu(items: MenuItem[]): HTMLElement {
 }
 
 async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> {
-  const [places, kit] = await Promise.all([locations(), vessels()]);
+  const [places, kit, unweighed] = await Promise.all([
+    locations(),
+    vessels(),
+    unweighedBins(),
+  ]);
   const filled = kit.filter((v) => !v.is_empty).length;
+  // On the home screen on purpose. T1-4 allows a bin to exist with no weight,
+  // which is only safe if the count of them is somewhere nobody has to go
+  // looking for it.
+  const waiting = unweighed.length;
 
   return screen(
     facility.name,
     lede(`${user.name}, ${user.role}. What would you like to do?`),
+    el("h2", { class: "section-head", text: "Harvest" }),
+    menu([
+      {
+        name: "Picking",
+        note:
+          "Record bins as they are filled. The weight comes later, and until it " +
+          "does the bin says so.",
+        ...(waiting > 0 ? { badge: `${waiting} to weigh` } : {}),
+        go: () => go({ at: "intake" }),
+      },
+      {
+        name: "Weigh bins",
+        note: "What the scale said, with the bins' own weight taken off.",
+        go: () => go({ at: "scale" }),
+      },
+    ]),
     el("h2", { class: "section-head", text: "In the cellar" }),
     menu([
       {
@@ -611,12 +651,6 @@ async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> 
     ]),
     el("h2", { class: "section-head", text: "Not built yet" }),
     menu([
-      {
-        name: "Intake",
-        note:
-          "Picking bins as they arrive. Build order 2, and the one where a missed " +
-          "record cannot be reconstructed afterwards.",
-      },
       {
         name: "Press and destem",
         note: "Where lots acquire their identity. Build order 3.",
@@ -919,6 +953,26 @@ function vesselFields(partyRows: Party[]): VesselForm {
           await picker.reload(typeof value === "string" ? value : undefined);
         },
         missing: () => required && !picker.value(),
+      };
+    }
+
+    // A yes or a no. 0033 added the kind because "Borrowed, goes back" is a
+    // checkbox, and a text field holding the word yes would be the wrong control
+    // and the wrong data.
+    if (spec.kind === "boolean") {
+      const box = checkbox(labelText, false);
+      return {
+        spec,
+        root: box.root,
+        read: () => box.input.checked,
+        label: () => null,
+        set: async (value) => {
+          box.input.checked = value === true;
+        },
+        // A required checkbox means the box has to be ticked, which is a
+        // consent, not a field. Nothing declares one and this says what would
+        // happen if something did.
+        missing: () => required && !box.input.checked,
       };
     }
 
@@ -1894,6 +1948,7 @@ function vesselTypeScreen(user: AppUser, type: Term): HTMLElement {
       el("option", { value: "text", text: "Text" }),
       el("option", { value: "number", text: "Number" }),
       el("option", { value: "term", text: "Pick from a list" }),
+      el("option", { value: "boolean", text: "Yes or no" }),
     );
     kind.value = String(spec.kind ?? "text");
     on(kind, "change", () => {
@@ -1983,10 +2038,69 @@ function vesselTypeScreen(user: AppUser, type: Term): HTMLElement {
     );
   }
 
+  // Whether this type is weighed at intake, and what one weighs empty. Both are
+  // facts about the type rather than fields on each vessel, so they sit above
+  // the field list rather than in it. See 0033.
+  function binEditor(): HTMLElement {
+    const isBin = checkbox(
+      "Fruit is weighed in this at intake",
+      bag.intake_bin === true,
+    );
+    const tare = field({
+      label: "Tare, lbs",
+      type: "number",
+      value: bag.tare_lbs == null ? "" : String(bag.tare_lbs),
+      hint:
+        "What one weighs empty. The scale subtracts it once per bin. Nothing is " +
+        "assumed if this is blank: weighing refuses and says so, because a tare " +
+        "of zero would make every pick read heavy by the weight of its own bins.",
+    });
+    const tareBox = el("div", {}, tare.root);
+    const sync = () => {
+      tareBox.hidden = !isBin.input.checked;
+    };
+    sync();
+    on(isBin.input, "change", sync);
+
+    return el(
+      "div",
+      { class: "rows" },
+      el("h2", { class: "section-head", text: "At intake" }),
+      isBin.root,
+      tareBox,
+      button(
+        "Save intake settings",
+        async () => {
+          try {
+            const raw = tare.value();
+            await setVesselTypeBin(type.id, {
+              intakeBin: isBin.input.checked,
+              tareLbs: isBin.input.checked && raw ? Number(raw) : null,
+            });
+            bag.intake_bin = isBin.input.checked ? true : undefined;
+            bag.tare_lbs = raw ? Number(raw) : undefined;
+            message.replaceChildren(
+              banner(
+                isBin.input.checked && !raw
+                  ? "Saved. No tare yet, so weighing this type will refuse until one is set."
+                  : "Saved.",
+                isBin.input.checked && !raw ? "note" : "good",
+              ),
+            );
+          } catch (error) {
+            message.replaceChildren(fail(error));
+          }
+        },
+        "secondary",
+      ),
+    );
+  }
+
   function draw(): void {
     const parts: HTMLElement[] = [];
 
     if (isAdmin) {
+      parts.push(binEditor());
       for (const [i, spec] of fields.entries()) parts.push(fieldEditor(spec, i));
 
       const newKey = field({
@@ -2698,6 +2812,525 @@ async function resultScreen(
       button("Back to the cellar", () => go(HOME), "secondary"),
     ),
   );
+}
+
+// --- intake ----------------------------------------------------------------
+
+// Build order 2 in spec.md §7, and the one screen where a missed record cannot
+// be reconstructed afterwards. Everything here is arranged around T1-4: intake
+// must be fast before it is complete, so a bin is recorded in one tap with no
+// weight, and the weight is a separate act at the scale.
+
+// A pick that has been described and has no bins yet. Held here rather than in
+// the URL because it is not a thing until its first bin is recorded, and a place
+// is resolved by asking the kernel, which would have nothing to answer with.
+let pendingPick: {
+  id: string;
+  block_id: string | null;
+  variety_id: string | null;
+  vintage: number | null;
+} | null = null;
+
+// Vessels that fruit is weighed in. The flag is on the type and this is the one
+// place the client reads it, so "which vessels are picking bins" has one answer
+// rather than one per screen.
+async function pickingBinTypeIds(): Promise<Set<string>> {
+  const types = await terms("vessel_type");
+  return new Set(
+    types.filter((t) => t.attributes?.intake_bin === true).map((t) => t.id),
+  );
+}
+
+// The block a pick came from, with a way to add one without leaving the screen.
+// S-51: block carries an admin-write policy, so a cellar hand gets a refusal
+// here rather than a row, and the refusal says what it is.
+function blockField(): {
+  root: HTMLElement;
+  value: () => string;
+  reload: (selected?: string) => Promise<void>;
+} {
+  const select = el("select", { class: "input" });
+  const message = el("div", {});
+  const vineyard = field({ label: "Vineyard", placeholder: "Royer" });
+  const name = field({ label: "Block", placeholder: "Block 3" });
+  const variety = field({ label: "Variety", placeholder: "Pinot Gris" });
+
+  async function load(selected?: string): Promise<void> {
+    const rowsOut = await blocks();
+    select.replaceChildren(
+      el("option", { value: "", text: "Pick a block" }),
+      ...rowsOut.map((b) =>
+        el("option", { value: b.id, text: `${b.vineyard} ${b.name}` }),
+      ),
+    );
+    if (selected) select.value = selected;
+  }
+
+  const adder = el(
+    "details",
+    { class: "more" },
+    el("summary", { text: "Add a block" }),
+    rows(
+      vineyard.root,
+      name.root,
+      variety.root,
+      button(
+        "Add it",
+        async () => {
+          if (!vineyard.value() || !name.value() || !variety.value()) {
+            message.replaceChildren(
+              banner("A block needs a vineyard, a name and a variety.", "error"),
+            );
+            return;
+          }
+          const id = newId();
+          try {
+            await addBlock({
+              id,
+              vineyard: vineyard.value(),
+              name: name.value(),
+              variety: variety.value(),
+            });
+            await load(id);
+            vineyard.input.value = "";
+            name.input.value = "";
+            variety.input.value = "";
+            message.replaceChildren(banner("Added.", "good"));
+          } catch (error) {
+            message.replaceChildren(fail(error));
+          }
+        },
+        "secondary",
+      ),
+      message,
+    ),
+  );
+
+  return {
+    root: el(
+      "div",
+      { class: "field" },
+      el("span", { class: "field-label", text: "Block" }),
+      select,
+      adder,
+    ),
+    value: () => select.value,
+    reload: load,
+  };
+}
+
+// The list of picks with fruit still in bins. A pick with unweighed bins says so
+// on its row, because that is the number somebody checks at the end of a day.
+function intakeScreen(): HTMLElement {
+  const body = el("div", {}, empty("Loading."));
+  const view = screen(
+    "Picking",
+    lede(
+      "Record a bin as it is filled. The weight comes later, at the scale, and " +
+        "until then the bin shows up as waiting for one.",
+    ),
+    body,
+  );
+
+  void (async () => {
+    try {
+      const [picks, waiting] = await Promise.all([openPicks(), unweighedBins()]);
+      const waitingBy = new Map<string, number>();
+      for (const b of waiting) {
+        waitingBy.set(b.node_id, (waitingBy.get(b.node_id) ?? 0) + 1);
+      }
+
+      body.replaceChildren(
+        rows(
+          button("Start a pick", () => go({ at: "pick-new" })),
+          waiting.length > 0
+            ? button(
+                `Weigh bins (${waiting.length} waiting)`,
+                () => go({ at: "scale" }),
+                "secondary",
+              )
+            : empty("Nothing is waiting to be weighed."),
+          el("h2", { class: "section-head", text: "Open picks" }),
+          picks.length === 0
+            ? empty("No fruit in bins right now.")
+            : el(
+                "ul",
+                { class: "vessel-list" },
+                ...picks.map((p) => {
+                  const unweighed = waitingBy.get(p.id) ?? 0;
+                  const row = el(
+                    "li",
+                    { class: "vessel-row", role: "button", tabindex: "0" },
+                    el("span", { class: "vessel-name", text: p.name }),
+                    el("span", {
+                      class: "vessel-detail",
+                      // B11's lesson. Zero is a number and null is the absence
+                      // of one, and they must not render the same: a pick with
+                      // no weight yet has not been weighed, it does not weigh 0.
+                      text:
+                        p.quantity === null
+                          ? "not weighed yet"
+                          : `${Number(p.quantity).toLocaleString()} lbs`,
+                    }),
+                    unweighed > 0
+                      ? el("span", {
+                          class: "tag tag-inherited",
+                          text: `${unweighed} unweighed`,
+                        })
+                      : null,
+                  );
+                  const openRow = () => go({ at: "pick-bins", id: p.id });
+                  on(row, "click", openRow);
+                  on(row, "keydown", (ev) => {
+                    if (ev.key === "Enter" || ev.key === " ") {
+                      ev.preventDefault();
+                      openRow();
+                    }
+                  });
+                  return row;
+                }),
+              ),
+          button("Back", () => goBack(), "quiet"),
+        ),
+      );
+    } catch (error) {
+      body.replaceChildren(
+        fail(error),
+        button("Back", () => goBack(), "quiet"),
+      );
+    }
+  })();
+
+  return view;
+}
+
+// Starting a pick is saying what the fruit is. No bin is recorded here: the
+// first bin creates the pick, so a pick with nothing in it never exists.
+function newPickScreen(): HTMLElement {
+  const body = el("div", {}, empty("Loading."));
+  const message = el("div", {});
+  const view = screen(
+    "Start a pick",
+    lede("What is being picked. Bins go on next, one tap each."),
+    body,
+  );
+
+  void (async () => {
+    try {
+      const block = blockField();
+      const variety = termPicker("variety", { label: "Variety", stickyKey: "variety" });
+      const vintage = field({
+        label: "Vintage",
+        type: "number",
+        value: String(new Date().getFullYear()),
+      });
+      await Promise.all([block.reload(), variety.reload()]);
+
+      body.replaceChildren(
+        rows(
+          block.root,
+          variety.root,
+          vintage.root,
+          button("Next, add bins", () => {
+            if (!variety.value()) {
+              message.replaceChildren(banner("Pick a variety.", "error"));
+              return;
+            }
+            // The pick's id is made here, before anything is written, so the
+            // bin screen can add to it and a repeated call finds the same pick
+            // rather than making a second one.
+            pendingPick = {
+              id: newId(),
+              block_id: block.value() || null,
+              variety_id: variety.value(),
+              vintage: vintage.value() ? Number(vintage.value()) : null,
+            };
+            go({ at: "pick-bins" });
+          }),
+          button("Back", () => goBack(), "quiet"),
+          message,
+        ),
+      );
+    } catch (error) {
+      body.replaceChildren(
+        fail(error),
+        button("Back", () => goBack(), "quiet"),
+      );
+    }
+  })();
+
+  return view;
+}
+
+// The tapping screen. One control, pressed once per bin, with the fill estimate
+// pre-set to full because most bins are full and the exceptions are the ones
+// worth a second of attention.
+function pickBinsScreen(openOn?: string): HTMLElement {
+  let nodeId = openOn;
+  const body = el("div", {}, empty("Loading."));
+  const message = el("div", {});
+  const tally = el("div", {});
+  const view = screen("Add bins", body);
+
+  void (async () => {
+    try {
+      const [kit, binTypes] = await Promise.all([vessels(), pickingBinTypeIds()]);
+
+      if (binTypes.size === 0) {
+        body.replaceChildren(
+          banner(
+            "No vessel type is marked as weighed at intake, so there are no " +
+              "picking bins to fill. An administrator sets that on the vessel type.",
+            "note",
+          ),
+          button("Back", () => goBack(), "quiet"),
+        );
+        return;
+      }
+
+      const free = kit.filter((v) => binTypes.has(v.type_id) && v.is_empty);
+      const bin = el("select", { class: "input" });
+      const exhausted = el("div", {});
+      const fill = field({
+        label: "How full, percent",
+        type: "number",
+        value: "100",
+        hint: "By eye. A bin weighed on its own later turns this into a real number.",
+      });
+
+      const addButton = button("Add this bin", () => void addOne());
+
+      // An empty picker with a live button beside it is an offer the kernel is
+      // about to refuse. Saying so here costs nothing and saves a round trip in
+      // the one place somebody is moving fast.
+      function loadBins(): void {
+        bin.replaceChildren(
+          ...free.map((v) =>
+            el("option", { value: v.id, text: `${v.name} (${v.type})` }),
+          ),
+        );
+        addButton.disabled = free.length === 0;
+        exhausted.replaceChildren(
+          free.length === 0
+            ? banner(
+                "Every picking bin already holds fruit. Weigh and empty one, or register more.",
+                "note",
+              )
+            : el("span", {}),
+        );
+      }
+
+      async function addOne(): Promise<void> {
+        const pick = nodeId ? { id: nodeId } : pendingPick ? { ...pendingPick } : null;
+        if (!pick) {
+          message.replaceChildren(
+            banner("Start a pick first, so the bin has something to join.", "error"),
+          );
+          return;
+        }
+        const chosen = bin.value;
+        try {
+          const raw = fill.value();
+          const result = await addBinToPick({
+            pick,
+            vesselId: chosen,
+            fillPct: raw ? Number(raw) : null,
+          });
+          // The pick exists now, so later bins join it by id rather than
+          // re-sending the description.
+          pendingPick = null;
+          nodeId = result.node_id;
+          const at = free.findIndex((v) => v.id === chosen);
+          if (at >= 0) free.splice(at, 1);
+          loadBins();
+          await refreshTally(result.node_id);
+          message.replaceChildren(
+            banner(
+              `Recorded. ${result.bins} bin${result.bins === 1 ? "" : "s"} on this pick.`,
+              "good",
+            ),
+          );
+          // The pick has an id worth resuming on now, which it did not have when
+          // this screen opened.
+          window.history.replaceState(
+            null,
+            "",
+            encode({ at: "pick-bins", id: result.node_id }),
+          );
+        } catch (error) {
+          message.replaceChildren(fail(error));
+        }
+      }
+
+      async function refreshTally(id: string): Promise<void> {
+        const waiting = await unweighedBins(id);
+        tally.replaceChildren(
+          el("p", {
+            class: "lede",
+            text:
+              waiting.length === 0
+                ? "Every bin on this pick has been weighed."
+                : `${waiting.length} bin${waiting.length === 1 ? "" : "s"} waiting for the scale: ` +
+                  waiting.map((w) => w.bin_name).join(", "),
+          }),
+        );
+      }
+
+      loadBins();
+      if (nodeId) await refreshTally(nodeId);
+
+      body.replaceChildren(
+        rows(
+          tally,
+          exhausted,
+          bin,
+          fill.root,
+          addButton,
+          button("Weigh bins", () => go({ at: "scale" }), "secondary"),
+          button("Done", () => go({ at: "intake" }), "quiet"),
+          message,
+        ),
+      );
+    } catch (error) {
+      body.replaceChildren(
+        fail(error),
+        button("Back", () => goBack(), "quiet"),
+      );
+    }
+  })();
+
+  return view;
+}
+
+// The scale. Tick whatever went on it together, read the gross off the display,
+// and the kernel subtracts those particular bins' tares. Nothing here divides
+// the number across the bins, because the reading does not contain that.
+function scaleScreen(): HTMLElement {
+  const body = el("div", {}, empty("Loading."));
+  const message = el("div", {});
+  const view = screen(
+    "Weigh bins",
+    lede(
+      "Tick the bins that went on the scale together and type what it said. " +
+        "Their tares come off automatically.",
+    ),
+    body,
+  );
+
+  void (async () => {
+    try {
+      const waiting = await unweighedBins();
+      if (waiting.length === 0) {
+        body.replaceChildren(
+          empty("Nothing is waiting to be weighed."),
+          button("Back", () => goBack(), "quiet"),
+        );
+        return;
+      }
+
+      // Grouped by pick, because a scale reading is of one pick: the kernel
+      // refuses a set of bins that do not all hold the same fruit, and offering
+      // a mixed selection would be offering a refusal.
+      const byPick = new Map<string, UnweighedBin[]>();
+      for (const b of waiting) {
+        const list = byPick.get(b.node_id) ?? [];
+        list.push(b);
+        byPick.set(b.node_id, list);
+      }
+
+      const groups = [...byPick.entries()].map(([nodeId, binsHere]) => {
+        const boxes = binsHere.map((b) => ({
+          bin: b,
+          box: checkbox(
+            b.fill_pct === null
+              ? `${b.bin_name} (${b.bin_type})`
+              : `${b.bin_name} (${b.bin_type}, ${b.fill_pct}% full)`,
+            binsHere.length === 1,
+          ),
+        }));
+        const gross = field({
+          label: "Gross, lbs",
+          type: "number",
+          placeholder: "1000",
+          hint: "What the scale says, bins and fruit together.",
+        });
+        const note = field({
+          label: "Note",
+          placeholder: "one full one half",
+          hint: "Optional. What a number alone would not say.",
+        });
+        const result = el("div", {});
+
+        return el(
+          "div",
+          { class: "rows" },
+          el("h2", { class: "section-head", text: binsHere[0]?.pick_name ?? "Pick" }),
+          ...boxes.map((b) => b.box.root),
+          gross.root,
+          note.root,
+          button("Record this weight", async () => {
+            const chosen = boxes
+              .filter((b) => b.box.input.checked)
+              .map((b) => b.bin.vessel_id);
+            if (chosen.length === 0) {
+              result.replaceChildren(
+                banner("Tick the bins this reading is of.", "error"),
+              );
+              return;
+            }
+            if (!gross.value()) {
+              result.replaceChildren(banner("Type what the scale said.", "error"));
+              return;
+            }
+            try {
+              const out = await weighBins({
+                nodeId,
+                vesselIds: chosen,
+                grossLbs: Number(gross.value()),
+                note: note.value() || null,
+              });
+              result.replaceChildren(
+                banner(
+                  `${out.net_lbs.toLocaleString()} lbs of fruit: ${out.gross_lbs.toLocaleString()} gross ` +
+                    `less ${out.tare_lbs.toLocaleString()} of bin. This pick is now ` +
+                    `${out.total_lbs.toLocaleString()} lbs, with ${out.unweighed} bin` +
+                    `${out.unweighed === 1 ? "" : "s"} still to weigh.`,
+                  "good",
+                ),
+              );
+              gross.input.value = "";
+              note.input.value = "";
+              for (const b of boxes) {
+                if (b.box.input.checked) {
+                  b.box.input.checked = false;
+                  b.box.input.disabled = true;
+                  b.box.root.classList.add("weighed");
+                }
+              }
+            } catch (error) {
+              result.replaceChildren(fail(error));
+            }
+          }),
+          result,
+        );
+      });
+
+      body.replaceChildren(
+        rows(
+          ...groups,
+          button("Done", () => go({ at: "intake" }), "quiet"),
+          message,
+        ),
+      );
+    } catch (error) {
+      body.replaceChildren(
+        fail(error),
+        button("Back", () => goBack(), "quiet"),
+      );
+    }
+  })();
+
+  return view;
 }
 
 // --- scanning -------------------------------------------------------------

@@ -1,12 +1,24 @@
-# The refusal surface of the kernel, as enumerated by scripts/guards.sh.
-# Committed so that a count is script output rather than an estimate, and so
-# that a refusal site disappearing shows up as a diff rather than as a smaller
-# denominator nobody chose.
-#
-# occ 0 would mean a site this instrument cannot substitute. There are none
-# today. If one appears, it is a hole in the instrument and not in the schema.
-# id	fn	kind	find	repl	occ
+add_bin_to_pick:head:1	add_bin_to_pick	head	if not exists (\n    select 1 from vessel v\n      join term vt on vt.id = v.type_id and vt.kind = 'vessel_type'\n     where v.id = p_vessel_id\n       and v.active\n       and coalesce((vt.attributes ->> 'intake_bin')::boolean, false)\n  ) then	if false then	1
+add_bin_to_pick:permissive:1	add_bin_to_pick	permissive	and coalesce((vt.attributes ->> 'intake_bin')::boolean, false)	and coalesce((vt.attributes ->> 'intake_bin')::boolean, true)	1
+add_bin_to_pick:raise:1	add_bin_to_pick	raise	raise exception	raise notice	1
+add_bin_to_pick:guard:1	add_bin_to_pick	guard	if holder = pick_id then	if false then	1
+add_bin_to_pick:raise:2	add_bin_to_pick	raise	raise exception 'that bin is already part of this pick';	raise notice 'that bin is already part of this pick';	1
+add_bin_to_pick:guard:2	add_bin_to_pick	guard	if holder is not null then	if false then	1
+add_bin_to_pick:raise:3	add_bin_to_pick	raise	raise exception 'that bin already holds other fruit; empty it before filling it again';	raise notice 'that bin already holds other fruit; empty it before filling it again';	1
+add_bin_to_pick:guard:3	add_bin_to_pick	guard	if existing.id is null then	if false then	1
+add_bin_to_pick:guard:4	add_bin_to_pick	guard	elsif existing.stage <> 'bin' then	elsif false then	1
+add_bin_to_pick:raise:4	add_bin_to_pick	raise	raise exception 'that lot is not a pick, so bins cannot be added to it';	raise notice 'that lot is not a pick, so bins cannot be added to it';	1
+add_bin_to_pick:guard:5	add_bin_to_pick	guard	elsif existing.status = 'closed' then	elsif false then	1
+add_bin_to_pick:raise:5	add_bin_to_pick	raise	raise exception 'that pick is closed; its fruit has already gone somewhere';	raise notice 'that pick is closed; its fruit has already gone somewhere';	1
 apply_owner_privacy:guard:1	apply_owner_privacy	guard	if new.hidden = '{}' and new.owner_id is not null then	if false then	1
+bin_tare_lbs:guard:1	bin_tare_lbs	guard	if t is null then	if false then	1
+bin_tare_lbs:raise:1	bin_tare_lbs	raise	raise exception 'no vessel with id %', p_vessel_id;	raise notice 'no vessel with id %', p_vessel_id;	1
+bin_tare_lbs:guard:2	bin_tare_lbs	guard	if coalesce((t ->> 'intake_bin')::boolean, false) is not true then	if false then	1
+bin_tare_lbs:raise:2	bin_tare_lbs	raise	raise exception	raise notice	2
+bin_tare_lbs:guard:3	bin_tare_lbs	guard	if tare is null then	if false then	1
+bin_tare_lbs:raise:3	bin_tare_lbs	raise	raise exception	raise notice	3
+bin_tare_lbs:guard:4	bin_tare_lbs	guard	if tare <= 0 then	if false then	1
+bin_tare_lbs:raise:4	bin_tare_lbs	raise	raise exception 'the bin type % has a tare of %, which is not a weight', type_label, tare;	raise notice 'the bin type % has a tare of %, which is not a weight', type_label, tare;	1
 bind_vessel_code:guard:1	bind_vessel_code	guard	if found then	if false then	1
 bind_vessel_code:guard:2	bind_vessel_code	guard	if existing.vessel_id = p_vessel_id then	if false then	1
 bind_vessel_code:guard:3	bind_vessel_code	guard	if not is_admin() then	if false then	1
@@ -118,6 +130,8 @@ record_event:raise:2	record_event	raise	raise exception 'none of those vessels h
 record_event:guard:4	record_event	guard	if n_here < n_total then	if false then	1
 record_vessel_note:guard:1	record_vessel_note	guard	if op is null then	if false then	1
 record_vessel_note:raise:1	record_vessel_note	raise	raise exception 'there is no operation called %', p_operation;	raise notice 'there is no operation called %', p_operation;	1
+refuse_forking_a_pick:head:1	refuse_forking_a_pick	head	if (select stage from node where id = new.parent_id) = 'bin'\n     and (select stage from node where id = new.child_id) = 'bin' then	if false then	1
+refuse_forking_a_pick:raise:1	refuse_forking_a_pick	raise	raise exception	raise notice	1
 refuse_self_granted_standing:guard:1	refuse_self_granted_standing	guard	if new.provenance = 'confirmed' then	if false then	1
 refuse_self_granted_standing:raise:1	refuse_self_granted_standing	raise	raise exception	raise notice	1
 register_subject_resolver:guard:1	register_subject_resolver	guard	if not is_admin() then	if false then	1
@@ -164,8 +178,8 @@ validate_vessel_type_fields:guard:3	validate_vessel_type_fields	guard	if k is nu
 validate_vessel_type_fields:raise:2	validate_vessel_type_fields	raise	raise exception 'every field needs a key';	raise notice 'every field needs a key';	1
 validate_vessel_type_fields:guard:4	validate_vessel_type_fields	guard	if k = any(seen) then	if false then	1
 validate_vessel_type_fields:raise:3	validate_vessel_type_fields	raise	raise exception 'two fields share the key %', k;	raise notice 'two fields share the key %', k;	1
-validate_vessel_type_fields:guard:5	validate_vessel_type_fields	guard	if (f ->> 'kind') not in ('term', 'number', 'text') then	if false then	1
-validate_vessel_type_fields:raise:4	validate_vessel_type_fields	raise	raise exception 'field % has kind %, which is not term, number or text',	raise notice 'field % has kind %, which is not term, number or text',	1
+validate_vessel_type_fields:guard:5	validate_vessel_type_fields	guard	if (f ->> 'kind') not in ('term', 'number', 'text', 'boolean') then	if false then	1
+validate_vessel_type_fields:raise:4	validate_vessel_type_fields	raise	raise exception 'field % has kind %, which is not term, number, text or boolean',	raise notice 'field % has kind %, which is not term, number, text or boolean',	1
 validate_vessel_type_fields:guard:6	validate_vessel_type_fields	guard	if (f ->> 'kind') = 'term' then	if false then	1
 validate_vessel_type_fields:guard:7	validate_vessel_type_fields	guard	if f ->> 'term_kind' is null then	if false then	1
 validate_vessel_type_fields:raise:5	validate_vessel_type_fields	raise	raise exception 'field % is a picker and names no vocabulary', k;	raise notice 'field % is a picker and names no vocabulary', k;	1
@@ -182,3 +196,21 @@ visible_node:guard:3	visible_node	guard	if 'owner'      = any(n.hidden) then	if 
 visible_node:guard:4	visible_node	guard	if 'variety'    = any(n.hidden) then	if false then	1
 visible_node:guard:5	visible_node	guard	if 'vintage'    = any(n.hidden) then	if false then	1
 visible_node:guard:6	visible_node	guard	if 'attributes' = any(n.hidden) then	if false then	1
+weigh_bins:guard:1	weigh_bins	guard	if n_bins = 0 then	if false then	1
+weigh_bins:raise:1	weigh_bins	raise	raise exception 'no bins were named, so there is nothing this weight is of';	raise notice 'no bins were named, so there is nothing this weight is of';	1
+weigh_bins:guard:2	weigh_bins	guard	if p_gross_lbs is null or p_gross_lbs <= 0 then	if false then	1
+weigh_bins:raise:2	weigh_bins	raise	raise exception 'a gross weight of % is not a scale reading',	raise notice 'a gross weight of % is not a scale reading',	1
+weigh_bins:guard:3	weigh_bins	guard	if n.id is null then	if false then	1
+weigh_bins:raise:3	weigh_bins	raise	raise exception 'no pick with id %', p_node_id;	raise notice 'no pick with id %', p_node_id;	1
+weigh_bins:guard:4	weigh_bins	guard	if n.stage <> 'bin' then	if false then	1
+weigh_bins:raise:4	weigh_bins	raise	raise exception 'that lot is not a pick, so it is not weighed in bins';	raise notice 'that lot is not a pick, so it is not weighed in bins';	1
+weigh_bins:guard:5	weigh_bins	guard	if n.status = 'closed' then	if false then	1
+weigh_bins:raise:5	weigh_bins	raise	raise exception 'that pick is closed; its fruit has already gone somewhere';	raise notice 'that pick is closed; its fruit has already gone somewhere';	1
+weigh_bins:guard:6	weigh_bins	guard	if n_here <> n_bins then	if false then	1
+weigh_bins:raise:6	weigh_bins	raise	raise exception	raise notice	6
+weigh_bins:guard:7	weigh_bins	guard	if already is not null and p_supersedes is null then	if false then	1
+weigh_bins:raise:7	weigh_bins	raise	raise exception	raise notice	7
+weigh_bins:head:1	weigh_bins	head	if p_supersedes is not null and not exists (\n    select 1 from event\n     where id = p_supersedes\n       and subject_type = 'node' and subject_id = p_node_id\n       and operation_id = term_id('operation', 'weigh')\n  ) then	if false then	1
+weigh_bins:raise:8	weigh_bins	raise	raise exception 'there is no weighing of this pick with id % to correct', p_supersedes;	raise notice 'there is no weighing of this pick with id % to correct', p_supersedes;	1
+weigh_bins:guard:8	weigh_bins	guard	if net <= 0 then	if false then	1
+weigh_bins:raise:9	weigh_bins	raise	raise exception	raise notice	9

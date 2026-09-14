@@ -180,3 +180,53 @@ export type EventRow = {
   provenance: Provenance;
   data: Record<string, unknown>;
 };
+
+// --- intake ----------------------------------------------------------------
+
+// A vineyard block. Where fruit comes from, and the one thing a pick carries
+// that nothing else in the tree does.
+export type Block = {
+  id: Uuid;
+  vineyard: string;
+  name: string;
+  variety: string;
+  notes: string | null;
+};
+
+// A pick: fruit at `stage = bin`, however many bins it is spread across.
+// `quantity` is null until somebody weighs something, which is the state T1-4
+// exists to allow and `unweighed_bin` exists to make visible.
+export type Pick = {
+  id: Uuid;
+  name: string;
+  stage: string;
+  status: string;
+  vintage: number | null;
+  block_id: Uuid | null;
+  variety_id: Uuid | null;
+  quantity: number | null;
+  unit: string | null;
+  created_at: string;
+};
+
+// Mirrors the unweighed_bin view. A bin with fruit in it and no live weighing.
+export type UnweighedBin = {
+  node_id: Uuid;
+  pick_name: string;
+  vessel_id: Uuid;
+  bin_name: string;
+  bin_type: string;
+  fill_pct: number | null;
+  filled_at: string;
+};
+
+// What weigh_bins gives back. Every figure that went into the answer, because a
+// stored difference whose inputs were thrown away cannot be checked.
+export type Weighing = {
+  event_id: Uuid;
+  gross_lbs: number;
+  tare_lbs: number;
+  net_lbs: number;
+  total_lbs: number;
+  unweighed: number;
+};
