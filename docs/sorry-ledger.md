@@ -818,6 +818,20 @@ the json plus the bucket, or the button says plainly that photographs are not in
 an hour and is honest; the first is right. *Load-bearing:* yes the day somebody relies on it, and
 the failure is silent until then, which is the worst shape.
 
+**S-69. The rule that a lot says its vintage is enforced for new rows and not for old ones.**
+`0049` requires every lot to carry either a year or an explicit non-vintage, closing the third
+state, which was "nobody said". The constraint is added `not valid`, so rows that predate it are
+grandfathered: one lot in the cellar, `2024 Eola Springs`, has no vintage today. That is deliberate
+and it is not free. **A constraint that is not valid does not say what its name says.** Anybody
+reading the schema sees a rule the data does not yet obey, and the only thing standing between the
+two is somebody clearing a list. The alternative was to guess 2024 from the lot's own name and
+write it, which is inventing a fact about somebody's wine from a string, and that is worse.
+*Resolves when:* every grandfathered lot has been given a vintage on the screen `0049` adds, and a
+later migration runs `alter table node validate constraint node_says_its_vintage`. The assertion
+suite should then check that the constraint is valid rather than merely present. *Load-bearing:*
+no, in the sense that nothing breaks. Yes, in the sense that a vintage report is wrong by exactly
+the lots on that list and says nothing about it.
+
 ## Discharged
 **S-52. A press recorded no cuts.** *Discharged by `0045`.*
 The entry said that pressing free run and hard press separately recorded shares proportional to

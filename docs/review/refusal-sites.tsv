@@ -6,6 +6,7 @@ add_bin_to_pick:raise:2	add_bin_to_pick	raise	raise exception 'that bin is alrea
 add_bin_to_pick:guard:2	add_bin_to_pick	guard	if holder is not null then	if false then	1
 add_bin_to_pick:raise:3	add_bin_to_pick	raise	raise exception 'that bin already holds other fruit; empty it before filling it again';	raise notice 'that bin already holds other fruit; empty it before filling it again';	1
 add_bin_to_pick:guard:3	add_bin_to_pick	guard	if existing.id is null then	if false then	1
+add_bin_to_pick:permissive:2	add_bin_to_pick	permissive	coalesce((p_pick ->> 'non_vintage')::boolean, false),	coalesce((p_pick ->> 'non_vintage')::boolean, true),	1
 add_bin_to_pick:guard:4	add_bin_to_pick	guard	elsif existing.stage <> 'bin' then	elsif false then	1
 add_bin_to_pick:raise:4	add_bin_to_pick	raise	raise exception 'that lot is not a pick, so bins cannot be added to it';	raise notice 'that lot is not a pick, so bins cannot be added to it';	1
 add_bin_to_pick:guard:5	add_bin_to_pick	guard	elsif existing.status = 'closed' then	elsif false then	1
@@ -96,6 +97,7 @@ count_supply:raise:1	count_supply	raise	raise exception 'no supply with id %', p
 count_supply:guard:2	count_supply	guard	if p_counted is null or p_counted < 0 then	if false then	1
 count_supply:raise:2	count_supply	raise	raise exception 'a count of % is not an amount on a shelf',	raise notice 'a count of % is not an amount on a shelf',	1
 create_vessel_with_wine:permissive:1	create_vessel_with_wine	permissive	coalesce((p_vessel ->> 'has_glycol')::boolean, false),	coalesce((p_vessel ->> 'has_glycol')::boolean, true),	1
+create_vessel_with_wine:permissive:2	create_vessel_with_wine	permissive	coalesce((p_node ->> 'non_vintage')::boolean, false),	coalesce((p_node ->> 'non_vintage')::boolean, true),	1
 create_vessel_with_wine:guard:1	create_vessel_with_wine	guard	if p_generate_history then	if false then	1
 end_run_step:silent:1	end_run_step	silent	where run_id = p_run_id and step_id = p_step_id	where run_id = p_run_id and true	1
 end_run_step:notfound:1	end_run_step	notfound	if not found then	if false then	1
@@ -104,6 +106,7 @@ fill_vessel:guard:1	fill_vessel	guard	if not exists (select 1 from vessel where 
 fill_vessel:raise:1	fill_vessel	raise	raise exception 'no active vessel with id %', p_vessel_id;	raise notice 'no active vessel with id %', p_vessel_id;	1
 fill_vessel:guard:2	fill_vessel	guard	if occupied is not null then	if false then	1
 fill_vessel:raise:2	fill_vessel	raise	raise exception 'that vessel already holds a lot; rack it out before filling it';	raise notice 'that vessel already holds a lot; rack it out before filling it';	1
+fill_vessel:permissive:1	fill_vessel	permissive	coalesce((p_node ->> 'non_vintage')::boolean, false),	coalesce((p_node ->> 'non_vintage')::boolean, true),	1
 fill_vessel:guard:3	fill_vessel	guard	if p_generate_history then	if false then	1
 finish_pick:guard:1	finish_pick	guard	if n.id is null then	if false then	1
 finish_pick:raise:1	finish_pick	raise	raise exception 'no pick with id %', p_node_id;	raise notice 'no pick with id %', p_node_id;	1
@@ -273,6 +276,14 @@ set_party_default_hidden:head:1	set_party_default_hidden	head	if not (p_party_id
 set_party_default_hidden:raise:1	set_party_default_hidden	raise	raise exception 'only that party decides what it hides by default'	raise notice 'only that party decides what it hides by default'	1
 set_party_default_hidden:guard:1	set_party_default_hidden	guard	if not (coalesce(p_hidden, '{}') <@ hideable_fields()) then	if false then	1
 set_party_default_hidden:raise:2	set_party_default_hidden	raise	raise exception 'that is not something the kernel knows how to hide';	raise notice 'that is not something the kernel knows how to hide';	1
+set_vintage:guard:1	set_vintage	guard	if n.id is null then	if false then	1
+set_vintage:raise:1	set_vintage	raise	raise exception 'no lot with id %', p_node_id;	raise notice 'no lot with id %', p_node_id;	1
+set_vintage:guard:2	set_vintage	guard	if p_non_vintage and p_vintage is not null then	if false then	1
+set_vintage:raise:2	set_vintage	raise	raise exception	raise notice	2
+set_vintage:guard:3	set_vintage	guard	if not p_non_vintage and p_vintage is null then	if false then	1
+set_vintage:raise:3	set_vintage	raise	raise exception	raise notice	3
+set_vintage:guard:4	set_vintage	guard	if p_vintage is not null and (p_vintage < 1800 or p_vintage > 2200) then	if false then	1
+set_vintage:raise:4	set_vintage	raise	raise exception '% is not a vintage year', p_vintage;	raise notice '% is not a vintage year', p_vintage;	1
 start_procedure_session:guard:1	start_procedure_session	guard	if coalesce(array_length(p_vessel_ids, 1), 0) = 0 then	if false then	1
 start_procedure_session:raise:1	start_procedure_session	raise	raise exception 'a session needs at least one vessel';	raise notice 'a session needs at least one vessel';	1
 topping_check:guard:1	topping_check	guard	if tgt is null then	if false then	1

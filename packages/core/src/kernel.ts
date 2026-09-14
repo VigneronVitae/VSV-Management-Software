@@ -11,6 +11,7 @@ import type {
   EventRow,
   HistoryRow,
   Location,
+  LotWithoutVintage,
   NodePayload,
   PaperRecord,
   Party,
@@ -909,6 +910,41 @@ export async function openPicks(): Promise<Pick[]> {
     .order("created_at", { ascending: false });
   if (error) throw new KernelError(error);
   return (data ?? []) as Pick[];
+}
+
+// --- vintages --------------------------------------------------------------
+
+// Lots that say neither a year nor NV. Only rows older than 0049 can be here,
+// because the constraint refuses any new one.
+export async function lotsWithoutVintage(): Promise<LotWithoutVintage[]> {
+  const { data, error } = await kernel()
+    .from("lot_without_vintage")
+    .select("id,name,stage,status,created_at,year_in_the_name,suggested_year")
+    .order("created_at");
+  if (error) throw new KernelError(error);
+  return (data ?? []) as LotWithoutVintage[];
+}
+
+// The one blessed way to answer. The check constraint is the guarantee and this
+// is the voice: a constraint name arriving in front of somebody at a press is
+// not a refusal anybody can act on.
+export async function setVintage(
+  nodeId: Uuid,
+  vintage: number | null,
+  nonVintage: boolean,
+): Promise<{ id: Uuid; vintage: number | null; non_vintage: boolean; left: number }> {
+  const { data, error } = await kernel().rpc("set_vintage", {
+    p_node_id: nodeId,
+    p_vintage: vintage,
+    p_non_vintage: nonVintage,
+  });
+  if (error) throw new KernelError(error);
+  return data as {
+    id: Uuid;
+    vintage: number | null;
+    non_vintage: boolean;
+    left: number;
+  };
 }
 
 // Any pick, open or closed. `openPicks` is the work list and correctly hides a

@@ -33,7 +33,9 @@ import {
   exportCellar,
   facilityParty,
   fillVessel,
+  type LotWithoutVintage,
   locations,
+  lotsWithoutVintage,
   markBought,
   markPropagated,
   moveSupply,
@@ -68,6 +70,7 @@ import {
   setPartyLogin,
   setVesselTypeBin,
   setVesselTypeFields,
+  setVintage,
   shoppingList,
   signIn,
   signOut,
@@ -307,6 +310,8 @@ async function screenFor(place: Place): Promise<HTMLElement> {
       return makersScreen();
     case "stores":
       return storesScreen();
+    case "vintages":
+      return vintagesScreen();
     case "day":
       return dayScreen(place.id);
     case "paper":
@@ -689,14 +694,16 @@ function menu(items: MenuItem[]): HTMLElement {
 }
 
 async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> {
-  const [places, kit, unweighed, owedBins, owedPaper, buying] = await Promise.all([
-    locations(),
-    vessels(),
-    unweighedBins(),
-    binsToReturn(),
-    toPropagate(),
-    shoppingList(),
-  ]);
+  const [places, kit, unweighed, owedBins, owedPaper, buying, silent] =
+    await Promise.all([
+      locations(),
+      vessels(),
+      unweighedBins(),
+      binsToReturn(),
+      toPropagate(),
+      shoppingList(),
+      lotsWithoutVintage(),
+    ]);
   const filled = kit.filter((v) => !v.is_empty).length;
   // On the home screen on purpose. T1-4 allows a bin to exist with no weight,
   // which is only safe if the count of them is somewhere nobody has to go
@@ -783,6 +790,21 @@ async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> 
         note: "Find a barrel by the sticker on it.",
         go: () => go({ at: "scan" }),
       },
+      // Only while there is one. The list can only shrink, so this entry is
+      // temporary by construction and leaving it behind empty would be a
+      // permanent reminder of a job that is finished.
+      ...(silent.length > 0
+        ? [
+            {
+              name: "Lots without a vintage",
+              note:
+                "Recorded before the app asked. Say which year, or that it is " +
+                "non-vintage.",
+              badge: String(silent.length),
+              go: () => go({ at: "vintages" }),
+            },
+          ]
+        : []),
     ]),
     el("h2", { class: "section-head", text: "Set up" }),
     menu([
@@ -2729,6 +2751,17 @@ function wineFields(): WineForm {
     value: stickyValue("vintage"),
     placeholder: String(new Date().getFullYear()),
   });
+  // A lot is of a year or is deliberately non-vintage, and 0049 stopped blank
+  // from meaning both of those plus "nobody got round to it". The box empties
+  // the year field rather than sitting beside it, because a lot that says both
+  // is refused and a form that lets you type a contradiction is a form that
+  // will.
+  const nv = checkbox("Non-vintage", false);
+  on(nv.input, "change", () => {
+    if (nv.input.checked) vintage.input.value = "";
+    vintage.input.disabled = nv.input.checked;
+    autoName();
+  });
   const productType = termPicker("product_type", {
     label: "Product type",
     stickyKey: "product_type",
@@ -2751,7 +2784,9 @@ function wineFields(): WineForm {
 
   function autoName(): void {
     if (lotName.input.dataset.touched === "true") return;
-    const parts = [variety.label(), vintage.value()].filter(Boolean);
+    const parts = [variety.label(), nv.input.checked ? "NV" : vintage.value()].filter(
+      Boolean,
+    );
     lotName.input.value = parts.join(" ");
   }
 
@@ -2770,6 +2805,7 @@ function wineFields(): WineForm {
     nodes: [
       variety.root,
       vintage.root,
+      nv.root,
       productType.root,
       lotName.root,
       owner.root,
@@ -2781,14 +2817,22 @@ function wineFields(): WineForm {
       stage: "maturation",
       name: lotName.value(),
       variety_id: variety.value() || null,
-      vintage: vintage.value() ? Number(vintage.value()) : null,
+      vintage: nv.input.checked || !vintage.value() ? null : Number(vintage.value()),
+      non_vintage: nv.input.checked,
       product_type_id: productType.value() || null,
       unit: "L",
       quantity: volumeOf(),
       // Empty means the facility, which is what the kernel coalesces to.
       owner_id: owner.value() || null,
     }),
-    ready: () => (lotName.value() ? null : "The lot needs a name."),
+    // Asked here rather than let the constraint refuse it, so the sentence is
+    // one somebody can act on instead of a constraint name.
+    ready: () =>
+      !lotName.value()
+        ? "The lot needs a name."
+        : !vintage.value() && !nv.input.checked
+          ? "Say which vintage this is, or tick non-vintage."
+          : null,
     reload: async () => {
       await Promise.all([variety.reload(), productType.reload(), owner.reload()]);
       autoName();
@@ -3376,6 +3420,10 @@ function newPickScreen(): HTMLElement {
         label: "Vintage",
         type: "number",
         value: String(new Date().getFullYear()),
+        // No non-vintage box here, deliberately. Fruit picked this year is of
+        // this year; NV is something a blend becomes later, not something a
+        // pick can be. 0049 requires one of the two and this is always the year.
+        hint: "Fruit picked now is of this year.",
       });
       await Promise.all([block.reload(), variety.reload()]);
 
@@ -3389,6 +3437,12 @@ function newPickScreen(): HTMLElement {
               message.replaceChildren(banner("Pick a variety.", "error"));
               return;
             }
+            if (!vintage.value()) {
+              message.replaceChildren(
+                banner("Say which vintage this fruit is.", "error"),
+              );
+              return;
+            }
             // The pick's id is made here, before anything is written, so the
             // bin screen can add to it and a repeated call finds the same pick
             // rather than making a second one.
@@ -3396,7 +3450,7 @@ function newPickScreen(): HTMLElement {
               id: newId(),
               block_id: block.value() || null,
               variety_id: variety.value(),
-              vintage: vintage.value() ? Number(vintage.value()) : null,
+              vintage: Number(vintage.value()),
             };
             go({ at: "pick-bins" });
           }),
@@ -3947,6 +4001,125 @@ function scaleScreen(): HTMLElement {
           message,
         ),
       );
+    } catch (error) {
+      body.replaceChildren(
+        fail(error),
+        button("Back", () => goBack(), "quiet"),
+      );
+    }
+  })();
+
+  return view;
+}
+
+// --- lots that never said their vintage ------------------------------------
+
+// A list that empties and then stops existing.
+//
+// `0049` made a lot say either a year or that it is deliberately non-vintage,
+// and closed the third state, which was nobody having got round to it. The
+// constraint is added `not valid`, so lots written before it are grandfathered
+// rather than guessed at. This is where somebody who knows says which, and when
+// it is empty the whole entry disappears from the home screen.
+//
+// The year read off a lot's own name is offered and never filled in for them. A
+// lot called "2024 Eola Springs" is almost certainly a 2024, and almost
+// certainly not a thing software may decide on somebody's behalf.
+function vintagesScreen(): HTMLElement {
+  const body = el("div", {}, empty("Loading."));
+  const view = screen(
+    "Lots without a vintage",
+    lede(
+      "These were recorded before the app started asking. Say which year each " +
+        "one is, or that it is non-vintage. Nothing new can land here.",
+    ),
+    body,
+  );
+
+  async function load(): Promise<void> {
+    const waiting = await lotsWithoutVintage();
+
+    if (waiting.length === 0) {
+      body.replaceChildren(
+        banner("Every lot says its vintage.", "good"),
+        button("Back", () => goBack(), "quiet"),
+      );
+      return;
+    }
+
+    function row(lot: LotWithoutVintage): HTMLElement {
+      const year = field({
+        label: "Vintage",
+        type: "number",
+        placeholder: lot.suggested_year ?? String(new Date().getFullYear()),
+        // Deliberately not `value`. A prefilled box is a box people tap past,
+        // and the whole reason this lot is on the list is that nobody ever said.
+        hint: lot.year_in_the_name
+          ? `The name says ${lot.suggested_year}. Type it if that is right.`
+          : "The name gives no clue, so this one needs somebody who knows.",
+      });
+      const said = el("div", {});
+
+      async function answer(vintage: number | null, nv: boolean): Promise<void> {
+        try {
+          const out = await setVintage(lot.id, vintage, nv);
+          said.replaceChildren(
+            banner(
+              out.left === 0
+                ? "Done, and that was the last one."
+                : `Done. ${out.left} lot${out.left === 1 ? "" : "s"} still to say.`,
+              "good",
+            ),
+          );
+          await load();
+        } catch (error) {
+          said.replaceChildren(fail(error));
+        }
+      }
+
+      return el(
+        "details",
+        { class: "more" },
+        el("summary", {
+          text: `${lot.name} (${lot.stage})`,
+        }),
+        rows(
+          summaryRow("Recorded", new Date(lot.created_at).toLocaleDateString()),
+          year.root,
+          button("That is the vintage", () => {
+            if (!year.value()) {
+              said.replaceChildren(
+                banner("Type a year, or say it is non-vintage below.", "error"),
+              );
+              return;
+            }
+            void answer(Number(year.value()), false);
+          }),
+          // Separate control rather than a checkbox above, because these are two
+          // different answers and neither is a modifier of the other.
+          button("It is non-vintage", () => void answer(null, true), "secondary"),
+          said,
+        ),
+      );
+    }
+
+    body.replaceChildren(
+      rows(
+        ...waiting.map(row),
+        el("p", {
+          class: "field-hint",
+          text:
+            "A wine blended from two vintages becomes non-vintage on its own, " +
+            "when it is blended. Nothing here needs doing for those.",
+        }),
+        button("Back", () => goBack(), "quiet"),
+      ),
+    );
+  }
+
+  void (async () => {
+    try {
+      await load();
     } catch (error) {
       body.replaceChildren(
         fail(error),

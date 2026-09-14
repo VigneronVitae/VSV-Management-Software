@@ -149,6 +149,12 @@ export type NodePayload = {
   name: string;
   variety_id?: Uuid | null;
   vintage?: number | null;
+  // Exactly one of this and `vintage` says something, per 0049. Omitting both
+  // is refused by the kernel rather than stored as a blank. Nothing sets it on
+  // a blend: a lot made of two vintages derives it from its parents inside
+  // `rack` and `press`, because a client deciding would be a business rule in a
+  // screen and the next client would decide differently.
+  non_vintage?: boolean;
   product_type_id?: Uuid | null;
   quantity?: number | null;
   unit?: "lbs" | "kg" | "L" | "gal" | null;
@@ -280,6 +286,19 @@ export type Weighing = {
   // not in whether anybody mentions it. See 0042.
   photographed: boolean;
   unweighed: number;
+};
+
+// A lot that predates 0049 and says neither a year nor NV. `suggested_year` is
+// read off the lot's own name and is a suggestion for a person to accept or
+// reject, never a value anything writes on their behalf.
+export type LotWithoutVintage = {
+  id: Uuid;
+  name: string;
+  stage: string;
+  status: string;
+  created_at: string;
+  year_in_the_name: boolean;
+  suggested_year: string | null;
 };
 
 // --- photographs -----------------------------------------------------------

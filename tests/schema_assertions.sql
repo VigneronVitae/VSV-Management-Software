@@ -34,7 +34,7 @@
 --              supabase/migrations/0029_viewer_scope.sql,
 --              supabase/migrations/0030_writable_columns.sql,
 --              supabase/migrations/0031_scheduling_to_core.sql,
---              supabase/migrations/0032_vessel_maker_and_room_temperature.sql, supabase/migrations/0033_intake.sql, supabase/migrations/0034_press.sql, supabase/migrations/0035_bins_in_bulk.sql, supabase/migrations/0036_bins_on_loan.sql, supabase/migrations/0037_export.sql, supabase/migrations/0038_cancel_a_pick.sql, supabase/migrations/0039_vineyard.sql, supabase/migrations/0040_block_variety_is_history.sql, supabase/migrations/0041_daily_log.sql, supabase/migrations/0042_weighing_photo.sql, supabase/migrations/0043_record_propagation.sql, supabase/migrations/0044_finishing_a_pick.sql, supabase/migrations/0045_press_detail.sql, supabase/migrations/0046_supply_inventory.sql, supabase/migrations/0047_attachments.sql, supabase/migrations/0048_pick_weighing.sql]
+--              supabase/migrations/0032_vessel_maker_and_room_temperature.sql, supabase/migrations/0033_intake.sql, supabase/migrations/0034_press.sql, supabase/migrations/0035_bins_in_bulk.sql, supabase/migrations/0036_bins_on_loan.sql, supabase/migrations/0037_export.sql, supabase/migrations/0038_cancel_a_pick.sql, supabase/migrations/0039_vineyard.sql, supabase/migrations/0040_block_variety_is_history.sql, supabase/migrations/0041_daily_log.sql, supabase/migrations/0042_weighing_photo.sql, supabase/migrations/0043_record_propagation.sql, supabase/migrations/0044_finishing_a_pick.sql, supabase/migrations/0045_press_detail.sql, supabase/migrations/0046_supply_inventory.sql, supabase/migrations/0047_attachments.sql, supabase/migrations/0048_pick_weighing.sql, supabase/migrations/0049_every_lot_says_its_vintage.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -152,7 +152,7 @@ do $$ begin raise notice '--- ownership'; end $$;
 
 do $$ begin
   begin
-    insert into node (stage, name) values ('bin', 'ownerless');
+    insert into node (stage, name, vintage) values ('bin', 'ownerless', 2026);
     raise exception 'FAIL: a node was created with no facility party';
   exception when not_null_violation then
     perform test_ok('no node can exist before the facility party does');
@@ -174,7 +174,7 @@ end $$;
 
 do $$ begin
   begin
-    insert into node (stage, name, variety_id) values ('bin', 'x', term_id('vessel_maker','francois_freres'));
+    insert into node (stage, name, variety_id, vintage) values ('bin', 'x', term_id('vessel_maker','francois_freres'), 2026);
     raise exception 'FAIL: a cooper was accepted where a variety belongs';
   exception when foreign_key_violation then
     perform test_ok('a term of the wrong kind is refused by the database, not by the picker');
@@ -246,7 +246,7 @@ insert into node (id, stage, name, variety_id, vintage)
 
 do $$ begin
   begin
-    insert into node (stage, name, provenance) values ('bin','born confirmed','confirmed');
+    insert into node (stage, name, provenance, vintage) values ('bin','born confirmed','confirmed', 2026);
     raise exception 'FAIL: a node was born confirmed';
   exception when insufficient_privilege then
     perform test_ok('a node cannot be born confirmed');
@@ -1875,8 +1875,8 @@ insert into vessel (id, type_id, name, capacity_l, has_glycol)
   values ('00000000-0000-0000-0000-00000000c0a1', term_id('vessel_type','tank'),
           'Allow-list tank', 1000, true);
 
-insert into node (id, stage, name, quantity, unit)
-  values ('00000000-0000-0000-0000-00000000b0a1','ferment','Allow-list lot', 500, 'L');
+insert into node (id, stage, name, quantity, unit, vintage)
+  values ('00000000-0000-0000-0000-00000000b0a1','ferment','Allow-list lot', 500, 'L', 2026);
 
 insert into placement (id, node_id, vessel_id, volume_l)
   values ('00000000-0000-0000-0000-00000000d0a1',
@@ -2575,8 +2575,8 @@ begin
   perform test_act_as('00000000-0000-0000-0000-00000000a002');   -- the cellar user
   set local role authenticated;
 
-  insert into node (id, stage, name, quantity, unit)
-    values ('00000000-0000-0000-0000-0000000000d1', 'ferment', 'Cellar made this', 100, 'L');
+  insert into node (id, stage, name, quantity, unit, vintage)
+    values ('00000000-0000-0000-0000-0000000000d1', 'ferment', 'Cellar made this', 100, 'L', 2026);
   insert into placement (id, node_id, vessel_id, volume_l)
     values ('00000000-0000-0000-0000-0000000000d2',
             '00000000-0000-0000-0000-0000000000d1',
@@ -2603,8 +2603,8 @@ begin
   perform test_act_as('00000000-0000-0000-0000-00000000a003');   -- the client login
   set local role authenticated;
   begin
-    insert into node (id, stage, name, quantity, unit)
-      values ('00000000-0000-0000-0000-0000000000d3', 'ferment', 'Client made this', 10, 'L');
+    insert into node (id, stage, name, quantity, unit, vintage)
+      values ('00000000-0000-0000-0000-0000000000d3', 'ferment', 'Client made this', 10, 'L', 2026);
     inserted := true;
   exception when insufficient_privilege then
     inserted := false;
@@ -2719,7 +2719,11 @@ begin
   -- foreign keys: the subject type into the resolver, whoever attached it,
   -- and the event it is evidence of. That last one is a real foreign key
   -- where `subject_id` cannot be, which is the whole reason it exists.
-  want := 'c=31 f=62 p=34 u=20';
+  -- c=31 f=62 p=34 u=20 before 0049, whose one new check is the rule that a
+  -- lot says either a year or that it is non-vintage. It is added `not
+  -- valid`, which this census does not distinguish and the assertion in the
+  -- vintage block below does. S-69.
+  want := 'c=32 f=62 p=34 u=20';
   if have <> want then
     raise exception
       E'FAIL: the constraint inventory changed.\nnow:  %\nwas:  %\nIf that is deliberate, update this line in the same commit that changed the schema.', have, want;
@@ -2818,15 +2822,15 @@ do $$
 declare refused int := 0;
 begin
   begin
-    insert into node (stage, name, variety_id)
-      values ('bin','wrong variety', term_id('vessel_maker','francois_freres'));
+    insert into node (stage, name, variety_id, vintage)
+      values ('bin','wrong variety', term_id('vessel_maker','francois_freres'), 2026);
     raise exception 'FAIL: node.variety_id accepted a cooper';
   exception when foreign_key_violation then refused := refused + 1;
   end;
 
   begin
-    insert into node (stage, name, product_type_id)
-      values ('bin','wrong product', term_id('variety','pinot_noir'));
+    insert into node (stage, name, product_type_id, vintage)
+      values ('bin','wrong product', term_id('variety','pinot_noir'), 2026);
     raise exception 'FAIL: node.product_type_id accepted a variety';
   exception when foreign_key_violation then refused := refused + 1;
   end;
@@ -3161,21 +3165,21 @@ begin
     on conflict do nothing;
 
   begin
-    insert into node (stage, name, block_id)
-      values ('ferment', 'ferment with a block', '00000000-0000-0000-0000-00000000a0b1');
+    insert into node (stage, name, block_id, vintage)
+      values ('ferment', 'ferment with a block', '00000000-0000-0000-0000-00000000a0b1', 2026);
     raise exception 'FAIL: a non-bin node carried a block';
   exception when check_violation then
     perform test_ok('only a bin may name a block, so a ferment cannot claim to have arrived from one');
   end;
 
-  insert into node (stage, name, block_id)
-    values ('bin', 'bin with a block', '00000000-0000-0000-0000-00000000a0b1');
+  insert into node (stage, name, block_id, vintage)
+    values ('bin', 'bin with a block', '00000000-0000-0000-0000-00000000a0b1', 2026);
   perform test_ok('a bin may name a block, so the constraint is about the stage and not about blocks');
 
   -- node_hidden_known and party_default_hidden_known, the two that keep the
   -- privacy vocabulary from drifting into free text.
   begin
-    insert into node (stage, name, hidden) values ('bin', 'hidden nonsense', array['not_a_field']);
+    insert into node (stage, name, hidden, vintage) values ('bin', 'hidden nonsense', array['not_a_field'], 2026);
     raise exception 'FAIL: a node hid a field that does not exist';
   exception when check_violation then
     perform test_ok('a lot can only hide a field the schema agrees is hideable');
@@ -4343,9 +4347,9 @@ do $$ begin raise notice '--- an operation nobody registered is refused by name'
 
 -- A lot in no vessel at all, which is what makes the vessel guard below the only
 -- thing that can refuse.
-insert into node (id, stage, status, name, owner_id, created_by)
+insert into node (id, stage, status, name, owner_id, created_by, vintage)
 values ('00000000-0000-0000-0000-00000000780e', 'bin', 'open', 'W7 bin',
-        '00000000-0000-0000-0000-00000000f001', '00000000-0000-0000-0000-00000000a001');
+        '00000000-0000-0000-0000-00000000f001', '00000000-0000-0000-0000-00000000a001', 2026);
 
 do $$ begin
   perform test_refuses(
@@ -4540,10 +4544,10 @@ values (term_id('operation','punchdown'), 'node', '00000000-0000-0000-0000-00000
         '00000000-0000-0000-0000-00000000a001', 'observed');
 
 -- A lot the client owns whose composition it has hidden, for the second gate.
-insert into node (id, stage, status, name, owner_id, created_by, hidden)
+insert into node (id, stage, status, name, owner_id, created_by, hidden, vintage)
 values ('00000000-0000-0000-0000-00000000780f', 'maturation', 'open', 'W7 client lot',
         '00000000-0000-0000-0000-00000000f002', '00000000-0000-0000-0000-00000000a001',
-        array['composition','history']);
+        array['composition','history'], 2026);
 insert into lineage (parent_id, child_id, fraction)
 values ('00000000-0000-0000-0000-00000000780e','00000000-0000-0000-0000-00000000780f', 1.0);
 insert into event (operation_id, subject_type, subject_id, by_user, provenance)
@@ -4897,13 +4901,13 @@ begin
   values ('00000000-0000-0000-0000-000000009001', term_id('vessel_type','tank'), 'E10 ours', 500),
          ('00000000-0000-0000-0000-000000009002', term_id('vessel_type','tank'), 'E10 theirs', 500);
 
-  insert into node (id, stage, status, name, owner_id, created_by)
+  insert into node (id, stage, status, name, owner_id, created_by, vintage)
   values ('00000000-0000-0000-0000-000000009101', 'bin', 'open', 'E10 bin',
-          '00000000-0000-0000-0000-00000000f001', '00000000-0000-0000-0000-00000000a001'),
+          '00000000-0000-0000-0000-00000000f001', '00000000-0000-0000-0000-00000000a001', 2026),
          ('00000000-0000-0000-0000-000000009102', 'maturation', 'open', 'E10 facility lot',
-          '00000000-0000-0000-0000-00000000f001', '00000000-0000-0000-0000-00000000a001'),
+          '00000000-0000-0000-0000-00000000f001', '00000000-0000-0000-0000-00000000a001', 2026),
          ('00000000-0000-0000-0000-000000009103', 'maturation', 'open', 'E10 client lot',
-          '00000000-0000-0000-0000-00000000f002', '00000000-0000-0000-0000-00000000a001');
+          '00000000-0000-0000-0000-00000000f002', '00000000-0000-0000-0000-00000000a001', 2026);
 
   insert into placement (node_id, vessel_id, volume_l) values
     ('00000000-0000-0000-0000-000000009102', '00000000-0000-0000-0000-000000009001', 400),
@@ -5214,10 +5218,10 @@ end $$;
 do $$
 declare written int;
 begin
-  insert into node (id, stage, status, name, variety_id, owner_id, created_by)
+  insert into node (id, stage, status, name, variety_id, owner_id, created_by, vintage)
   values ('00000000-0000-0000-0000-00000000b0e6', 'maturation', 'open', 'AR-E6 lot',
           term_id('variety', 'pinot_noir'),
-          '00000000-0000-0000-0000-00000000f001', '00000000-0000-0000-0000-00000000a001');
+          '00000000-0000-0000-0000-00000000f001', '00000000-0000-0000-0000-00000000a001', 2026);
 
   insert into template (id, applies_to_id, applies_to_kind, name, active)
   values ('00000000-0000-0000-0000-00000000e0a4',
@@ -6127,9 +6131,9 @@ begin
   end if;
   perform test_ok('a day is the winery''s day rather than the database''s, which is what puts an evening on the right one');
 
-  insert into node (id, stage, status, name, created_by)
+  insert into node (id, stage, status, name, created_by, vintage)
   values ('00000000-0000-0000-0000-00000000da11', 'maturation', 'open', 'Assert day lot',
-          '00000000-0000-0000-0000-00000000a001');
+          '00000000-0000-0000-0000-00000000a001', 2026);
 
   select count(*) into n from day_log()
    where subject = 'Assert day lot' and kind = 'lot';
@@ -6287,9 +6291,9 @@ declare
   ev_late uuid := '00000000-0000-0000-0000-00000000fa16';
   n       int;
 begin
-  insert into node (id, stage, status, name, created_by)
+  insert into node (id, stage, status, name, created_by, vintage)
   values (lot_id, 'maturation', 'open', 'Assert paper lot',
-          '00000000-0000-0000-0000-00000000a001');
+          '00000000-0000-0000-0000-00000000a001', 2026);
 
   -- Kept through September, and one of them abandoned at the end of it.
   insert into paper_record (id, name, effective_from, retired_at) values
@@ -6541,11 +6545,11 @@ declare
   out_id  uuid := '00000000-0000-0000-0000-00000000fc12';
   n       int;
 begin
-  insert into node (id, stage, status, name, quantity, unit, created_by) values
+  insert into node (id, stage, status, name, quantity, unit, created_by, vintage) values
     (sold_id, 'bin', 'open', 'Assert sold pick', 1200, 'lbs',
-     '00000000-0000-0000-0000-00000000a001'),
+     '00000000-0000-0000-0000-00000000a001', 2026),
     (out_id,  'bin', 'open', 'Assert away pick', 900, 'lbs',
-     '00000000-0000-0000-0000-00000000a001');
+     '00000000-0000-0000-0000-00000000a001', 2026);
 
   perform send_fruit_away(sold_id, 'Another Winery', false);
   select count(*) into n from node where id = sold_id and status = 'closed';
@@ -6728,9 +6732,9 @@ declare
 begin
   insert into vessel (id, type_id, name, capacity_l)
   values (tank, term_id('vessel_type', 'tank'), 'Assert detail tank', 900);
-  insert into node (id, stage, status, name, quantity, unit, created_by)
+  insert into node (id, stage, status, name, quantity, unit, created_by, vintage)
   values (lot_id, 'bin', 'open', 'Assert detail pick', 1000, 'lbs',
-          '00000000-0000-0000-0000-00000000a001');
+          '00000000-0000-0000-0000-00000000a001', 2026);
 
   begin
     perform press(
@@ -6811,6 +6815,13 @@ begin
   perform test_ok('a press that says nothing about cuts is one unnamed cut, which is what it always was');
 
   delete from lineage where parent_id = lot_id;
+  -- Unqualified, which it has always been: this block clears every node event
+  -- so that what follows starts from a known floor. Since 0047 a photograph
+  -- holds a restrict onto the reading it is evidence of, so the photographs go
+  -- first. Found by the winemaker attaching three real ones from his phone
+  -- while this was being written, which is the best way to find it.
+  delete from attachment a using event e
+   where a.about_event = e.id and e.subject_type = 'node';
   delete from event where subject_type = 'node';
   delete from placement where vessel_id = tank;
   delete from node where id = lot_id or name like 'Assert detail%';
@@ -7226,6 +7237,221 @@ begin
   delete from event where subject_type = 'node' and subject_id = pick_id;
   delete from placement where node_id = pick_id;
   delete from node where id = pick_id;
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- every lot says its vintage, including NV'; end $$;
+
+-- 0049. The winemaker's rule: "They should always have a vintage, including NV."
+-- So blank stops meaning three things at once, and the one it used to hide,
+-- nobody got round to it, stops being writable at all.
+do $$
+declare
+  v_a  uuid := '00000000-0000-0000-0000-00000000cb01';
+  v_b  uuid := '00000000-0000-0000-0000-00000000cb02';
+  v_c  uuid := '00000000-0000-0000-0000-00000000cb03';
+  tank uuid;
+  vrty uuid;
+  n_a  uuid;
+  n_b  uuid;
+  child uuid;
+  forked uuid;
+  kept uuid;
+  plan jsonb;
+  out_js jsonb;
+  n    int;
+  frac numeric;
+begin
+  select id into tank from term where kind = 'vessel_type' and value = 'tank';
+  select id into vrty from term where kind = 'variety' and value = 'riesling';
+
+  -- The refusals first, on a bare insert, because the constraint is the
+  -- guarantee and everything else is a convenience over it.
+  begin
+    insert into node (id, stage, name, vintage, non_vintage)
+    values (gen_random_uuid(), 'maturation', 'Assert silent lot', null, false);
+    raise exception 'FAIL: a lot was created saying neither a year nor NV';
+  exception when check_violation then
+    perform test_ok('a lot that says neither a year nor non-vintage is refused, which is the state that used to be indistinguishable from both');
+  end;
+
+  begin
+    insert into node (id, stage, name, vintage, non_vintage)
+    values (gen_random_uuid(), 'maturation', 'Assert both lot', 2024, true);
+    raise exception 'FAIL: a lot was created claiming to be 2024 and non-vintage';
+  exception when check_violation then
+    perform test_ok('a lot cannot be both of a year and non-vintage, because that is a contradiction rather than a choice');
+  end;
+
+  -- Two lots of different years, so the blend has something to derive from.
+  n_a := (create_vessel_with_wine(
+    jsonb_build_object('id', v_a, 'name', 'ASRTNV A', 'type_id', tank, 'capacity_l', 1000),
+    jsonb_build_object('name', 'ASRTNV 2024', 'vintage', 2024, 'variety_id', vrty,
+                       'quantity', 600, 'unit', 'L'),
+    600, '[]'::jsonb, false) ->> 'node_id')::uuid;
+  n_b := (create_vessel_with_wine(
+    jsonb_build_object('id', v_b, 'name', 'ASRTNV B', 'type_id', tank, 'capacity_l', 1000),
+    jsonb_build_object('name', 'ASRTNV 2025', 'vintage', 2025, 'variety_id', vrty,
+                       'quantity', 400, 'unit', 'L'),
+    400, '[]'::jsonb, false) ->> 'node_id')::uuid;
+  insert into vessel (id, name, type_id, capacity_l) values (v_c, 'ASRTNV C', tank, 2000);
+
+  -- **The winemaker's second sentence: NV is derived when two vintages are
+  -- blended, and the lineage and composition survive it.** Both halves are the
+  -- assertion, because deriving the answer by throwing away what it was derived
+  -- from would be worse than not deriving it.
+  plan := rack(
+    jsonb_build_array(
+      jsonb_build_object('vessel_id', v_a, 'volume_l', 600),
+      jsonb_build_object('vessel_id', v_b, 'volume_l', 400)),
+    jsonb_build_array(jsonb_build_object('vessel_id', v_c, 'volume_l', 1000)),
+    '{}'::jsonb, false,
+    jsonb_build_object('name', 'ASRTNV blend'));
+  child := (plan ->> 'node_id')::uuid;
+
+  select count(*) into n from node
+   where id = child and vintage is null and non_vintage;
+  if n <> 1 then
+    raise exception 'FAIL: blending 2024 with 2025 gave a lot of vintage %, not NV',
+      coalesce((select vintage::text from node where id = child), 'null');
+  end if;
+  perform test_ok('blending two vintages derives a non-vintage lot, because a wine made of two years is what NV means');
+
+  select count(*) into n from lineage where child_id = child;
+  if n <> 2 then
+    raise exception 'FAIL: the blend kept % lineage rows and was made of two lots', n;
+  end if;
+  select fraction into frac from lineage where child_id = child and parent_id = n_a;
+  if frac is null or round(frac, 4) <> 0.6 then
+    raise exception 'FAIL: 600 of 1000 litres came through as a fraction of %', frac;
+  end if;
+  select variety_id into kept from node where id = child;
+  if kept is null then
+    raise exception 'FAIL: the blend lost its variety along with its vintage';
+  end if;
+  perform test_ok('the blend keeps every parent and the fraction each contributed, so deriving NV costs none of what it was derived from');
+
+  -- The control. Deriving NV has to be a fact about the parents disagreeing
+  -- rather than something that happens to every blend, so a parent that was
+  -- 2024 going in is still 2024.
+  select count(*) into n from node
+   where id = n_a and vintage = 2024 and not non_vintage;
+  if n <> 1 then
+    raise exception 'FAIL: a lot of one year stopped being of that year when something was blended out of it';
+  end if;
+  perform test_ok('a lot of one year is still of that year afterwards, so NV is derived from disagreement and not from blending as such');
+
+  -- A child of an NV parent is NV. Without this, the first press or fork of a
+  -- blend would be refused by the constraint, which is the sort of thing that
+  -- only shows up on the day it matters.
+  -- The blend is all in one vessel and a whole-lot fork is refused, so it is
+  -- split across two first. Still one lot: a split keeps identity, which is
+  -- what makes the fork below the thing being tested rather than the split.
+  perform rack(
+    jsonb_build_array(jsonb_build_object('vessel_id', v_c, 'volume_l', 1000)),
+    jsonb_build_array(
+      jsonb_build_object('vessel_id', v_a, 'volume_l', 500),
+      jsonb_build_object('vessel_id', v_b, 'volume_l', 500)));
+  forked := fork_lot(child, array[v_a]::uuid[], 'ASRTNV forked');
+  select count(*) into n from node
+   where id = forked and vintage is null and non_vintage;
+  if n <> 1 then
+    raise exception 'FAIL: a lot forked off a non-vintage blend is not non-vintage';
+  end if;
+  perform test_ok('a lot taken out of a non-vintage lot is non-vintage, so nothing downstream of a blend is refused for saying nothing');
+
+  -- The voice, as opposed to the guarantee. A constraint name arriving in front
+  -- of somebody at a press is not a refusal anybody can act on.
+  begin
+    perform set_vintage(n_a, null, false);
+    raise exception 'FAIL: set_vintage accepted neither';
+  exception when others then
+    if position('or say it is non-vintage' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('being asked for a vintage and given neither answers in a sentence rather than a constraint name');
+  end;
+
+  begin
+    perform set_vintage(n_a, 20244, false);
+    raise exception 'FAIL: a lot was given the vintage 20244';
+  exception when others then
+    if position('is not a vintage year' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a mistyped year is refused, because 20244 is a slip rather than a vintage');
+  end;
+
+  out_js := set_vintage(n_a, null, true);
+  if (out_js ->> 'non_vintage')::boolean is not true then
+    raise exception 'FAIL: a lot set to non-vintage does not read as one';
+  end if;
+  perform test_ok('a lot can be declared non-vintage deliberately, which is the state the old blank was standing in for');
+
+  -- Tidy, in dependency order. 0047 holds a photograph to the reading it is
+  -- evidence of with a restrict, so anything attached goes before the events.
+  delete from attachment
+   where subject_type = 'node' and subject_id in (n_a, n_b, child, forked);
+  delete from attachment a using event e
+   where a.about_event = e.id and e.subject_type = 'node'
+     and e.subject_id in (n_a, n_b, child, forked);
+  delete from placement where vessel_id in (v_a, v_b, v_c);
+  delete from event where subject_type = 'node'
+     and subject_id in (n_a, n_b, child, forked);
+  delete from lineage
+   where parent_id in (n_a, n_b, child, forked)
+      or child_id in (n_a, n_b, child, forked);
+  delete from node where id in (n_a, n_b, child, forked) or name like 'ASRTNV%';
+  delete from vessel where id in (v_a, v_b, v_c);
+end $$;
+
+-- The grandfathering, stated rather than left implicit. S-69 says this rule is
+-- real for everything anybody does next and not yet true of everything already
+-- written, and an assertion is how that stays a known limit rather than a
+-- forgotten one.
+do $$
+declare
+  is_valid boolean;
+  probe uuid := '00000000-0000-0000-0000-00000000cb11';
+  n int;
+  suggested text;
+begin
+  select convalidated into is_valid from pg_constraint
+   where conrelid = 'node'::regclass and conname = 'node_says_its_vintage';
+  if is_valid is null then
+    raise exception 'FAIL: the rule that a lot says its vintage is not in the schema at all';
+  end if;
+  if is_valid then
+    raise exception
+      'FAIL: node_says_its_vintage is now valid, which is good news and means S-69 is discharged. Update this assertion and the ledger together.';
+  end if;
+  perform test_ok('the vintage rule is enforced for everything written from now and not retrospectively, which is S-69 and is deliberate');
+
+  -- The suggestion is read off the name and is never written. A lot called
+  -- "2024 Eola Springs" is almost certainly a 2024 and that is almost certainly
+  -- not a thing a database may decide on somebody's behalf.
+  --
+  -- The only way to build a row like the one this is about is to put the
+  -- constraint aside for a moment, because it refuses updates as firmly as
+  -- inserts, which is why nothing new can join that list. Dropped and re-added
+  -- with the same definition, inside a transaction the suite rolls back.
+  alter table node drop constraint node_says_its_vintage;
+  insert into node (id, stage, name, vintage, non_vintage)
+  values (probe, 'maturation', '2019 Assert Grandfathered', null, false);
+  alter table node add constraint node_says_its_vintage
+    check ((vintage is null) = non_vintage) not valid;
+
+  select count(*) into n from lot_without_vintage where id = probe;
+  if n <> 1 then
+    raise exception 'FAIL: a lot saying nothing is not on the list of lots saying nothing';
+  end if;
+  select suggested_year into suggested from lot_without_vintage where id = probe;
+  if suggested <> '2019' then
+    raise exception 'FAIL: the year in the name came out as %', coalesce(suggested, 'nothing');
+  end if;
+  select vintage::text into suggested from node where id = probe;
+  if suggested is not null then
+    raise exception 'FAIL: the suggestion was written to the lot rather than offered';
+  end if;
+  perform test_ok('a year visible in a lot name is offered as a suggestion and never written, because reading a fact off a string is not the same as knowing it');
+
+  delete from node where id = probe;
 end $$;
 
 -- ---------------------------------------------------------------------------
