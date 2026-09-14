@@ -39,6 +39,7 @@ import {
   type VesselState,
   type ViewerScope,
   vesselById,
+  vesselByIdOrNull,
   vesselPhotoUrl,
   vessels,
   vesselTypeNotes,
@@ -46,6 +47,17 @@ import {
   writableColumns,
 } from "core";
 import { locationPicker, partyPicker, termPicker } from "./pickers.ts";
+import {
+  clearAllDrafts,
+  clearDraft,
+  decode,
+  encode,
+  HOME,
+  type Place,
+  readDraft,
+  samePlace,
+  saveDraft,
+} from "./places.ts";
 import { describeEmpty, describeRefusal, mayEnter } from "./refusal.ts";
 import { codeCapture } from "./scan.ts";
 import { activeSkin, applySkin, skins } from "./skins.ts";
@@ -76,10 +88,32 @@ let root: HTMLElement;
 
 export function mountWalk(target: HTMLElement): void {
   root = target;
+  // The phone's back button, and a restart that lands on a real screen. Both
+  // are the same mechanism: a place is in the URL, so the browser's own history
+  // is the record of where you have been and this client does not keep a
+  // second one that could disagree with it.
+  window.addEventListener("popstate", () => {
+    if (pushes > 0) pushes -= 1;
+    void open(decode(window.location.hash), "replace");
+  });
   void route();
 }
 
+// Work a screen started that outlives its own markup. A draft listens on
+// `document` so that it is still there when the phone backgrounds the tab, and
+// a listener on `document` does not go away when the element does: without this
+// the form you left would keep writing its draft from behind the screen you are
+// looking at. Registered by the screen, run by whoever replaces it.
+let leaving: Array<() => void> = [];
+
+function whenLeaving(fn: () => void): void {
+  leaving.push(fn);
+}
+
 function show(node: HTMLElement): void {
+  const done = leaving;
+  leaving = [];
+  for (const fn of done) fn();
   root.replaceChildren(node);
   window.scrollTo(0, 0);
 }
@@ -121,11 +155,153 @@ function noStandingScreen(): HTMLElement {
       "Sign out",
       async () => {
         await signOut();
+        // A phone in a barn is shared. An unsaved vessel belongs to whoever
+        // typed it and does not survive into the next person's sign-in.
+        clearAllDrafts();
+        window.history.replaceState(null, "", encode(HOME));
         await route();
       },
       "quiet",
     ),
   );
+}
+
+// Who is signed in and where they work, as route() last established it. Held
+// because a place resolves into a screen and several screens need one or both,
+// and re-asking per navigation would be a round trip for an answer that cannot
+// have changed without passing back through route().
+let standing: { user: AppUser; facility: Party } | null = null;
+
+// Builds the screen a place names, by asking the kernel again. A place holds an
+// identifier and never a value, so this is where a bookmark from yesterday
+// becomes what is true today, and where an identifier that no longer resolves
+// becomes a refusal rather than a blank screen.
+async function screenFor(place: Place): Promise<HTMLElement> {
+  if (!standing) throw new Error("no standing");
+  const { user, facility } = standing;
+
+  switch (place.at) {
+    case "home":
+      return homeScreen(user, facility);
+    case "vessels":
+      return vesselListScreen(await vessels());
+    case "vessel-new":
+      return vesselScreen();
+    case "vessel-wine":
+      return vesselWineScreen();
+    case "rack":
+      return rackScreen();
+    case "scan":
+      return scanScreen();
+    case "locations":
+      return locationScreen();
+    case "clients":
+      return clientsScreen();
+    case "vessel-types":
+      return vesselTypeListScreen(user);
+    case "vessel-type": {
+      const type = (await terms("vessel_type")).find((t) => t.id === place.id);
+      if (!type) throw new GoneError("That vessel type no longer exists.");
+      return vesselTypeScreen(user, type);
+    }
+    case "vessel":
+    case "vessel-edit":
+    case "vessel-fill": {
+      const vessel = await vesselByIdOrNull(place.id);
+      // W-9's A13 class, arriving in the router. A link to a vessel that has
+      // been removed, or that this sign-in may not read, comes back as nothing,
+      // and nothing is not a screen. Saying which of those it is would require
+      // knowing, and the kernel does not tell a reader the difference on
+      // purpose, so this says the one true thing instead.
+      if (!vessel) {
+        throw new GoneError(
+          "That vessel is not there to open. It may have been removed, or it " +
+            "may belong to somebody else.",
+        );
+      }
+      if (place.at === "vessel") return vesselChoiceScreen(vessel.id, vessel.name);
+      if (place.at === "vessel-edit") return vesselEditScreen(vessel.id, vessel.name);
+      return fillVesselScreen(vessel.id, vessel.name);
+    }
+  }
+}
+
+// A place that resolved to nothing. Separate from a refusal because the
+// treatment is different: this one sends you home rather than offering to try
+// again, since trying again will fail the same way.
+class GoneError extends Error {}
+
+// Paints the screen a place names and records the place, so that a restart
+// resumes here. `push` is a navigation a person made and the back button should
+// undo; `replace` is arriving somewhere without having moved, which is the
+// first paint, a popstate, and the screen after a write that must not be
+// repeated by going back to it.
+async function open(place: Place, how: "push" | "replace"): Promise<void> {
+  try {
+    const node = await screenFor(place);
+    const url = encode(place);
+    if (how === "push" && window.location.hash !== url) {
+      window.history.pushState(null, "", url);
+      pushes += 1;
+    } else {
+      window.history.replaceState(null, "", url);
+    }
+    show(node);
+  } catch (error) {
+    if (error instanceof GoneError) {
+      window.history.replaceState(null, "", encode(HOME));
+      const node = standing ? await screenFor(HOME).catch(() => null) : null;
+      return show(
+        screen(
+          "Not there",
+          banner(error.message, "note"),
+          node ?? button("Back to the cellar", () => go(HOME)),
+        ),
+      );
+    }
+    show(
+      screen(
+        "Something went wrong",
+        fail(error),
+        button("Try again", () => open(place, "replace")),
+      ),
+    );
+  }
+}
+
+// The screen after a write. It is not a place, because a place is resolved by
+// asking again and there is nothing to ask: the write happened. What a restart
+// should find is the vessel it happened to, so that is what goes in the URL,
+// and the result itself lives only as long as the person is looking at it.
+function showResult(node: HTMLElement, vesselId: string): void {
+  window.history.replaceState(
+    null,
+    "",
+    encode(vesselId ? { at: "vessel", id: vesselId } : HOME),
+  );
+  show(node);
+}
+
+// How many entries this client has pushed since it started. Not for display:
+// it is the only way to know whether history.back() lands on a screen of ours
+// or walks out of the app, and walking out of the app is what "Back" must never
+// do. A cold restart onto a vessel link has no history behind it.
+let pushes = 0;
+
+function go(place: Place): void {
+  void open(place, "push");
+}
+
+// Ends the current screen and returns to the one before it. Named for what it
+// does to the history rather than for what it draws, because the back button is
+// now a thing a person uses, and a "Back" control that pushed a new entry
+// instead of undoing one is the bug everybody ships once.
+function goBack(): void {
+  if (pushes > 0) {
+    window.history.back();
+    return;
+  }
+  go(HOME);
 }
 
 async function route(): Promise<void> {
@@ -146,7 +322,15 @@ async function route(): Promise<void> {
     const facility = await facilityParty();
     if (!facility) return show(facilityScreen(user));
 
-    show(await homeScreen(user, facility));
+    standing = { user, facility };
+
+    // The place comes from the URL, which is how a restart lands where you left
+    // off instead of at the top. It is rooted at home first: a restart onto a
+    // vessel link would otherwise have nothing behind it, and Back on the first
+    // screen you see would leave the application.
+    const resuming = decode(window.location.hash);
+    await open(HOME, "replace");
+    if (!samePlace(resuming, HOME)) await open(resuming, "push");
   } catch (error) {
     show(
       screen(
@@ -382,28 +566,28 @@ async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> 
       {
         name: "Vessel and wine",
         note: "Add a vessel with wine already in it, in one action.",
-        go: () => show(vesselWineScreen()),
+        go: () => go({ at: "vessel-wine" }),
       },
       {
         name: "Empty vessel",
         note: "Register a vessel now and put wine in it later.",
-        go: () => show(vesselScreen()),
+        go: () => go({ at: "vessel-new" }),
       },
       {
         name: "Rack",
         note: "Move wine between vessels, or blend it. The database works out which.",
-        go: () => show(rackScreen()),
+        go: () => go({ at: "rack" }),
       },
       {
         name: "Vessels",
         note: "What is in the cellar, and how full.",
         badge: `${filled} of ${kit.length}`,
-        go: () => show(vesselListScreen(kit)),
+        go: () => go({ at: "vessels" }),
       },
       {
         name: "Scan a code",
         note: "Find a barrel by the sticker on it.",
-        go: () => show(scanScreen()),
+        go: () => go({ at: "scan" }),
       },
     ]),
     el("h2", { class: "section-head", text: "Set up" }),
@@ -412,17 +596,17 @@ async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> 
         name: "Locations",
         note: "Where vessels live, and what temperature the room is.",
         badge: String(places.length),
-        go: () => show(locationScreen()),
+        go: () => go({ at: "locations" }),
       },
       {
         name: "Vessel types",
         note: "What each sort of vessel gets asked when you create one.",
-        go: () => show(vesselTypeListScreen(user)),
+        go: () => go({ at: "vessel-types" }),
       },
       {
         name: "Clients",
         note: "Custom crush clients, and which login sees their wine.",
-        go: () => show(clientsScreen()),
+        go: () => go({ at: "clients" }),
       },
     ]),
     el("h2", { class: "section-head", text: "Not built yet" }),
@@ -457,6 +641,10 @@ async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> 
       "Sign out",
       async () => {
         await signOut();
+        // A phone in a barn is shared. An unsaved vessel belongs to whoever
+        // typed it and does not survive into the next person's sign-in.
+        clearAllDrafts();
+        window.history.replaceState(null, "", encode(HOME));
         await route();
       },
       "quiet",
@@ -479,7 +667,7 @@ function vesselListScreen(kit: VesselState[]): HTMLElement {
           `${describeEmpty("vessels", scope)} The first one is the longest; the rest remember your answers.`,
         )
       : vesselList(kit),
-    button("Back", () => route(), "quiet"),
+    button("Back", () => goBack(), "quiet"),
   );
 }
 
@@ -549,17 +737,15 @@ function vesselList(kit: VesselState[]): HTMLElement {
           text: v.is_empty ? "Fill or edit" : "Edit",
         }),
       );
-      const open = () =>
-        show(
-          v.is_empty
-            ? vesselChoiceScreen(v.id, v.name)
-            : vesselEditScreen(v.id, v.name),
-        );
-      on(row, "click", open);
+      // An empty vessel offers the choice; a full one goes straight to the edit
+      // screen, because there is only one thing left to do to it.
+      const openRow = () =>
+        go(v.is_empty ? { at: "vessel", id: v.id } : { at: "vessel-edit", id: v.id });
+      on(row, "click", openRow);
       on(row, "keydown", (ev) => {
         if (ev.key === "Enter" || ev.key === " ") {
           ev.preventDefault();
-          open();
+          openRow();
         }
       });
       return row;
@@ -612,7 +798,7 @@ function locationScreen(): HTMLElement {
           message.replaceChildren(fail(error));
         }
       }),
-      button("Back", () => route(), "quiet"),
+      button("Back", () => goBack(), "quiet"),
       message,
     ),
   );
@@ -643,6 +829,14 @@ type VesselForm = {
   // the current value preselected, so an edit screen opens showing what is
   // true rather than showing blanks that would overwrite it.
   preset: (v: VesselRow) => Promise<void>;
+  // Attaches the form to a place so that what has been typed survives the phone
+  // discarding the tab. Call after reload() or preset(), because restoring a
+  // draft sets picker values and the pickers have to exist first. Resolves to
+  // true if there was a draft, which is a thing the screen has to say out loud:
+  // restored typing that looks like saved data is the A13 shape.
+  draftTo: (place: Place) => Promise<boolean>;
+  // The write succeeded, so the draft has nothing left to stand in for.
+  draftDone: () => void;
 };
 
 function vesselFields(partyRows: Party[]): VesselForm {
@@ -842,24 +1036,70 @@ function vesselFields(partyRows: Party[]): VesselForm {
   // move between open and More details as one thing.
   const glycolBlock = el("div", {}, glycol.root, thermal);
 
-  // No capture attribute on purpose. capture="environment" sends you straight
-  // to the camera with no way back, which is wrong twice: the photo of the
-  // barrel is often already on the phone from this morning, and a lens that
-  // will not focus in a dark barrel room is a dead end. Without it the phone
-  // offers its own chooser, camera or library, which is what people expect.
-  const photo = el("input", {
-    class: "input",
-    type: "file",
-    accept: "image/*",
-  });
+  // Two inputs, one of each, because one input cannot ask both questions.
+  //
+  // This used to be a single `accept="image/*"` with no `capture`, on the
+  // reasoning that the phone would then offer its own chooser. It does not. On
+  // Android the bare input opens the system photo picker directly and the
+  // camera is behind an icon that is not obviously a way out of it, which the
+  // winemaker hit from the other side: he wanted a photo of the tank in front
+  // of him and got his gallery. The old comment's reasoning was right and its
+  // conclusion was wrong, and both halves are kept here because the wrong turn
+  // is the part worth not repeating: leaving `capture` off does not produce a
+  // choice, it produces the library. Setting it produces the camera. A choice
+  // is two controls.
+  //
+  // Which of them wrote the file last is the answer, so they share a variable
+  // rather than being read in an order that would prefer one.
+  let chosen: File | null = null;
+
+  function photoInput(capture: string | null, label: string): HTMLElement {
+    const input = el("input", {
+      class: "visually-hidden",
+      type: "file",
+      accept: "image/*",
+      ...(capture ? { capture } : {}),
+    });
+    const name = el("span", { class: "field-hint" });
+    on(input, "change", () => {
+      chosen = input.files?.[0] ?? null;
+      name.textContent = chosen ? chosen.name : "";
+      // The other input still holds whatever it took last. Clearing it keeps
+      // the form honest about which single file is about to be uploaded.
+      for (const other of [fromCamera, fromLibrary]) {
+        if (other && other !== input) other.value = "";
+      }
+    });
+    // A label wrapping a hidden input is the whole trick: tapping it opens the
+    // right picker, it is reachable from the keyboard, and it needs no script.
+    const trigger = el(
+      "label",
+      { class: "btn btn-secondary photo-trigger" },
+      input,
+      label,
+    );
+    return el("div", { class: "photo-choice" }, trigger, name);
+  }
+
+  // Declared before photoInput runs so the change handler above can reach both.
+  let fromCamera: HTMLInputElement | null = null;
+  let fromLibrary: HTMLInputElement | null = null;
+
+  const cameraChoice = photoInput("environment", "Take photo");
+  const libraryChoice = photoInput(null, "Choose photo");
+  fromCamera = cameraChoice.querySelector("input");
+  fromLibrary = libraryChoice.querySelector("input");
+
   const photoField = el(
     "div",
     { class: "field" },
     el("span", { class: "field-label", text: "Photo" }),
-    photo,
+    el("div", { class: "photo-choices" }, cameraChoice, libraryChoice),
     el("span", {
       class: "field-hint",
-      text: "Optional. Useful when the label falls off.",
+      text:
+        "Optional. Useful when the label falls off. Take one now, or pick one " +
+        "already on the phone.",
     }),
   );
 
@@ -954,38 +1194,23 @@ function vesselFields(partyRows: Party[]): VesselForm {
     }
   }
 
-  return {
-    nodes: [
-      type.root,
-      name.root,
-      capacity.root,
-      place.root,
-      ownerField,
-      openSlot,
-      photoField,
-      more,
-    ],
-    /**
-     * Replace every control this caller may not write with the value it holds.
-     * A cellar hand needs to read the capacity and the type to do the work, so
-     * hiding them is wrong; offering them as inputs that cannot be saved is
-     * worse, which is what W-8 found. Showing them is the third option.
-     *
-     * `null` means no restriction and is what an administrator gets.
-     */
-    lockTo: (writable) => {
-      if (writable === null) {
-        lockedColumns = null;
-        return;
-      }
-      lockedColumns = new Set(writable);
-      for (const g of guarded) {
-        if (lockedColumns.has(g.column)) continue;
-        g.node.replaceChildren(summaryRow(g.label, g.show()));
-      }
-      applyAttributeLock();
-    },
-    read: () => ({
+  const formNodes = [
+    type.root,
+    name.root,
+    capacity.root,
+    place.root,
+    ownerField,
+    openSlot,
+    photoField,
+    more,
+  ];
+
+  // Named rather than inline in the object below, because the draft writer and
+  // the caller that saves have to read the same thing. Two readers of one form
+  // that drifted apart would mean a draft restoring something the save would
+  // not have written.
+  function readValues() {
+    return {
       type_id: type.value(),
       name: name.value(),
       capacity_l: capacity.value() ? Number(capacity.value()) : null,
@@ -1011,8 +1236,123 @@ function vesselFields(partyRows: Party[]): VesselForm {
               ];
         }),
       ),
-    }),
-    photoFile: () => photo.files?.[0] ?? null,
+    };
+  }
+
+  // A draft has the same shape as a vessel row, so restoring one is the same
+  // operation as opening an existing vessel. That is not a coincidence worth
+  // hiding: readValues() returns a vessel minus its id, which is exactly what
+  // preset() consumes.
+  async function presetFrom(v: VesselRow): Promise<void> {
+    const bag = (v.attributes ?? {}) as Record<string, unknown>;
+    await type.reload(v.type_id ?? undefined);
+    await Promise.all([
+      place.reload(v.location_id ?? undefined),
+      // Builds this type's fields and fills each from the stored bag.
+      applyTypeShape(bag),
+    ]);
+    name.input.value = v.name ?? "";
+    capacity.input.value = v.capacity_l == null ? "" : String(v.capacity_l);
+    owner.value = v.owner_id ?? "";
+    glycol.input.checked = v.has_glycol ?? false;
+    mode.value = v.mode ?? "off";
+    setpoint.input.value = v.setpoint_c == null ? "" : String(v.setpoint_c);
+    syncThermal();
+  }
+
+  // --- the draft ----------------------------------------------------------
+
+  let draftPlace: Place | null = null;
+  let pending: number | null = null;
+
+  function writeDraft(): void {
+    if (!draftPlace) return;
+    saveDraft(draftPlace, readValues());
+  }
+
+  // Typing is not a reason to touch storage on every keystroke. A quarter of a
+  // second is below the point where the loss would matter and above the point
+  // where a slow phone notices.
+  function scheduleDraft(): void {
+    if (pending !== null) window.clearTimeout(pending);
+    pending = window.setTimeout(() => {
+      pending = null;
+      writeDraft();
+    }, 250);
+  }
+
+  function flushDraft(): void {
+    if (pending !== null) {
+      window.clearTimeout(pending);
+      pending = null;
+    }
+    writeDraft();
+  }
+
+  // Stops writing. Says nothing about whether the draft should still exist,
+  // which is the caller's question and has two different answers.
+  function detach(): void {
+    if (pending !== null) {
+      window.clearTimeout(pending);
+      pending = null;
+    }
+    draftPlace = null;
+    document.removeEventListener("visibilitychange", flushDraft);
+    window.removeEventListener("pagehide", flushDraft);
+  }
+
+  return {
+    nodes: formNodes,
+    /**
+     * Replace every control this caller may not write with the value it holds.
+     * A cellar hand needs to read the capacity and the type to do the work, so
+     * hiding them is wrong; offering them as inputs that cannot be saved is
+     * worse, which is what W-8 found. Showing them is the third option.
+     *
+     * `null` means no restriction and is what an administrator gets.
+     */
+    lockTo: (writable) => {
+      if (writable === null) {
+        lockedColumns = null;
+        return;
+      }
+      lockedColumns = new Set(writable);
+      for (const g of guarded) {
+        if (lockedColumns.has(g.column)) continue;
+        g.node.replaceChildren(summaryRow(g.label, g.show()));
+      }
+      applyAttributeLock();
+    },
+    read: readValues,
+    draftTo: async (place) => {
+      draftPlace = place;
+      // Delegated, because the optional fields do not exist until a type is
+      // picked and a listener per control would have to be re-attached every
+      // time the shape changes. An input event bubbles, so the containers are
+      // enough and they outlive their contents.
+      for (const node of formNodes) {
+        node.addEventListener("input", scheduleDraft);
+        node.addEventListener("change", scheduleDraft);
+      }
+      // The last reliable moment. Android fires this when it backgrounds the
+      // tab and may never run another line of this program, so the debounce is
+      // flushed here rather than trusted to fire.
+      document.addEventListener("visibilitychange", flushDraft);
+      window.addEventListener("pagehide", flushDraft);
+      // Leaving is not saving. The draft stays; only the listening stops, so
+      // that the form behind you is not still writing over the one in front.
+      whenLeaving(detach);
+
+      const draft = readDraft(place);
+      if (!draft || typeof draft !== "object") return false;
+      await presetFrom(draft as VesselRow);
+      return true;
+    },
+    draftDone: () => {
+      if (draftPlace) clearDraft(draftPlace);
+      detach();
+    },
+    photoFile: () => chosen,
     ready: () => {
       if (!type.value()) return "Pick a vessel type, or add one.";
       if (!name.value()) return "A vessel needs a name.";
@@ -1034,22 +1374,7 @@ function vesselFields(partyRows: Party[]): VesselForm {
       await type.reload();
       await Promise.all([place.reload(), applyTypeShape()]);
     },
-    preset: async (v: VesselRow) => {
-      const bag = (v.attributes ?? {}) as Record<string, unknown>;
-      await type.reload(v.type_id ?? undefined);
-      await Promise.all([
-        place.reload(v.location_id ?? undefined),
-        // Builds this type's fields and fills each from the stored bag.
-        applyTypeShape(bag),
-      ]);
-      name.input.value = v.name ?? "";
-      capacity.input.value = v.capacity_l == null ? "" : String(v.capacity_l);
-      owner.value = v.owner_id ?? "";
-      glycol.input.checked = v.has_glycol ?? false;
-      mode.value = v.mode ?? "off";
-      setpoint.input.value = v.setpoint_c == null ? "" : String(v.setpoint_c);
-      syncThermal();
-    },
+    preset: presetFrom,
   };
 }
 
@@ -1168,14 +1493,14 @@ function clientsScreen(): HTMLElement {
               message.replaceChildren(fail(error));
             }
           }),
-          button("Back", () => route(), "quiet"),
+          button("Back", () => goBack(), "quiet"),
           message,
         ),
       );
     } catch (error) {
       body.replaceChildren(
         fail(error),
-        button("Back", () => route(), "quiet"),
+        button("Back", () => goBack(), "quiet"),
       );
     }
   }
@@ -1449,7 +1774,7 @@ function rackScreen(): HTMLElement {
               lees_l: lees.value() ? Number(lees.value()) : null,
             },
           });
-          show(
+          showResult(
             await resultScreen(
               d[0]?.vessel_id ?? "",
               result.node_id,
@@ -1459,12 +1784,13 @@ function rackScreen(): HTMLElement {
                 : `A new lot from ${result.parents.length}. ${result.out_l} L out, ` +
                     `${result.in_l} L in, ${result.loss_l} L lost.`,
             ),
+            d[0]?.vessel_id ?? "",
           );
         } catch (error) {
           message.replaceChildren(fail(error));
         }
       }),
-      button("Back", () => route(), "quiet"),
+      button("Back", () => goBack(), "quiet"),
       message,
     );
 
@@ -1526,16 +1852,16 @@ function vesselTypeListScreen(user: AppUser): HTMLElement {
                 text: user.role === "admin" ? "Edit" : "Suggest",
               }),
             );
-            on(row, "click", () => show(vesselTypeScreen(user, t)));
+            on(row, "click", () => go({ at: "vessel-type", id: t.id }));
             return row;
           }),
-          button("Back", () => route(), "quiet"),
+          button("Back", () => goBack(), "quiet"),
         ),
       );
     } catch (error) {
       body.replaceChildren(
         fail(error),
-        button("Back", () => route(), "quiet"),
+        button("Back", () => goBack(), "quiet"),
       );
     }
   })();
@@ -1752,7 +2078,7 @@ function vesselTypeScreen(user: AppUser, type: Term): HTMLElement {
         "secondary",
       ),
       noteList,
-      button("Back", () => show(vesselTypeListScreen(user)), "quiet"),
+      button("Back", () => goBack(), "quiet"),
       message,
     );
 
@@ -1811,13 +2137,13 @@ function vesselChoiceScreen(vesselId: string, vesselName: string): HTMLElement {
     vesselName,
     lede("This vessel is empty."),
     rows(
-      button("Put wine in it", () => show(fillVesselScreen(vesselId, vesselName))),
+      button("Put wine in it", () => go({ at: "vessel-fill", id: vesselId })),
       button(
         "Edit the vessel",
-        () => show(vesselEditScreen(vesselId, vesselName)),
+        () => go({ at: "vessel-edit", id: vesselId }),
         "secondary",
       ),
-      button("Back", () => route(), "quiet"),
+      button("Back", () => goBack(), "quiet"),
     ),
   );
 }
@@ -1842,11 +2168,29 @@ function vesselEditScreen(vesselId: string, title: string): HTMLElement {
       ]);
       const form = vesselFields(partyRows);
       await form.preset(row);
-      // After preset, so the locked fields show what is there rather than blanks.
+      // After preset, so a draft wins over what is saved: a draft only exists
+      // because somebody typed over the saved values and did not get to save.
+      const here: Place = { at: "vessel-edit", id: vesselId };
+      const restored = await form.draftTo(here);
+      // After both, so the locked fields show what is there rather than blanks.
       form.lockTo(scope?.may_admin ? null : writable);
+
+      const note = el("div", {});
+      if (restored) {
+        note.replaceChildren(
+          draftBanner(
+            "Changes you had not saved are back in this form, over what is stored.",
+            () => {
+              form.draftDone();
+              go(here);
+            },
+          ),
+        );
+      }
 
       body.replaceChildren(
         rows(
+          note,
           ...form.nodes,
           button("Save changes", async () => {
             const problem = form.ready();
@@ -1886,24 +2230,37 @@ function vesselEditScreen(vesselId: string, title: string): HTMLElement {
                   "good",
                 ),
               );
-              await route();
+              form.draftDone();
+              goBack();
             } catch (error) {
               message.replaceChildren(fail(error));
             }
           }),
-          button("Back", () => route(), "quiet"),
+          button("Back", () => goBack(), "quiet"),
           message,
         ),
       );
     } catch (error) {
       body.replaceChildren(
         fail(error),
-        button("Back", () => route(), "quiet"),
+        button("Back", () => goBack(), "quiet"),
       );
     }
   })();
 
   return view;
+}
+
+// Says that what is in the form is typing that came back, not what is saved.
+// Without this a restored draft and a loaded vessel are the same picture, which
+// is the A13 shape in the one place a person is about to act on it.
+function draftBanner(sentence: string, discard: () => void): HTMLElement {
+  return el(
+    "div",
+    { class: "draft-note" },
+    banner(`${sentence} Nothing has been written yet.`, "note"),
+    button("Start again", discard, "quiet"),
+  );
 }
 
 // --- an empty vessel ------------------------------------------------------
@@ -1922,7 +2279,19 @@ function vesselScreen(): HTMLElement {
     const partyRows = await parties();
     const form = vesselFields(partyRows);
     await form.reload();
+    const here: Place = { at: "vessel-new" };
+    const restored = await form.draftTo(here);
+    const note = el("div", {});
+    if (restored) {
+      note.replaceChildren(
+        draftBanner("A vessel you had not saved is back in this form.", () => {
+          form.draftDone();
+          go(here);
+        }),
+      );
+    }
     holder.append(
+      note,
       ...form.nodes,
       capture.root,
       button("Save vessel", async () => {
@@ -1941,7 +2310,8 @@ function vesselScreen(): HTMLElement {
           await addVessel({ id, ...values, attributes });
           for (const row of capture.codes()) await bindOne(id, row);
           capture.stop();
-          await route();
+          form.draftDone();
+          go(HOME);
         } catch (error) {
           message.replaceChildren(fail(error));
         }
@@ -1950,7 +2320,7 @@ function vesselScreen(): HTMLElement {
         "Back",
         () => {
           capture.stop();
-          void route();
+          goBack();
         },
         "quiet",
       ),
@@ -2090,18 +2460,19 @@ function fillVesselScreen(vesselId: string, vesselName: string): HTMLElement {
             node: wine.read(),
             volumeL: wine.volumeL(),
           });
-          show(
+          showResult(
             await resultScreen(
               result.vessel_id,
               result.node_id,
               result.events_generated,
             ),
+            result.vessel_id,
           );
         } catch (error) {
           message.replaceChildren(fail(error));
         }
       }),
-      button("Back", () => route(), "quiet"),
+      button("Back", () => goBack(), "quiet"),
       message,
     );
   })();
@@ -2133,7 +2504,22 @@ function vesselWineScreen(): HTMLElement {
 
     await Promise.all([form.reload(), wine.reload()]);
 
+    // The vessel half only. The wine half is S-48: a form gets a draft by
+    // having a serialisable read, and wineFields does not have one yet.
+    const here: Place = { at: "vessel-wine" };
+    const restored = await form.draftTo(here);
+    const note = el("div", {});
+    if (restored) {
+      note.replaceChildren(
+        draftBanner("A vessel you had not saved is back in this form.", () => {
+          form.draftDone();
+          go(here);
+        }),
+      );
+    }
+
     holder.append(
+      note,
       el("h2", { class: "section-head", text: "The vessel" }),
       ...form.nodes,
       capture.root,
@@ -2159,12 +2545,14 @@ function vesselWineScreen(): HTMLElement {
             codes: capture.codes(),
           });
           capture.stop();
-          show(
+          form.draftDone();
+          showResult(
             await resultScreen(
               result.vessel_id,
               result.node_id,
               result.events_generated,
             ),
+            result.vessel_id,
           );
         } catch (error) {
           message.replaceChildren(fail(error));
@@ -2174,7 +2562,7 @@ function vesselWineScreen(): HTMLElement {
         "Back",
         () => {
           capture.stop();
-          void route();
+          goBack();
         },
         "quiet",
       ),
@@ -2224,7 +2612,7 @@ async function resultScreen(
           "list will show it once the read works.",
         "note",
       ),
-      button("Back to the cellar", () => route()),
+      button("Back to the cellar", () => go(HOME)),
     );
   }
 
@@ -2306,8 +2694,8 @@ async function resultScreen(
           ),
         ),
     rows(
-      button("Add another", () => show(vesselWineScreen())),
-      button("Back to the cellar", () => route(), "secondary"),
+      button("Add another", () => go({ at: "vessel-wine" })),
+      button("Back to the cellar", () => go(HOME), "secondary"),
     ),
   );
 }
@@ -2369,7 +2757,7 @@ function scanScreen(): HTMLElement {
       "Back",
       () => {
         capture.stop();
-        void route();
+        goBack();
       },
       "quiet",
     ),

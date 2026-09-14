@@ -425,6 +425,29 @@ export async function fillVessel(args: {
   return data as WalkResult;
 }
 
+// Asking for a vessel that might not be there. `single()` treats no rows as an
+// error, which is right for a caller that already knows the vessel exists and
+// wrong for the one that is resolving a link somebody could have typed: the
+// error it produces is PostgREST's "cannot coerce the result to a single JSON
+// object", which is a sentence about a serialiser, shown to a person who
+// followed a stale link. `maybeSingle()` makes absence an answer.
+//
+// **Absent and forbidden are the same answer here and that is deliberate.** A
+// row this sign-in may not read is not in the result either way, and the whole
+// point of the row-level policy is that a reader cannot tell the difference.
+// What the caller may say is that it is not there to open.
+export async function vesselByIdOrNull(vesselId: Uuid): Promise<VesselRow | null> {
+  const { data, error } = await kernel()
+    .from("vessel")
+    .select(
+      "id,type_id,name,capacity_l,location_id,owner_id,has_glycol,setpoint_c,mode,attributes",
+    )
+    .eq("id", vesselId)
+    .maybeSingle();
+  if (error) throw new KernelError(error);
+  return (data as VesselRow | null) ?? null;
+}
+
 export async function vesselById(vesselId: Uuid): Promise<VesselRow> {
   const { data, error } = await kernel()
     .from("vessel")

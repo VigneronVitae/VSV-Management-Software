@@ -150,7 +150,7 @@ admission.
 | B12 | `Number(x.value())` guards | A `type="number"` field holding text the browser rejects writes null, silently | 1 | EXPLOITABLE |
 | B13 | `uploadVesselPhoto` ordering | Photo uploads before the row it belongs to, unbounded and full-resolution, orphaning on any later failure | 3 | MINOR |
 | B14 | `vite.config.ts` | `server.host` set, `allowedHosts` empty, on a vite that enforces the Host check. LAN by IP works, a tunnel does not, which blocks camera testing on a real phone | 2 | MAJOR |
-| B15 | no service worker, no manifest, no icons | The PWA is claimed four times in the tree and does not exist. A reload with no signal loses the application | 2 | MAJOR |
+| B15 | no service worker, no manifest, no icons | The PWA is claimed four times in the tree and does not exist. A reload with no signal loses the application. **Half closed by `W-11`**, and the half that closed is the one the winemaker hit: there is a manifest, four icons and a place per screen, so the app installs, the phone's back button works, and a tab the phone discarded comes back to the screen it was on with the typing still in it. The other half is untouched and is now S-47: there is still no service worker, so a boot with no signal fails, and it fails **knowing where you wanted to be**, which is worse than the shape this row was written about | 2 | half closed |
 | B16 | no request timeout anywhere | A dead-zone write hangs on "Working" indefinitely | 1 | MAJOR |
 | B17 | session expiry offline | Indistinguishable from sign-out, and the next write goes out as the anon key | 1 | MAJOR |
 | B18 | `--ink-faint` | Below 4.5:1 in both themes, and it carries the codes and volumes | 2 | MINOR |

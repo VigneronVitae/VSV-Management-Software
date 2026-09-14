@@ -4,6 +4,19 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="light dark" />
+    <!-- Installed rather than bookmarked. A standalone app gets its own entry in
+         the phone's task switcher and is far less likely to be discarded when
+         you leave it to take a photo, which is the thing this is here to fix.
+         It is not the whole fix: the route is in the URL and the typing is in a
+         draft, because a discard is still possible and this only makes it
+         rarer. Offline is still out: see sorry S-47. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#6b2436" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Vitae" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="icon" href="/icon-192.png" type="image/png" />
     <title>Vitae Springs</title>
     <link rel="stylesheet" href="/src/app.css" />
   </head>

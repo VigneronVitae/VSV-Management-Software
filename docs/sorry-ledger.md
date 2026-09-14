@@ -548,6 +548,34 @@ no generator reads, which is a `doctor` check and therefore S-4. *Load-bearing:*
 becomes load-bearing the first time somebody writes a maintenance template and waits for tasks.
 
 
+**S-47. The app is installable and still cannot start without the network.**
+`0033`'s client half gives the walk a manifest, icons and a place per screen, which is what
+makes a phone treat it as an application and what makes a restart land where you were. It
+does not add a service worker, so the boot itself is still a network boot: `index.ts` reads
+its config, asks the kernel for a session, and shows an error if either is unreachable. In a
+barrel room with no signal the app therefore opens to a failure rather than to the screen you
+left, which is precisely the case the offline story exists for. **The route is remembered and
+cannot be used**, which is a worse shape than not remembering it, because the app now knows
+what you wanted and still says no. *Resolves when:* a service worker caches the shell and the
+kernel client falls back to a queued write, which is the offline path in spec.md §7 and is a
+session of its own rather than a line here. *Load-bearing:* yes, and known to be: B15 is
+scored MAJOR in the findings ledger and this closes the installability half of it only.
+
+**S-48. Only the vessel forms keep a draft, and the others look the same to a person.**
+Android discards a backgrounded tab under memory pressure, so leaving the app to take a photo
+and coming back is a restart. `0033` keeps a draft for everything built on `vesselFields`,
+which covers registering a vessel, registering a vessel with wine, editing one and filling
+one, because that is the case the winemaker hit and the case with the most typing in it. The
+rack screen, the locations screen, the clients screen and the vessel type editor keep nothing,
+and a person cannot tell from looking which sort of screen they are on. **A feature that works
+on four screens out of eight is trusted on all eight**, which makes the loss worse than it was
+when nothing was kept, because nothing is at least consistent. *Resolves when:* either the
+draft store is attached to the remaining forms, which is mechanical once each grows a
+serialisable read, or the seam moves into `ui.ts` so that a form gets a draft by being a form.
+*Load-bearing:* during harvest, yes. A rack recorded halfway and lost is a transfer that has
+already physically happened with no record of it.
+
+
 ## Discharged
 
 **S-25. An account belonging to no party is staff, so a client who signs up
