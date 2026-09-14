@@ -88,6 +88,31 @@ node_history:earlyreturn:1	node_history	earlyreturn	return;	null;	2
 node_history:head:2	node_history	head	if 'history' = any(n.hidden)\n     and not coalesce(may_see_all_of(n.owner_id, n.hidden), false) then	if false then	1
 node_history:permissive:1	node_history	permissive	and not coalesce(may_see_all_of(n.owner_id, n.hidden), false) then	and not coalesce(may_see_all_of(n.owner_id, n.hidden), true) then	1
 node_history:earlyreturn:2	node_history	earlyreturn	return;	null;	3
+press:guard:1	press	guard	if p_sources is null or jsonb_array_length(p_sources) = 0 then	if false then	1
+press:raise:1	press	raise	raise exception 'nothing was named to press';	raise notice 'nothing was named to press';	1
+press:guard:2	press	guard	if p_destinations is null or jsonb_array_length(p_destinations) = 0 then	if false then	1
+press:raise:2	press	raise	raise exception 'the juice has to go somewhere; name at least one vessel';	raise notice 'the juice has to go somewhere; name at least one vessel';	1
+press:guard:3	press	guard	if n.id is null then	if false then	1
+press:raise:3	press	raise	raise exception 'no lot with id %', src ->> 'node_id';	raise notice 'no lot with id %', src ->> 'node_id';	1
+press:guard:4	press	guard	if n.status = 'closed' then	if false then	1
+press:raise:4	press	raise	raise exception '% is closed; there is nothing left in it to press', n.name;	raise notice '% is closed; there is nothing left in it to press', n.name;	1
+press:guard:5	press	guard	if n.quantity is null then	if false then	1
+press:raise:5	press	raise	raise exception	raise notice	5
+press:guard:6	press	guard	if parent_stage is null then	if false then	1
+press:guard:7	press	guard	elsif parent_stage <> n.stage then	elsif false then	1
+press:raise:6	press	raise	raise exception	raise notice	6
+press:guard:8	press	guard	if want <= 0 then	if false then	1
+press:raise:7	press	raise	raise exception 'a press of % from % is not an amount', want, n.name;	raise notice 'a press of % from % is not an amount', want, n.name;	1
+press:guard:9	press	guard	if want > n.quantity then	if false then	1
+press:raise:8	press	raise	raise exception	raise notice	8
+press:guard:10	press	guard	if vol is null or vol <= 0 then	if false then	1
+press:raise:9	press	raise	raise exception 'a volume of % into a vessel is not a filling',	raise notice 'a volume of % into a vessel is not a filling',	1
+press:guard:11	press	guard	if not exists (select 1 from vessel where id = v_id and active) then	if false then	1
+press:raise:10	press	raise	raise exception 'no active vessel with id %', v_id;	raise notice 'no active vessel with id %', v_id;	1
+press:guard:12	press	guard	if exists (select 1 from placement where vessel_id = v_id and to_at is null) then	if false then	1
+press:raise:11	press	raise	raise exception	raise notice	11
+press:guard:13	press	guard	if held - weights[i] <= 0.0001 then	if false then	1
+press:silent:1	press	silent	where node_id = parent_ids[i] and to_at is null;	where node_id = parent_ids[i] and true;	1
 rack:guard:1	rack	guard	if jsonb_array_length(plan -> 'overfill') > 0 and not p_allow_overfill then	if false then	1
 rack:raise:1	rack	raise	raise exception 'that puts more in % than it holds; confirm the overfill to record it anyway',	raise notice 'that puts more in % than it holds; confirm the overfill to record it anyway',	1
 rack:guard:2	rack	guard	if plan ->> 'kind' = 'move' then	if false then	1

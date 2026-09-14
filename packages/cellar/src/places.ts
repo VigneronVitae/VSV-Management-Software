@@ -44,7 +44,9 @@ export type Place =
   | { at: "intake" }
   | { at: "pick-new" }
   | { at: "pick-bins"; id?: string }
-  | { at: "scale" };
+  | { at: "scale" }
+  | { at: "press" }
+  | { at: "bins-to-return" };
 
 export const HOME: Place = { at: "home" };
 
@@ -67,6 +69,8 @@ const WITHOUT_ID = new Set([
   "pick-new",
   "pick-bins",
   "scale",
+  "press",
+  "bins-to-return",
 ]);
 
 const WITH_ID = new Set([

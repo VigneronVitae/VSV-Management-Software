@@ -8,6 +8,7 @@ import {
   addVesselTypeNote,
   appUsers,
   bindCode,
+  binsToReturn,
   blocks,
   claimAccount,
   createVesselWithWine,
@@ -22,6 +23,7 @@ import {
   openPicks,
   type Party,
   parties,
+  press,
   rackPlan,
   rackTransfer,
   resolveCode,
@@ -215,6 +217,10 @@ async function screenFor(place: Place): Promise<HTMLElement> {
       return pickBinsScreen(place.id);
     case "scale":
       return scaleScreen();
+    case "press":
+      return pressScreen();
+    case "bins-to-return":
+      return binsToReturnScreen();
     case "vessel-type": {
       const type = (await terms("vessel_type")).find((t) => t.id === place.id);
       if (!type) throw new GoneError("That vessel type no longer exists.");
@@ -571,16 +577,18 @@ function menu(items: MenuItem[]): HTMLElement {
 }
 
 async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> {
-  const [places, kit, unweighed] = await Promise.all([
+  const [places, kit, unweighed, owedBins] = await Promise.all([
     locations(),
     vessels(),
     unweighedBins(),
+    binsToReturn(),
   ]);
   const filled = kit.filter((v) => !v.is_empty).length;
   // On the home screen on purpose. T1-4 allows a bin to exist with no weight,
   // which is only safe if the count of them is somewhere nobody has to go
   // looking for it.
   const waiting = unweighed.length;
+  const owed = owedBins.length;
 
   return screen(
     facility.name,
@@ -599,6 +607,17 @@ async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> 
         name: "Weigh bins",
         note: "What the scale said, with the bins' own weight taken off.",
         go: () => go({ at: "scale" }),
+      },
+      {
+        name: "Press",
+        note: "Fruit in, juice out. Where the lot gets the name it keeps.",
+        go: () => go({ at: "press" }),
+      },
+      {
+        name: "Bins to return",
+        note: "Borrowed bins that are empty. Owed back rather than available.",
+        ...(owed > 0 ? { badge: String(owed) } : {}),
+        go: () => go({ at: "bins-to-return" }),
       },
     ]),
     el("h2", { class: "section-head", text: "In the cellar" }),
@@ -651,10 +670,6 @@ async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> 
     ]),
     el("h2", { class: "section-head", text: "Not built yet" }),
     menu([
-      {
-        name: "Press and destem",
-        note: "Where lots acquire their identity. Build order 3.",
-      },
       {
         name: "Samples and readings",
         note: "Transcribing the Wine Meister by hand. Build order 4.",
@@ -3320,6 +3335,237 @@ function scaleScreen(): HTMLElement {
           ...groups,
           button("Done", () => go({ at: "intake" }), "quiet"),
           message,
+        ),
+      );
+    } catch (error) {
+      body.replaceChildren(
+        fail(error),
+        button("Back", () => goBack(), "quiet"),
+      );
+    }
+  })();
+
+  return view;
+}
+
+// --- press -----------------------------------------------------------------
+
+// Build order 3, and the screen where a lot gets the identity it keeps. The
+// kernel decides what stage the juice lands at, which is why nothing here asks:
+// fruit in bins presses to a ferment, a ferment presses off skins to maturation,
+// and that is winery practice rather than a preference.
+function pressScreen(): HTMLElement {
+  const body = el("div", {}, empty("Loading."));
+  const message = el("div", {});
+  const view = screen(
+    "Press",
+    lede(
+      "Which fruit went in and where the juice went. The weight comes off the " +
+        "pick, so what is left in the bins is what is left.",
+    ),
+    body,
+  );
+
+  void (async () => {
+    try {
+      const [picks, kit, waiting] = await Promise.all([
+        openPicks(),
+        vessels(),
+        unweighedBins(),
+      ]);
+      const ready = picks.filter((p) => p.quantity !== null);
+      const unweighedBy = new Map<string, number>();
+      for (const b of waiting) {
+        unweighedBy.set(b.node_id, (unweighedBy.get(b.node_id) ?? 0) + 1);
+      }
+
+      if (ready.length === 0) {
+        body.replaceChildren(
+          picks.length === 0
+            ? empty("There is no fruit in bins to press.")
+            : banner(
+                "Every open pick is still waiting for a weight. Pressing is the " +
+                  "last moment anybody can weigh the fruit, so weigh it first.",
+                "note",
+              ),
+          ...(picks.length === 0
+            ? []
+            : [button("Weigh bins", () => go({ at: "scale" }), "secondary")]),
+          button("Back", () => goBack(), "quiet"),
+        );
+        return;
+      }
+
+      const source = el("select", { class: "input" });
+      source.replaceChildren(
+        ...ready.map((p) =>
+          el("option", {
+            value: p.id,
+            text: `${p.name} (${Number(p.quantity).toLocaleString()} lbs)`,
+          }),
+        ),
+      );
+
+      const weight = field({
+        label: "Fruit pressed, lbs",
+        type: "number",
+        hint: "Blank presses all of it. A smaller number leaves the rest in the bins.",
+      });
+      const warning = el("div", {});
+
+      function syncWarning(): void {
+        const left = unweighedBy.get(source.value) ?? 0;
+        warning.replaceChildren(
+          left > 0
+            ? banner(
+                `${left} bin${left === 1 ? "" : "s"} on this pick were never weighed. ` +
+                  "Pressing goes ahead and those weights are gone afterwards.",
+                "note",
+              )
+            : el("span", {}),
+        );
+      }
+      syncWarning();
+      on(source, "change", syncWarning);
+
+      const empties = kit.filter((v) => v.is_empty);
+      const into = el("select", { class: "input" });
+      into.replaceChildren(
+        ...empties.map((v) =>
+          el("option", {
+            value: v.id,
+            text: v.capacity_l
+              ? `${v.name} (${v.type}, ${v.capacity_l} L)`
+              : `${v.name} (${v.type})`,
+          }),
+        ),
+      );
+      const litres = field({
+        label: "Juice out, litres",
+        type: "number",
+        placeholder: "1200",
+        hint: "What actually went into the vessel.",
+      });
+      const name = field({
+        label: "Name the lot",
+        hint: "Blank names it after the pick.",
+      });
+
+      body.replaceChildren(
+        rows(
+          el("h2", { class: "section-head", text: "The fruit" }),
+          el(
+            "div",
+            { class: "field" },
+            el("span", { class: "field-label", text: "Pick" }),
+            source,
+          ),
+          warning,
+          weight.root,
+          el("h2", { class: "section-head", text: "The juice" }),
+          empties.length === 0
+            ? banner(
+                "Every vessel is full. Rack one out before pressing into it.",
+                "note",
+              )
+            : el(
+                "div",
+                { class: "field" },
+                el("span", { class: "field-label", text: "Into" }),
+                into,
+              ),
+          litres.root,
+          name.root,
+          button("Record the press", async () => {
+            if (!litres.value()) {
+              message.replaceChildren(banner("How many litres came out?", "error"));
+              return;
+            }
+            if (!into.value) {
+              message.replaceChildren(banner("Pick a vessel for the juice.", "error"));
+              return;
+            }
+            try {
+              const out = await press({
+                sources: [
+                  {
+                    node_id: source.value,
+                    weight_lbs: weight.value() ? Number(weight.value()) : null,
+                  },
+                ],
+                destinations: [
+                  { vessel_id: into.value, volume_l: Number(litres.value()) },
+                ],
+                ...(name.value() ? { node: { name: name.value() } } : {}),
+              });
+              showResult(
+                await resultScreen(
+                  into.value,
+                  out.node_id,
+                  0,
+                  `Pressed. ${out.lbs_in.toLocaleString()} lbs in, ` +
+                    `${out.litres_out.toLocaleString()} L out, ` +
+                    `${out.yield_l_per_ton === null ? "yield unknown" : `${out.yield_l_per_ton} L per ton`}. ` +
+                    `${out.bins_emptied} bin${out.bins_emptied === 1 ? "" : "s"} emptied.`,
+                ),
+                into.value,
+              );
+            } catch (error) {
+              message.replaceChildren(fail(error));
+            }
+          }),
+          button("Back", () => goBack(), "quiet"),
+          message,
+        ),
+      );
+    } catch (error) {
+      body.replaceChildren(
+        fail(error),
+        button("Back", () => goBack(), "quiet"),
+      );
+    }
+  })();
+
+  return view;
+}
+
+// Borrowed bins with nothing in them. The winemaker's point: empty is not the
+// same as available, because a bin lent by the grower of the fruit is owed back
+// the moment it stops holding anything.
+function binsToReturnScreen(): HTMLElement {
+  const body = el("div", {}, empty("Loading."));
+  const view = screen(
+    "Bins to return",
+    lede("Borrowed bins that are empty. These are owed back, not available."),
+    body,
+  );
+
+  void (async () => {
+    try {
+      const owed = await binsToReturn();
+      body.replaceChildren(
+        rows(
+          owed.length === 0
+            ? empty("No borrowed bin is sitting empty.")
+            : el(
+                "ul",
+                { class: "vessel-list" },
+                ...owed.map((b) =>
+                  el(
+                    "li",
+                    { class: "vessel-row" },
+                    el("span", { class: "vessel-name", text: b.bin_name }),
+                    el("span", { class: "vessel-detail", text: b.bin_type }),
+                    el("span", {
+                      class: "vessel-detail",
+                      // Whose it is may genuinely not be recorded, and saying so
+                      // is better than a blank that reads as nobody's.
+                      text: b.owed_to ? `owed to ${b.owed_to}` : "owner not recorded",
+                    }),
+                  ),
+                ),
+              ),
+          button("Back", () => goBack(), "quiet"),
         ),
       );
     } catch (error) {

@@ -34,7 +34,7 @@
 --              supabase/migrations/0029_viewer_scope.sql,
 --              supabase/migrations/0030_writable_columns.sql,
 --              supabase/migrations/0031_scheduling_to_core.sql,
---              supabase/migrations/0032_vessel_maker_and_room_temperature.sql, supabase/migrations/0033_intake.sql]
+--              supabase/migrations/0032_vessel_maker_and_room_temperature.sql, supabase/migrations/0033_intake.sql, supabase/migrations/0034_press.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -5456,6 +5456,126 @@ begin
   delete from vessel where id in ('00000000-0000-0000-0000-00000000c101',
                                   '00000000-0000-0000-0000-00000000c102',
                                   '00000000-0000-0000-0000-00000000c103');
+  update term set attributes = attributes - 'tare_lbs'
+   where kind = 'vessel_type' and value = 'picking_bin';
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- press: where a lot gets the identity it keeps'; end $$;
+
+-- 0034. Build order 3. Press is structurally a blend in different units: several
+-- parents contribute fruit weight, one child comes out in litres, and the share
+-- each parent holds is its share of what went in rather than of what ran.
+do $$
+declare
+  pick_id  uuid := '00000000-0000-0000-0000-00000000d201';
+  bin_a    uuid := '00000000-0000-0000-0000-00000000d101';
+  bin_b    uuid := '00000000-0000-0000-0000-00000000d102';
+  tank_id  uuid := '00000000-0000-0000-0000-00000000d103';
+  out_js   jsonb;
+  st       node_stage;
+  q        numeric;
+  n        int;
+begin
+  update term set attributes = attributes || '{"tare_lbs": 60}'::jsonb
+   where kind = 'vessel_type' and value = 'picking_bin';
+
+  insert into vessel (id, type_id, name, capacity_l, attributes) values
+    (bin_a, term_id('vessel_type', 'picking_bin'), 'Assert press bin A', 400,
+     '{"borrowed": true}'::jsonb),
+    (bin_b, term_id('vessel_type', 'picking_bin'), 'Assert press bin B', 400, '{}'::jsonb),
+    (tank_id, term_id('vessel_type', 'tank'), 'Assert press tank', 1500, '{}'::jsonb);
+
+  perform add_bin_to_pick(
+    jsonb_build_object('id', pick_id, 'variety_id', term_id('variety', 'pinot_gris'),
+                       'vintage', 2026, 'name', 'Assert pick'),
+    bin_a, 100);
+  perform add_bin_to_pick(jsonb_build_object('id', pick_id), bin_b, 100);
+
+  -- The guard this migration exists for. Fruit weight is recoverable right up to
+  -- the moment it goes through the press and never afterwards, so pressing a
+  -- pick nobody weighed destroys the only chance there was.
+  begin
+    perform press(
+      jsonb_build_array(jsonb_build_object('node_id', pick_id)),
+      jsonb_build_array(jsonb_build_object('vessel_id', tank_id, 'volume_l', 500)));
+    raise exception 'FAIL: unweighed fruit went through the press and its weight is gone for good';
+  exception when others then
+    if position('never been weighed' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('pressing fruit nobody weighed is refused, because the press is the last moment anybody could');
+  end;
+
+  perform weigh_bins(pick_id, array[bin_a, bin_b]::uuid[], 2120);
+
+  out_js := press(
+    jsonb_build_array(jsonb_build_object('node_id', pick_id)),
+    jsonb_build_array(jsonb_build_object('vessel_id', tank_id, 'volume_l', 1200)),
+    jsonb_build_object('name', 'Assert pressed'));
+
+  if (out_js ->> 'lbs_in')::numeric <> 2000 then
+    raise exception 'FAIL: the press took % lbs from a pick holding 2000', out_js ->> 'lbs_in';
+  end if;
+  if (out_js ->> 'bins_emptied')::int <> 2 then
+    raise exception 'FAIL: % bins were emptied by a press that took all the fruit',
+      out_js ->> 'bins_emptied';
+  end if;
+  perform test_ok('a press takes the fruit out of the bins it came from and says how many it emptied');
+
+  -- Whites press before fermentation and reds press off skins after: the same
+  -- verb at two positions. The stage is read off the parents rather than asked
+  -- for, because that is winery practice and not a preference.
+  select stage into st from node where id = (out_js ->> 'node_id')::uuid;
+  if st <> 'ferment' then
+    raise exception 'FAIL: fruit in bins pressed to %, and a white presses before it ferments', st;
+  end if;
+  perform test_ok('fruit in bins presses to a ferment, which is the kernel answering rather than a screen asking');
+
+  -- 0013's rule, reached by this path. The pick empties and closes itself.
+  select count(*) into n from node
+   where id = pick_id and status = 'closed' and coalesce(quantity, -1) = 0;
+  if n <> 1 then
+    select quantity into q from node where id = pick_id;
+    raise exception 'FAIL: a pick holding % after being pressed in full is not closed at zero', q;
+  end if;
+  perform test_ok('a pick that has all been pressed closes itself, which is 0013 reached from here');
+
+  -- T0-2. The child carries no block, because composition downstream is derived
+  -- by walking lineage and a stored copy could disagree with block_composition.
+  select count(*) into n from node
+   where id = (out_js ->> 'node_id')::uuid and block_id is not null;
+  if n <> 0 then
+    raise exception 'FAIL: the pressed lot carries a block, which T0-2 says is derived rather than copied';
+  end if;
+  perform test_ok('a pressed lot carries no block of its own, because what it is made of is derived by walking');
+
+  -- The borrowed bin. Empty is not the same as available: a bin lent by the
+  -- grower is owed back the moment it stops holding anything, and the one that
+  -- is not borrowed is simply free.
+  select count(*) into n from bin_to_return where vessel_id = bin_a;
+  if n <> 1 then
+    raise exception 'FAIL: an empty borrowed bin is not showing as owed back';
+  end if;
+  select count(*) into n from bin_to_return where vessel_id = bin_b;
+  if n <> 0 then
+    raise exception 'FAIL: a bin nobody borrowed is showing as owed back';
+  end if;
+  perform test_ok('an empty borrowed bin is owed back and an empty owned one is just empty');
+
+  -- S-26 again, on the newest view. Every view added since 0017 has to carry it.
+  if not exists (
+    select 1 from pg_class c join pg_namespace ns on ns.oid = c.relnamespace
+     where ns.nspname = 'public' and c.relname = 'bin_to_return'
+       and 'security_invoker=true' = any(c.reloptions)) then
+    raise exception 'FAIL: bin_to_return does not run as its caller, so it lists somebody else bins';
+  end if;
+  perform test_ok('the bins to return list runs as whoever asks');
+
+  delete from event where subject_type = 'node'
+     and subject_id in (pick_id, (out_js ->> 'node_id')::uuid);
+  delete from lineage where child_id = (out_js ->> 'node_id')::uuid;
+  delete from placement where node_id in (pick_id, (out_js ->> 'node_id')::uuid);
+  delete from node where id in (pick_id, (out_js ->> 'node_id')::uuid);
+  delete from vessel where id in (bin_a, bin_b, tank_id);
   update term set attributes = attributes - 'tare_lbs'
    where kind = 'vessel_type' and value = 'picking_bin';
 end $$;

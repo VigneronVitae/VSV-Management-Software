@@ -2,6 +2,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { readConfig } from "./env.ts";
 import type {
   AppUser,
+  BinToReturn,
   Block,
   CodePayload,
   EventRow,
@@ -10,6 +11,7 @@ import type {
   NodePayload,
   Party,
   Pick,
+  PressResult,
   Term,
   TermKind,
   UnweighedBin,
@@ -769,4 +771,35 @@ export async function unweighedBins(nodeId?: Uuid): Promise<UnweighedBin[]> {
   const { data, error } = await q.order("filled_at");
   if (error) throw new KernelError(error);
   return (data ?? []) as UnweighedBin[];
+}
+
+// --- press -----------------------------------------------------------------
+
+// Build order 3: where lots acquire their identity. See migration 0034. The
+// stage the child lands at is the kernel's answer, not a choice here: fruit in
+// bins presses to a ferment, a ferment presses to maturation.
+export async function press(args: {
+  sources: Array<{ node_id: Uuid; weight_lbs?: number | null }>;
+  destinations: Array<{ vessel_id: Uuid; volume_l: number }>;
+  node?: { id?: Uuid; name?: string | null };
+  data?: Record<string, unknown>;
+}): Promise<PressResult> {
+  const { data, error } = await kernel().rpc("press", {
+    p_sources: args.sources,
+    p_destinations: args.destinations,
+    p_node: args.node ?? {},
+    p_data: args.data ?? {},
+  });
+  if (error) throw new KernelError(error);
+  return data as PressResult;
+}
+
+// Borrowed bins with nothing in them. Empty is not the same as available.
+export async function binsToReturn(): Promise<BinToReturn[]> {
+  const { data, error } = await kernel()
+    .from("bin_to_return")
+    .select("vessel_id,bin_name,bin_type,owner_id,owed_to,location_id")
+    .order("bin_name");
+  if (error) throw new KernelError(error);
+  return (data ?? []) as BinToReturn[];
 }

@@ -230,3 +230,27 @@ export type Weighing = {
   total_lbs: number;
   unweighed: number;
 };
+
+// --- press -----------------------------------------------------------------
+
+export type PressResult = {
+  node_id: Uuid;
+  stage: string;
+  lbs_in: number;
+  litres_out: number;
+  yield_l_per_ton: number | null;
+  bins_emptied: number;
+  // Not fatal and not silent: the press went ahead with containers on the pick
+  // that never reached a scale, and somebody should know.
+  unweighed_left: number;
+  event_id: Uuid;
+};
+
+export type BinToReturn = {
+  vessel_id: Uuid;
+  bin_name: string;
+  bin_type: string;
+  owner_id: Uuid | null;
+  owed_to: string | null;
+  location_id: Uuid | null;
+};

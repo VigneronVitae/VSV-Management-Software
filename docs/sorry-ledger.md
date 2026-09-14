@@ -610,6 +610,22 @@ sentence and changes one policy. *Load-bearing:* yes, during harvest, and the wo
 that he is reachable by phone.
 
 
+**S-52. A press records no cuts, so free run and hard press are one lot unless they are pressed separately.**
+`0034` presses a set of bins into a set of vessels and makes one child. The winemaker's answer
+for the first pick was "one lot, all juice together", which is what this builds, and he added
+that the lot is one portion of a larger Pinot Gris blend later, which lineage already handles.
+What is not built is separating the cuts *within* one pressing: pulling free run into one vessel
+and the hard press into another today means calling `press` twice against the same bins with two
+weights, which records two lots with lineage shares proportional to fruit weight rather than to
+which juice ran when. **That is arithmetically sound and factually wrong**: the shares say the
+hard press is made of a proportional slice of every bin, which it is, and say nothing about it
+being the hard press, which is the thing a winemaker would want to know in March. *Resolves when:*
+a press writes a cut onto each child, at which point the question is whether a cut is a term in a
+vocabulary or an attribute, and that is a five minute conversation rather than a guess.
+*Load-bearing:* not for the first pick, which is one lot by decision. It becomes load-bearing the
+first time somebody separates a press fraction and expects the record to say why.
+
+
 ## Discharged
 
 **S-25. An account belonging to no party is staff, so a client who signs up
