@@ -7,7 +7,8 @@
 --           and the form should not ask a tank about toast."
 -- Depends on: [supabase/migrations/0004_terms_and_effects.sql,
 --              packages/cellar/docs/spec.md]
--- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql, supabase/migrations/0010_glycol_by_type.sql, supabase/migrations/0011_vessel_type_fields.sql]
+-- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql, supabase/migrations/0010_glycol_by_type.sql, supabase/migrations/0011_vessel_type_fields.sql,
+--                  supabase/migrations/0032_vessel_maker_and_room_temperature.sql]
 -- Axioms enforced: T1-1 (pickers, not text fields)
 -- Open sorries: none new
 -- ---------------------------------------------------------------------------

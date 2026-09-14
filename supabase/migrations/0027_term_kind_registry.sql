@@ -10,7 +10,8 @@
 --              supabase/migrations/0026_subject_type_registry.sql,
 --              docs/architecture-rulings.md]
 -- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql,
---                  supabase/migrations/0031_scheduling_to_core.sql]
+--                  supabase/migrations/0031_scheduling_to_core.sql,
+--                  supabase/migrations/0032_vessel_maker_and_room_temperature.sql]
 -- Axioms enforced: none new. Like 0026 this removes a wrong-way edge rather than
 --                  adding a rule.
 -- Open sorries: none new. A16 is untouched and is neither better nor worse; see

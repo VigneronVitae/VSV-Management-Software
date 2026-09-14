@@ -33,7 +33,8 @@
 --              supabase/migrations/0028_redaction_is_row_level.sql,
 --              supabase/migrations/0029_viewer_scope.sql,
 --              supabase/migrations/0030_writable_columns.sql,
---              supabase/migrations/0031_scheduling_to_core.sql]
+--              supabase/migrations/0031_scheduling_to_core.sql,
+--              supabase/migrations/0032_vessel_maker_and_room_temperature.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -127,7 +128,7 @@ do $$ begin raise notice '--- vocabulary is extensible at runtime'; end $$;
 
 insert into term (kind, value, label, sort_order) values
   ('variety',       'gamay_noir',      'Gamay Noir',      70),
-  ('cooper',        'francois_freres', 'François Frères', 10),
+  ('vessel_maker',  'francois_freres', 'François Frères', 10),
   ('wood',          'french_oak',      'French oak',      10),
   ('vessel_type',   'amphora',         'Amphora',         50),
   ('location_kind', 'barrel_room',     'Barrel room',     10);
@@ -173,7 +174,7 @@ end $$;
 
 do $$ begin
   begin
-    insert into node (stage, name, variety_id) values ('bin', 'x', term_id('cooper','francois_freres'));
+    insert into node (stage, name, variety_id) values ('bin', 'x', term_id('vessel_maker','francois_freres'));
     raise exception 'FAIL: a cooper was accepted where a variety belongs';
   exception when foreign_key_violation then
     perform test_ok('a term of the wrong kind is refused by the database, not by the picker');
@@ -371,7 +372,7 @@ begin
       -- Term ids, not term values. The client has always written ids here and
       -- this fixture wrote values, which nothing noticed until 0011 validated
       -- the bag against the type's declared fields.
-      'attributes', jsonb_build_object('maker', term_id('cooper','francois_freres'),
+      'attributes', jsonb_build_object('maker', term_id('vessel_maker','francois_freres'),
                                        'wood',  term_id('wood','french_oak'),
                                        'fill_count',3,'toast','medium')),
     jsonb_build_object('id','00000000-0000-0000-0000-00000000b020','stage','maturation',
@@ -598,7 +599,7 @@ begin
 end $$;
 
 insert into term (kind, value, label, attributes)
-  values ('cooper', 'letina', 'Letina', '{"contract":"manufacturer"}');
+  values ('vessel_maker', 'letina', 'Letina', '{"contract":"manufacturer"}');
 
 do $$
 declare barrel_has int; tank_has int;
@@ -612,7 +613,7 @@ begin
   perform test_ok('a tank fabricator is offered for a tank and not for a barrel');
 end $$;
 
-insert into term (kind, value, label) values ('cooper', 'untagged_maker', 'Untagged maker');
+insert into term (kind, value, label) values ('vessel_maker', 'untagged_maker', 'Untagged maker');
 
 do $$
 declare barrel_has int; tank_has int;
@@ -919,12 +920,12 @@ end $$;
 -- no contract, and a maker with no contract satisfies every contract by design,
 -- so it would be accepted here and correctly.
 insert into term (kind, value, label, attributes)
-  values ('cooper', 'seguin_moreau', 'Seguin Moreau', '{"contract":"cooper"}');
+  values ('vessel_maker', 'seguin_moreau', 'Seguin Moreau', '{"contract":"cooper"}');
 
 do $$
 declare maker_id uuid;
 begin
-  select id into maker_id from term where kind = 'cooper' and value = 'seguin_moreau';
+  select id into maker_id from term where kind = 'vessel_maker' and value = 'seguin_moreau';
   begin
     insert into vessel (type_id, name, attributes)
       values (term_id('vessel_type','tank'), 'Wrong maker',
@@ -2745,7 +2746,7 @@ declare refused int := 0;
 begin
   begin
     insert into node (stage, name, variety_id)
-      values ('bin','wrong variety', term_id('cooper','francois_freres'));
+      values ('bin','wrong variety', term_id('vessel_maker','francois_freres'));
     raise exception 'FAIL: node.variety_id accepted a cooper';
   exception when foreign_key_violation then refused := refused + 1;
   end;
@@ -3775,7 +3776,7 @@ begin
 
   insert into term (kind, value, label, sort_order, attributes)
     values ('vessel_type', 'amphora_three', 'Amphora III', 61,
-            '{"fields": [{"key": "maker", "kind": "term", "term_kind": "cooper"}]}'::jsonb);
+            '{"fields": [{"key": "maker", "kind": "term", "term_kind": "vessel_maker"}]}'::jsonb);
   perform test_ok('a vessel type field naming a vocabulary that does exist is still accepted');
 end $$;
 
@@ -5092,6 +5093,134 @@ begin
 
   delete from template where id = '00000000-0000-0000-0000-00000000e0a4';
   delete from node where id = '00000000-0000-0000-0000-00000000b0e6';
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- one list of vessel makers, flagged for what they build'; end $$;
+
+-- 0032. The winemaker opened the vessel types screen and found that a tank asks
+-- for a cooper. It did: all four types drew from one shared list whose registered
+-- name was `cooper`, and that screen shows the vocabulary name. The filtering was
+-- right and the bucket had a barrel-maker's word on it.
+--
+-- The rename is one row because `0027` made a vocabulary a row. That is AR-E7
+-- paying for itself: before it, this was an enum and a rename was a migration
+-- against nine generated columns.
+do $$
+declare n int;
+begin
+  select count(*) into n from term_kind where kind = 'cooper';
+  if n <> 0 then
+    raise exception 'FAIL: the cooper vocabulary is still registered, so a tank still asks for one';
+  end if;
+  select count(*) into n from term_kind where kind = 'vessel_maker';
+  if n <> 1 then
+    raise exception 'FAIL: there is no vessel_maker vocabulary for the four types to draw from';
+  end if;
+  perform test_ok('there is one vessel maker vocabulary and it is not named after barrels');
+
+  -- The labels are untouched on purpose. A barrel still says Cooper to the person
+  -- in front of it, because that is what they call the thing; only the shared
+  -- list underneath stopped pretending to be barrel-specific.
+  select count(*) into n
+    from term vt, lateral jsonb_array_elements(vt.attributes -> 'fields') f
+   where vt.kind = 'vessel_type' and f ->> 'key' = 'maker'
+     and f ->> 'term_kind' <> 'vessel_maker';
+  if n <> 0 then
+    raise exception 'FAIL: % vessel type(s) still draw their maker from another vocabulary', n;
+  end if;
+  select count(*) into n
+    from term vt, lateral jsonb_array_elements(vt.attributes -> 'fields') f
+   where vt.kind = 'vessel_type' and f ->> 'key' = 'maker'
+     and f ->> 'label' = 'Cooper' and vt.value = 'barrel';
+  if n <> 1 then
+    raise exception 'FAIL: a barrel stopped calling its maker a cooper, which is what the person holding it calls them';
+  end if;
+  perform test_ok('a barrel still says Cooper and a tank still says Manufacturer, over one shared list');
+end $$;
+
+-- What a maker builds is a set, so somebody who makes both is entered once. This
+-- is the whole of what was asked for and the reason the single `contract` string
+-- was not good enough.
+do $$
+declare barrel_opts text; tank_opts text;
+begin
+  insert into term (kind, value, label, attributes) values
+    ('vessel_maker', 'assert_cooper_only', 'Assert Cooperage',  '{"makes": ["cooper"]}'::jsonb),
+    ('vessel_maker', 'assert_tank_only',   'Assert Tankworks',  '{"makes": ["manufacturer"]}'::jsonb),
+    ('vessel_maker', 'assert_both',        'Assert Both',       '{"makes": ["cooper", "manufacturer"]}'::jsonb),
+    ('vessel_maker', 'assert_unflagged',   'Assert Unflagged',  '{}'::jsonb),
+    -- A term written before 0032, carrying the single string it replaced. Old is
+    -- not wrong, and a migration that silently stopped honouring it would be the
+    -- A13 shape: the maker would vanish from the picker and nothing would say so.
+    ('vessel_maker', 'assert_legacy',      'Assert Legacy',     '{"contract": "cooper"}'::jsonb);
+
+  select string_agg(label, ', ' order by label) into barrel_opts
+    from terms_for_vessel_field((select id from term where kind='vessel_type' and value='barrel'), 'maker')
+   where value like 'assert_%';
+  select string_agg(label, ', ' order by label) into tank_opts
+    from terms_for_vessel_field((select id from term where kind='vessel_type' and value='tank'), 'maker')
+   where value like 'assert_%';
+
+  if barrel_opts is distinct from 'Assert Both, Assert Cooperage, Assert Legacy, Assert Unflagged' then
+    raise exception 'FAIL: a barrel offers %', coalesce(barrel_opts, 'nothing');
+  end if;
+  if tank_opts is distinct from 'Assert Both, Assert Tankworks, Assert Unflagged' then
+    raise exception 'FAIL: a tank offers %', coalesce(tank_opts, 'nothing');
+  end if;
+  perform test_ok('a maker flagged for both appears in both pickers, entered once, and one flagged for neither appears in both');
+  perform test_ok('a maker written before the flags, carrying a single contract, is still offered where it belongs');
+
+  delete from term where kind = 'vessel_maker' and value like 'assert_%';
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- the room and the jacket are two temperatures'; end $$;
+
+-- The vessels screen collapsed them into one number, so a barrel sitting in a
+-- cold room and a tank holding itself at 12 read the same. `effective_temp_c`
+-- stays, because a screen with room for one number wants the answer rather than
+-- the parts, and the parts are published beside it.
+do $$
+declare amb numeric; ctrl boolean; eff numeric; sp numeric; md thermal_mode;
+begin
+  insert into vessel (id, type_id, name, capacity_l, location_id, has_glycol, setpoint_c, mode)
+  values ('00000000-0000-0000-0000-000000003201',
+          term_id('vessel_type','tank'), 'Temp tank', 1000,
+          '00000000-0000-0000-0000-00000000d001', true, 12.0, 'cooling'),
+         ('00000000-0000-0000-0000-000000003202',
+          term_id('vessel_type','barrel'), 'Temp barrel', 228,
+          '00000000-0000-0000-0000-00000000d001', false, null, 'off');
+
+  -- A jacket that is running: the room is still 13.5 and the wine is held at 12,
+  -- and a screen that can only say one of those should say 12.
+  select location_ambient_c, location_controlled, effective_temp_c, setpoint_c, mode
+    into amb, ctrl, eff, sp, md
+    from vessel_state where name = 'Temp tank';
+  if amb is distinct from 13.5 then
+    raise exception 'FAIL: the room reads % rather than 13.5', coalesce(amb::text,'nothing');
+  end if;
+  if ctrl is distinct from true then
+    raise exception 'FAIL: the room is temperature controlled and the view says %', coalesce(ctrl::text,'nothing');
+  end if;
+  if eff is distinct from 12.0 or sp is distinct from 12.0 or md is distinct from 'cooling' then
+    raise exception 'FAIL: a cooling jacket at 12 reads effective %, setpoint %, mode %', eff, sp, md;
+  end if;
+  perform test_ok('a vessel with a running jacket publishes the room and the jacket separately, and the jacket is the effective one');
+
+  -- And one with no jacket: the room is the answer, and the parts still say why.
+  select location_ambient_c, effective_temp_c, setpoint_c
+    into amb, eff, sp from vessel_state where name = 'Temp barrel';
+  if amb is distinct from 13.5 or eff is distinct from 13.5 then
+    raise exception 'FAIL: an unjacketed barrel in a 13.5 room reads room % effective %', amb, eff;
+  end if;
+  if sp is not null then
+    raise exception 'FAIL: an unjacketed barrel reports a setpoint of %', sp;
+  end if;
+  perform test_ok('a vessel with no jacket takes the room temperature, and says it has no setpoint of its own');
+
+  delete from vessel where id in ('00000000-0000-0000-0000-000000003201',
+                                  '00000000-0000-0000-0000-000000003202');
 end $$;
 
 -- ---------------------------------------------------------------------------
