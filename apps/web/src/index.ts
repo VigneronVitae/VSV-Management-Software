@@ -3,7 +3,7 @@
 //
 // There is no shell yet, and no module mounting. This session builds one skin
 // over the kernel and a later session builds the thing that hosts several.
-import { mountWalk, restoreSkin } from "cellar";
+import { mountWalk, restoreSkin, watchForInstall } from "cellar";
 import { MissingConfig, readConfig } from "core";
 
 const target = document.querySelector<HTMLElement>("#app");
@@ -14,6 +14,10 @@ if (!target) {
 
 // Before the first paint, so nobody watches one skin repaint into another.
 restoreSkin();
+
+// Before anything else asks. The browser fires its install offer early and
+// exactly once, so a listener attached after the first screen has missed it.
+watchForInstall();
 
 try {
   readConfig();

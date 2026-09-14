@@ -4,17 +4,21 @@ import {
   addBlock,
   addLocation,
   addParty,
+  addPlanting,
   addVessel,
   addVesselTypeNote,
+  addVineyard,
   appUsers,
   type Block,
   bindCode,
   binsToReturn,
   blocks,
+  cancelPick,
   claimAccount,
   createVesselWithWine,
   currentAppUser,
   currentSession,
+  exportCellar,
   facilityParty,
   fillVessel,
   locations,
@@ -23,12 +27,17 @@ import {
   nodeHistory,
   openPicks,
   type Party,
+  type PlantingDetail,
   parties,
+  plantings,
   press,
   rackPlan,
   rackTransfer,
+  removePick,
+  removePlanting,
   resolveCode,
   resolveVesselTypeNote,
+  type SiteFields,
   setPartyLogin,
   setVesselTypeBin,
   setVesselTypeFields,
@@ -43,20 +52,30 @@ import {
   termsForVesselField,
   type UnweighedBin,
   unweighedBins,
+  updateBlock,
+  updatePlanting,
   updateVessel,
   uploadVesselPhoto,
   type VesselRow,
   type VesselState,
   type ViewerScope,
+  type Vineyard,
   vesselById,
   vesselByIdOrNull,
   vesselPhotoUrl,
   vessels,
   vesselTypeNotes,
   viewerScope,
+  vineyards,
   weighBins,
   writableColumns,
 } from "core";
+import {
+  installBlockedBecause,
+  isInstalled,
+  onInstallChanged,
+  promptInstall,
+} from "./install.ts";
 import { locationPicker, partyPicker, termPicker } from "./pickers.ts";
 import {
   clearAllDrafts,
@@ -246,6 +265,15 @@ async function screenFor(place: Place): Promise<HTMLElement> {
       return pressScreen();
     case "bins-to-return":
       return binsToReturnScreen();
+    case "export":
+      return exportScreen();
+    case "vineyards":
+      return vineyardsScreen();
+    case "block": {
+      const there = (await blocks()).some((b) => b.id === place.id);
+      if (!there) throw new GoneError("That block is not there to open.");
+      return blockScreen(place.id);
+    }
     case "vessel-type": {
       const type = (await terms("vessel_type")).find((t) => t.id === place.id);
       if (!type) throw new GoneError("That vessel type no longer exists.");
@@ -690,9 +718,21 @@ async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> 
         go: () => go({ at: "vessel-types" }),
       },
       {
+        name: "Vineyards",
+        note: "Where fruit comes from. Blocks, and what is planted in them.",
+        go: () => go({ at: "vineyards" }),
+      },
+      {
         name: "Clients",
         note: "Custom crush clients, and which login sees their wine.",
         go: () => go({ at: "clients" }),
+      },
+      {
+        name: "Take a copy",
+        note:
+          "Everything you can read, as one file on your phone. The cellar lives " +
+          "on one machine, so a copy elsewhere is what makes it survivable.",
+        go: () => go({ at: "export" }),
       },
     ]),
     el("h2", { class: "section-head", text: "Not built yet" }),
@@ -712,6 +752,7 @@ async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> 
           "over it is build order 6, and it needs the codes on the barrels.",
       },
     ]),
+    installBlock(),
     skinPicker(),
     button(
       "Sign out",
@@ -726,6 +767,74 @@ async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> 
       "quiet",
     ),
   );
+}
+
+// Putting the app on the phone properly, without the three tap hunt through
+// Chrome's menu that was the honest answer before this existed.
+//
+// The button is present whenever the app is not already installed, even when
+// the browser has not offered. A control that appears only sometimes is
+// indistinguishable from one that is broken, and the case where the offer never
+// comes is exactly the case somebody needs telling about.
+function installBlock(): HTMLElement {
+  const holder = el("div", {});
+  if (isInstalled()) return holder;
+
+  const said = el("div", {});
+
+  function draw(): void {
+    if (isInstalled()) {
+      holder.replaceChildren();
+      return;
+    }
+    holder.replaceChildren(
+      el("h2", { class: "section-head", text: "This phone" }),
+      button(
+        "Install the app",
+        async () => {
+          const outcome = await promptInstall();
+          if (outcome === "accepted") {
+            said.replaceChildren(
+              banner(
+                "Installed. Open it from the new icon rather than from Chrome: " +
+                  "an installed app gets its own slot in the task switcher and is " +
+                  "far less likely to be thrown away while you are taking a photo.",
+                "good",
+              ),
+            );
+            return;
+          }
+          if (outcome === "dismissed") {
+            said.replaceChildren(
+              banner("Left it as it was. The button stays here.", "note"),
+            );
+            return;
+          }
+          // No offer from the browser. Which is a different sentence depending
+          // on whose fault it is, and the app knows: a worker that failed to
+          // register is this app's problem and saying "your browser did not
+          // offer" would be blaming the phone for it.
+          const blocked = installBlockedBecause();
+          said.replaceChildren(
+            banner(
+              blocked
+                ? `The app cannot be installed yet because its service worker did not load: ${blocked}`
+                : "This browser has not offered to install it. In Chrome the same " +
+                    "thing lives under the three dot menu, as Install app or Add to " +
+                    "Home screen. On an iPhone it is Share, then Add to Home Screen.",
+              "note",
+            ),
+          );
+        },
+        "secondary",
+      ),
+      said,
+    );
+  }
+
+  draw();
+  onInstallChanged(draw);
+  return holder;
 }
 
 function vesselListScreen(kit: VesselState[]): HTMLElement {
@@ -2872,10 +2981,14 @@ let pendingPick: {
   variety_id: string | null;
   vintage: number | null;
 } | null = null;
-
 // The block a pick came from, with a way to add one without leaving the screen.
 // S-51: block carries an admin-write policy, so a cellar hand gets a refusal
 // here rather than a row, and the refusal says what it is.
+//
+// A block now belongs to a vineyard rather than carrying its name as text, so
+// adding one means naming the vineyard first. Both are one field and the
+// vineyard is remembered, which is the point of 0039: "Pearlstaad" is typed
+// once for the season rather than once per block.
 function blockField(): {
   root: HTMLElement;
   value: () => string;
@@ -2883,17 +2996,30 @@ function blockField(): {
 } {
   const select = el("select", { class: "input" });
   const message = el("div", {});
-  const vineyard = field({ label: "Vineyard", placeholder: "Royer" });
-  const name = field({ label: "Block", placeholder: "Block 3" });
-  const variety = field({ label: "Variety", placeholder: "Pinot Gris" });
+  const vineyardPick = el("select", { class: "input" });
+  const newVineyard = field({
+    label: "Or a vineyard not listed",
+    placeholder: "Pearlstaad",
+  });
+  const name = field({ label: "Block", placeholder: "Southeast" });
+  let known: Vineyard[] = [];
 
   async function load(selected?: string): Promise<void> {
-    const rowsOut = await blocks();
+    const [blockRows, vineRows] = await Promise.all([blocks(), vineyards()]);
+    known = vineRows;
+    const named = new Map(vineRows.map((v) => [v.id, v.name]));
     select.replaceChildren(
       el("option", { value: "", text: "Pick a block" }),
-      ...rowsOut.map((b) =>
-        el("option", { value: b.id, text: `${b.vineyard} ${b.name}` }),
+      ...blockRows.map((b) =>
+        el("option", {
+          value: b.id,
+          text: b.vineyard_id ? `${named.get(b.vineyard_id) ?? "?"} ${b.name}` : b.name,
+        }),
       ),
+    );
+    vineyardPick.replaceChildren(
+      el("option", { value: "", text: "Pick a vineyard" }),
+      ...vineRows.map((v) => el("option", { value: v.id, text: v.name })),
     );
     if (selected) select.value = selected;
   }
@@ -2903,31 +3029,59 @@ function blockField(): {
     { class: "more" },
     el("summary", { text: "Add a block" }),
     rows(
-      vineyard.root,
+      el(
+        "div",
+        { class: "field" },
+        el("span", { class: "field-label", text: "Vineyard" }),
+        vineyardPick,
+      ),
+      newVineyard.root,
       name.root,
-      variety.root,
       button(
         "Add it",
         async () => {
-          if (!vineyard.value() || !name.value() || !variety.value()) {
+          const typed = newVineyard.value().trim();
+          if (!vineyardPick.value && !typed) {
             message.replaceChildren(
-              banner("A block needs a vineyard, a name and a variety.", "error"),
+              banner("Which vineyard is this block in?", "error"),
             );
             return;
           }
-          const id = newId();
+          if (!name.value()) {
+            message.replaceChildren(banner("The block needs a name.", "error"));
+            return;
+          }
           try {
+            let vineyardId = vineyardPick.value;
+            if (!vineyardId) {
+              // Matched case-insensitively against what is already there, so a
+              // second spelling does not become a second vineyard. That is the
+              // whole reason a vineyard stopped being a string.
+              const already = known.find(
+                (v) => v.name.toLowerCase() === typed.toLowerCase(),
+              );
+              if (already) {
+                vineyardId = already.id;
+              } else {
+                vineyardId = newId();
+                await addVineyard({ id: vineyardId, name: typed });
+              }
+            }
+            const blockId = newId();
             await addBlock({
-              id,
-              vineyard: vineyard.value(),
+              id: blockId,
+              vineyard_id: vineyardId,
               name: name.value(),
-              variety: variety.value(),
             });
-            await load(id);
-            vineyard.input.value = "";
+            await load(blockId);
+            newVineyard.input.value = "";
             name.input.value = "";
-            variety.input.value = "";
-            message.replaceChildren(banner("Added.", "good"));
+            message.replaceChildren(
+              banner(
+                "Added. What is planted in it goes on the vineyard screen.",
+                "good",
+              ),
+            );
           } catch (error) {
             message.replaceChildren(fail(error));
           }
@@ -3106,10 +3260,11 @@ function pickBinsScreen(openOn?: string): HTMLElement {
 
   void (async () => {
     try {
-      const [kit, types, blockRows] = await Promise.all([
+      const [kit, types, blockRows, vineRows] = await Promise.all([
         vessels(),
         terms("vessel_type"),
         blocks(),
+        vineyards(),
       ]);
       const binTypes = types.filter((t) => t.attributes?.intake_bin === true);
 
@@ -3177,6 +3332,8 @@ function pickBinsScreen(openOn?: string): HTMLElement {
           "",
           encode({ at: "pick-bins", id: result.node_id }),
         );
+        // There is something to cancel now, which there was not a moment ago.
+        drawCancel();
       }
 
       // --- bins that already exist -----------------------------------------
@@ -3274,7 +3431,7 @@ function pickBinsScreen(openOn?: string): HTMLElement {
         label: "On loan from",
         // The pick already knows which vineyard it came from, and fruit usually
         // arrives in the bins of whoever grew it.
-        value: vineyardOfPick(blockRows),
+        value: vineyardOfPick(blockRows, vineRows),
         placeholder: "Pearlstaad",
         hint: "They go back. Empty ones show up under Bins to return.",
       });
@@ -3313,6 +3470,75 @@ function pickBinsScreen(openOn?: string): HTMLElement {
         }
       });
 
+      // Cancelling is destructive enough to be worth a second tap and cheap
+      // enough that hiding it behind a menu would be worse. Two taps, in place.
+      const cancelBlock = el("div", {});
+
+      function drawCancel(): void {
+        if (!nodeId) {
+          cancelBlock.replaceChildren();
+          return;
+        }
+        cancelBlock.replaceChildren(
+          button(
+            "Cancel this pick",
+            () => {
+              cancelBlock.replaceChildren(
+                banner(
+                  "Cancelling frees the bins and takes this off the list. Anything " +
+                    "already weighed stays in the record.",
+                  "note",
+                ),
+                button("Yes, cancel it", () => void doCancel(), "secondary"),
+                button("Keep it", () => drawCancel(), "quiet"),
+              );
+            },
+            "quiet",
+          ),
+        );
+      }
+
+      async function doCancel(): Promise<void> {
+        if (!nodeId) return;
+        const id = nodeId;
+        try {
+          const out = await cancelPick(id);
+          cancelBlock.replaceChildren(
+            banner(
+              `Cancelled. ${out.bins_freed} bin${out.bins_freed === 1 ? "" : "s"} freed` +
+                (out.weighings_kept > 0
+                  ? `, and ${out.weighings_kept} weighing${out.weighings_kept === 1 ? "" : "s"} kept in the record.`
+                  : "."),
+              "good",
+            ),
+            // Only offered when there was nothing to keep. A pick somebody
+            // weighed into is a record of something that happened, however
+            // wrong the block was.
+            ...(out.weighings_kept === 0 && scope?.may_admin
+              ? [
+                  button(
+                    "Remove it completely",
+                    async () => {
+                      try {
+                        await removePick(id);
+                        go({ at: "intake" });
+                      } catch (error) {
+                        message.replaceChildren(fail(error));
+                      }
+                    },
+                    "quiet",
+                  ),
+                ]
+              : []),
+            button("Back to picking", () => go({ at: "intake" }), "secondary"),
+          );
+        } catch (error) {
+          message.replaceChildren(fail(error));
+          drawCancel();
+        }
+      }
+
+      drawCancel();
       if (nodeId) await refreshTally(nodeId);
 
       body.replaceChildren(
@@ -3337,6 +3563,7 @@ function pickBinsScreen(openOn?: string): HTMLElement {
           addExisting,
           button("Weigh bins", () => go({ at: "scale" }), "secondary"),
           button("Done", () => go({ at: "intake" }), "quiet"),
+          cancelBlock,
           message,
         ),
       );
@@ -3354,10 +3581,12 @@ function pickBinsScreen(openOn?: string): HTMLElement {
 // Which vineyard the pick in hand came from, so "on loan from" starts with the
 // name somebody would otherwise type. Only useful while a pick is being
 // described, which is the one moment this screen is open.
-function vineyardOfPick(blockRows: Block[]): string {
+function vineyardOfPick(blockRows: Block[], vineRows: Vineyard[]): string {
   const id = pendingPick?.block_id;
   if (!id) return "";
-  return blockRows.find((b) => b.id === id)?.vineyard ?? "";
+  const vineyardId = blockRows.find((b) => b.id === id)?.vineyard_id;
+  if (!vineyardId) return "";
+  return vineRows.find((v) => v.id === vineyardId)?.name ?? "";
 }
 
 // What this winery calls its bins, read off what it has rather than assumed.
@@ -3730,6 +3959,500 @@ function binsToReturnScreen(): HTMLElement {
                   ),
                 ),
               ),
+          button("Back", () => goBack(), "quiet"),
+        ),
+      );
+    } catch (error) {
+      body.replaceChildren(
+        fail(error),
+        button("Back", () => goBack(), "quiet"),
+      );
+    }
+  })();
+
+  return view;
+}
+
+// --- taking a copy away with you -------------------------------------------
+
+// The database lives in a container on one desktop. That is the whole of the
+// risk, and it is not a risk a screen can fix: what a screen can do is put a
+// copy of the record in somebody's pocket, which is the difference between a
+// harvest that can be reconstructed and one that cannot.
+//
+// This is an export and deliberately not called a backup. A backup is pg_dump,
+// runs where the database is, and can be restored. This runs as whoever is
+// signed in, carries only what they may read, and there is no importer for it
+// yet: S-54, said on the screen rather than only in the ledger, because the
+// person holding the file is the person who needs to know.
+function exportScreen(): HTMLElement {
+  const body = el("div", {}, empty("Gathering everything you can read."));
+  const message = el("div", {});
+  const view = screen(
+    "Take a copy",
+    lede(
+      "Everything you can read, as one file. The cellar itself lives on one " +
+        "machine, so a copy somewhere else is what makes it survivable.",
+    ),
+    body,
+  );
+
+  void (async () => {
+    try {
+      const dump = await exportCellar();
+      const stamp = new Date(dump.exported_at);
+      const day = `${stamp.getFullYear()}-${String(stamp.getMonth() + 1).padStart(2, "0")}-${String(stamp.getDate()).padStart(2, "0")}`;
+      const filename = `vitae-springs-${day}.json`;
+      const text = JSON.stringify(dump, null, 2);
+      const size = new Blob([text]).size;
+
+      // Biggest tables first: the interesting thing about an export is whether
+      // the rows you were worried about are in it, and those are the numerous
+      // ones. Empty tables are still listed, because "nothing to read here" and
+      // "not included" have to look different.
+      const counts = Object.entries(dump.tables)
+        .map(([name, list]) => [name, Array.isArray(list) ? list.length : 0] as const)
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+
+      function save(): void {
+        const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
+        const a = el("a", { href: url, download: filename });
+        document.body.append(a);
+        a.click();
+        a.remove();
+        // Freed on the next turn of the loop rather than immediately, because
+        // revoking while the download is still being handed off cancels it on
+        // some builds of Android Chrome.
+        window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      }
+
+      async function share(): Promise<void> {
+        const file = new File([text], filename, { type: "application/json" });
+        const nav = navigator as Navigator & {
+          canShare?: (data: { files: File[] }) => boolean;
+          share?: (data: { files: File[]; title?: string }) => Promise<void>;
+        };
+        try {
+          await nav.share?.({ files: [file], title: filename });
+        } catch (error) {
+          // Cancelling the share sheet rejects, and a cancel is not a failure.
+          if ((error as Error)?.name === "AbortError") return;
+          message.replaceChildren(
+            banner(
+              "This phone would not pass the file to another app. Save it instead.",
+              "note",
+            ),
+          );
+        }
+      }
+
+      const canShare =
+        typeof navigator !== "undefined" &&
+        typeof (navigator as { canShare?: unknown }).canShare === "function" &&
+        (navigator as { canShare: (d: { files: File[] }) => boolean }).canShare({
+          files: [new File([""], filename, { type: "application/json" })],
+        });
+
+      body.replaceChildren(
+        rows(
+          summaryRow("Taken", stamp.toLocaleString()),
+          summaryRow("Rows", dump.rows.toLocaleString()),
+          summaryRow("Size", `${Math.max(1, Math.round(size / 1024))} KB`),
+          summaryRow("Shape", `${dump.table_count} tables`),
+          button("Save to this phone", () => save()),
+          ...(canShare
+            ? [button("Send it somewhere", () => void share(), "secondary")]
+            : []),
+          banner(
+            "This is a copy of the record, not a restore point. There is no way " +
+              "to load it back in yet, so keep it beside the real backup rather " +
+              "than instead of it. Sorry S-54.",
+            "note",
+          ),
+          el("h2", { class: "section-head", text: "What is in it" }),
+          el(
+            "ul",
+            { class: "vessel-list" },
+            ...counts.map(([name, n]) =>
+              el(
+                "li",
+                { class: "vessel-row" },
+                el("span", { class: "vessel-name", text: name.replace(/_/g, " ") }),
+                el("span", {
+                  class: "vessel-detail",
+                  text: n === 0 ? "nothing you can read" : `${n.toLocaleString()} rows`,
+                }),
+              ),
+            ),
+          ),
+          message,
+          button("Back", () => goBack(), "quiet"),
+        ),
+      );
+    } catch (error) {
+      body.replaceChildren(
+        fail(error),
+        button("Back", () => goBack(), "quiet"),
+      );
+    }
+  })();
+
+  return view;
+}
+
+// --- the vineyard ----------------------------------------------------------
+
+// Three levels, because the winemaker described three: a vineyard is a place, a
+// block is part of it, and a planting is a variety in a block. The detail hangs
+// off the planting, because "a block can carry several, and those varieties
+// could also have different rootstocks and planting age".
+//
+// Everything here is input. Nothing computes anything about farming, and the
+// shape is arranged so that a real vineyard module can later fill the same rows
+// in without the screens changing.
+
+// One description of the site fields, used to build both the block form and the
+// planting form. Written once because they are the same nine questions asked at
+// two levels, and two lists would drift.
+const SITE_FIELDS: Array<{
+  key: keyof SiteFields;
+  label: string;
+  numeric?: boolean;
+  hint?: string;
+}> = [
+  { key: "acres", label: "Acres", numeric: true },
+  { key: "planted_year", label: "Year planted", numeric: true },
+  { key: "clone", label: "Clone" },
+  { key: "rootstock", label: "Rootstock" },
+  { key: "spacing", label: "Spacing", hint: "However you say it. 6 by 3, say." },
+  { key: "trellis", label: "Trellis" },
+  { key: "aspect", label: "Aspect" },
+  { key: "elevation", label: "Elevation" },
+  { key: "soil", label: "Soil" },
+];
+
+type SiteForm = {
+  nodes: HTMLElement[];
+  read: () => Record<string, unknown>;
+};
+
+// `inheritedFrom` supplies the value the block would give if this level says
+// nothing, shown as the placeholder. That is the whole of the inheritance made
+// visible: an empty box that shows 2008 in grey means "leave this and you get
+// the block's 2008", which is different from an empty box meaning nothing.
+function siteForm(
+  current: Partial<SiteFields>,
+  inheritedFrom?: Partial<SiteFields>,
+): SiteForm {
+  const built = SITE_FIELDS.map((spec) => {
+    const own = current[spec.key];
+    const fallback = inheritedFrom?.[spec.key];
+    const control = field({
+      label: spec.label,
+      ...(spec.numeric ? { type: "number" as const } : {}),
+      value: own == null ? "" : String(own),
+      ...(fallback != null ? { placeholder: `${fallback} (from the block)` } : {}),
+      ...(spec.hint ? { hint: spec.hint } : {}),
+    });
+    return { spec, control };
+  });
+
+  return {
+    nodes: built.map((b) => b.control.root),
+    read: () =>
+      Object.fromEntries(
+        built.map((b) => {
+          const raw = b.control.value().trim();
+          // Empty means "do not say", which at planting level means "ask the
+          // block". Null rather than an empty string, so the coalesce in
+          // planting_detail actually falls through.
+          if (raw === "") return [b.spec.key, null];
+          return [b.spec.key, b.spec.numeric ? Number(raw) : raw];
+        }),
+      ),
+  };
+}
+
+function vineyardsScreen(): HTMLElement {
+  const body = el("div", {}, empty("Loading."));
+  const message = el("div", {});
+  const view = screen(
+    "Vineyards",
+    lede(
+      "Where fruit comes from. Blocks belong to a vineyard, and what is planted " +
+        "in a block is a list of varieties.",
+    ),
+    body,
+  );
+
+  void (async () => {
+    try {
+      const [vineRows, blockRows, planted] = await Promise.all([
+        vineyards(),
+        blocks(),
+        plantings(),
+      ]);
+      const blocksOf = new Map<string, Block[]>();
+      for (const b of blockRows) {
+        const key = b.vineyard_id ?? "";
+        blocksOf.set(key, [...(blocksOf.get(key) ?? []), b]);
+      }
+      const varietiesOf = new Map<string, string[]>();
+      for (const p of planted) {
+        varietiesOf.set(p.block_id, [
+          ...(varietiesOf.get(p.block_id) ?? []),
+          p.variety,
+        ]);
+      }
+
+      const name = field({ label: "Name", placeholder: "Pearlstaad" });
+      const where = field({
+        label: "Where it is",
+        placeholder: "Spring Valley Road",
+        hint: "Free text. An address, a road, whatever you would recognise.",
+      });
+
+      function blockList(list: Block[]): HTMLElement {
+        if (list.length === 0) return empty("No blocks yet.");
+        return el(
+          "ul",
+          { class: "vessel-list" },
+          ...list.map((b) => {
+            const kinds = varietiesOf.get(b.id) ?? [];
+            const row = el(
+              "li",
+              { class: "vessel-row", role: "button", tabindex: "0" },
+              el("span", { class: "vessel-name", text: b.name }),
+              el("span", {
+                class: "vessel-detail",
+                text:
+                  kinds.length === 0 ? "nothing planted recorded" : kinds.join(", "),
+              }),
+              b.acres === null
+                ? null
+                : el("span", { class: "vessel-detail", text: `${b.acres} acres` }),
+            );
+            const open = () => go({ at: "block", id: b.id });
+            on(row, "click", open);
+            on(row, "keydown", (ev) => {
+              if (ev.key === "Enter" || ev.key === " ") {
+                ev.preventDefault();
+                open();
+              }
+            });
+            return row;
+          }),
+        );
+      }
+
+      const orphans = blocksOf.get("") ?? [];
+
+      body.replaceChildren(
+        rows(
+          ...vineRows.flatMap((v) => [
+            el("h2", { class: "section-head", text: v.name }),
+            v.location ? el("p", { class: "lede", text: v.location }) : el("span", {}),
+            blockList(blocksOf.get(v.id) ?? []),
+          ]),
+          ...(orphans.length > 0
+            ? [
+                el("h2", { class: "section-head", text: "No vineyard yet" }),
+                blockList(orphans),
+              ]
+            : []),
+          el(
+            "details",
+            { class: "more" },
+            el("summary", { text: "Add a vineyard" }),
+            rows(
+              name.root,
+              where.root,
+              button(
+                "Add it",
+                async () => {
+                  if (!name.value()) {
+                    message.replaceChildren(banner("It needs a name.", "error"));
+                    return;
+                  }
+                  try {
+                    await addVineyard({
+                      id: newId(),
+                      name: name.value(),
+                      location: where.value() || null,
+                    });
+                    go({ at: "vineyards" });
+                  } catch (error) {
+                    message.replaceChildren(fail(error));
+                  }
+                },
+                "secondary",
+              ),
+            ),
+          ),
+          message,
+          button("Back", () => goBack(), "quiet"),
+        ),
+      );
+    } catch (error) {
+      body.replaceChildren(
+        fail(error),
+        button("Back", () => goBack(), "quiet"),
+      );
+    }
+  })();
+
+  return view;
+}
+
+// A block, what is true of the whole of it, and what is planted in it. The two
+// forms are the same nine questions at two levels, which is the winemaker's own
+// answer: fill it in per variety, or let the block answer for all of them.
+function blockScreen(blockId: string): HTMLElement {
+  const body = el("div", {}, empty("Loading."));
+  const message = el("div", {});
+  const view = screen("Block", body);
+
+  void (async () => {
+    try {
+      const [blockRows, vineRows, planted, varieties] = await Promise.all([
+        blocks(),
+        vineyards(),
+        plantings(blockId),
+        terms("variety"),
+      ]);
+      const block = blockRows.find((b) => b.id === blockId);
+      if (!block) {
+        body.replaceChildren(
+          banner("That block is not there to open.", "note"),
+          button("Back", () => goBack(), "quiet"),
+        );
+        return;
+      }
+      const vine = vineRows.find((v) => v.id === block.vineyard_id);
+      view.replaceChildren(
+        el("h1", { text: vine ? `${vine.name} ${block.name}` : block.name }),
+        body,
+      );
+
+      const whole = siteForm(block);
+      const notes = field({ label: "Notes", value: block.notes ?? "" });
+      const newVariety = el("select", { class: "input" });
+      const already = new Set(planted.map((p) => p.variety_id));
+      const addable = varieties.filter((t) => !already.has(t.id));
+      newVariety.replaceChildren(
+        ...addable.map((t) => el("option", { value: t.id, text: t.label })),
+      );
+
+      function plantingRow(p: PlantingDetail): HTMLElement {
+        const own = siteForm(
+          // Only what this planting actually says, so an inherited value shows
+          // as an empty box with the block's answer behind it rather than as a
+          // value somebody typed.
+          Object.fromEntries(
+            SITE_FIELDS.map((f) => [
+              f.key,
+              p.inherited.includes(f.key) ? null : p[f.key],
+            ]),
+          ) as Partial<SiteFields>,
+          block,
+        );
+        const plantingNotes = field({ label: "Notes", value: p.notes ?? "" });
+        const said = el("div", {});
+        return el(
+          "details",
+          { class: "more" },
+          el("summary", {
+            text:
+              p.inherited.length === 0
+                ? p.variety
+                : `${p.variety} (${p.inherited.length} from the block)`,
+          }),
+          rows(
+            ...own.nodes,
+            plantingNotes.root,
+            button(
+              "Save this variety",
+              async () => {
+                try {
+                  await updatePlanting(p.planting_id, {
+                    ...own.read(),
+                    notes: plantingNotes.value() || null,
+                  });
+                  said.replaceChildren(banner("Saved.", "good"));
+                } catch (error) {
+                  said.replaceChildren(fail(error));
+                }
+              },
+              "secondary",
+            ),
+            button(
+              "Remove this variety",
+              async () => {
+                try {
+                  await removePlanting(p.planting_id);
+                  go({ at: "block", id: blockId });
+                } catch (error) {
+                  said.replaceChildren(fail(error));
+                }
+              },
+              "quiet",
+            ),
+            said,
+          ),
+        );
+      }
+
+      body.replaceChildren(
+        rows(
+          el("h2", { class: "section-head", text: "Planted" }),
+          planted.length === 0
+            ? empty("Nothing recorded as planted here yet.")
+            : el("div", {}, ...planted.map(plantingRow)),
+          ...(addable.length > 0
+            ? [
+                el(
+                  "div",
+                  { class: "field" },
+                  el("span", { class: "field-label", text: "Add a variety" }),
+                  newVariety,
+                ),
+                button(
+                  "Add it",
+                  async () => {
+                    try {
+                      await addPlanting({
+                        id: newId(),
+                        block_id: blockId,
+                        variety_id: newVariety.value,
+                      });
+                      go({ at: "block", id: blockId });
+                    } catch (error) {
+                      message.replaceChildren(fail(error));
+                    }
+                  },
+                  "secondary",
+                ),
+              ]
+            : []),
+          el("h2", { class: "section-head", text: "True of the whole block" }),
+          el("p", {
+            class: "lede",
+            text: "Anything a variety above leaves blank takes the answer from here.",
+          }),
+          ...whole.nodes,
+          notes.root,
+          button("Save the block", async () => {
+            try {
+              await updateBlock(blockId, {
+                ...whole.read(),
+                notes: notes.value() || null,
+              });
+              message.replaceChildren(banner("Saved.", "good"));
+            } catch (error) {
+              message.replaceChildren(fail(error));
+            }
+          }),
+          message,
           button("Back", () => goBack(), "quiet"),
         ),
       );

@@ -185,12 +185,51 @@ export type EventRow = {
 
 // A vineyard block. Where fruit comes from, and the one thing a pick carries
 // that nothing else in the tree does.
-export type Block = {
+// Where fruit comes from. A vineyard is named once and pointed at rather than
+// typed onto every block, which is half of S-53.
+export type Vineyard = {
   id: Uuid;
-  vineyard: string;
   name: string;
+  location: string | null;
+  notes: string | null;
+  created_at: string;
+};
+
+// What a block and a planting can each carry. The same set on both, because a
+// planting that says nothing takes the block's answer. See planting_detail.
+export type SiteFields = {
+  acres: number | null;
+  planted_year: number | null;
+  clone: string | null;
+  rootstock: string | null;
+  spacing: string | null;
+  trellis: string | null;
+  aspect: string | null;
+  elevation: string | null;
+  soil: string | null;
+};
+
+export type Block = SiteFields & {
+  id: Uuid;
+  vineyard_id: Uuid | null;
+  name: string;
+  notes: string | null;
+};
+
+// A variety in a block, with the block's answers filled in where it has none of
+// its own. `inherited` names which ones were borrowed, because "this planting
+// says 2014" and "the block says 2014 and nobody asked this planting" are two
+// different facts and a screen that showed them the same would be lying.
+export type PlantingDetail = SiteFields & {
+  planting_id: Uuid;
+  block_id: Uuid;
+  block_name: string;
+  vineyard_id: Uuid | null;
+  vineyard_name: string | null;
+  variety_id: Uuid;
   variety: string;
   notes: string | null;
+  inherited: string[];
 };
 
 // A pick: fruit at `stage = bin`, however many bins it is spread across.

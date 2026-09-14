@@ -46,7 +46,10 @@ export type Place =
   | { at: "pick-bins"; id?: string }
   | { at: "scale" }
   | { at: "press" }
-  | { at: "bins-to-return" };
+  | { at: "bins-to-return" }
+  | { at: "export" }
+  | { at: "vineyards" }
+  | { at: "block"; id: string };
 
 export const HOME: Place = { at: "home" };
 
@@ -71,6 +74,8 @@ const WITHOUT_ID = new Set([
   "scale",
   "press",
   "bins-to-return",
+  "export",
+  "vineyards",
 ]);
 
 const WITH_ID = new Set([
@@ -79,6 +84,7 @@ const WITH_ID = new Set([
   "vessel-edit",
   "vessel-fill",
   "pick-bins",
+  "block",
 ]);
 
 export function encode(place: Place): string {

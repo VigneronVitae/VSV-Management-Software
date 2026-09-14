@@ -34,7 +34,7 @@
 --              supabase/migrations/0029_viewer_scope.sql,
 --              supabase/migrations/0030_writable_columns.sql,
 --              supabase/migrations/0031_scheduling_to_core.sql,
---              supabase/migrations/0032_vessel_maker_and_room_temperature.sql, supabase/migrations/0033_intake.sql, supabase/migrations/0034_press.sql, supabase/migrations/0035_bins_in_bulk.sql, supabase/migrations/0036_bins_on_loan.sql]
+--              supabase/migrations/0032_vessel_maker_and_room_temperature.sql, supabase/migrations/0033_intake.sql, supabase/migrations/0034_press.sql, supabase/migrations/0035_bins_in_bulk.sql, supabase/migrations/0036_bins_on_loan.sql, supabase/migrations/0037_export.sql, supabase/migrations/0038_cancel_a_pick.sql, supabase/migrations/0039_vineyard.sql, supabase/migrations/0040_block_variety_is_history.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -2425,7 +2425,8 @@ begin
   -- move would cost when it loses one.
   -- 57 before 0027, which added a read and an admin-write policy to the new
   -- term_kind registry.
-  want := '59';
+  -- 59 before 0039, which added read and admin write on vineyard and planting.
+  want := '63';
   if have <> want then
     raise exception
       'FAIL: there are % policies in public and this suite was written against %. If that is deliberate, update this number, and judge the new policy in the disposition list below if it reads or writes blanket true', have, want;
@@ -2492,7 +2493,11 @@ begin
     ('vessel_type_note.vessel_type_note_read', 'finding',
      'A23. A5 blanket read arriving on new surface seven migrations later.'),
     ('block.block_read', 'finding',
-     'A5. Vineyard blocks, which belong to a grower. Latent while no block rows exist.'),
+     'A5. Vineyard blocks, which belong to a grower. No longer latent: the first pick put real blocks in.'),
+    ('vineyard.vineyard_read', 'finding',
+     'A5, and the same finding as block_read one table up. 0039 made a vineyard a row, so who this winery buys fruit from is now readable by every signed-in account including a custom crush client. Consistent with block_read rather than newly worse, because a block already carried its vineyard name, but it is the same gap and it is named here rather than inherited quietly.'),
+    ('planting.planting_read', 'finding',
+     'A5. What is planted where, readable by anyone signed in. Clone and rootstock are the sort of thing a grower might not expect a neighbouring client to read off the system.'),
     ('node.node_insert', 'finding',
      'A7 and A11, the admission surface. Any authenticated user may insert a lot.'),
     ('placement.placement_insert', 'finding',
@@ -2664,7 +2669,11 @@ begin
   -- c=22 before 0033, which added placement_fill_pct_is_a_percentage: the visual
   -- fill estimate is nullable, because a bin nobody estimated is still a bin,
   -- and bounded, because a percentage outside nought to a hundred is not one.
-  want := 'c=23 f=44 p=23 u=14';
+  -- c=23 f=44 p=23 u=14 before 0039, which added vineyard and planting: two
+  -- primary keys, two uniques (vineyard.name, one planting per variety per
+  -- block), and three foreign keys, being block to vineyard, planting to block,
+  -- and the composite that pins a planting's term to the variety vocabulary.
+  want := 'c=23 f=47 p=25 u=16';
   if have <> want then
     raise exception
       E'FAIL: the constraint inventory changed.\nnow:  %\nwas:  %\nIf that is deliberate, update this line in the same commit that changed the schema.', have, want;
@@ -2697,6 +2706,9 @@ begin
        || 'location.location_kind_is_a_location_kind, '
        || 'node.node_product_type_is_a_product_type, '
        || 'node.node_variety_is_a_variety, '
+       -- 0039. A block is planted to a variety, pinned the same way every other
+       -- pointer into term has been since 0027.
+       || 'planting.planting_variety_is_a_variety, '
        || 'procedure_step.step_material_is_a_material, '
        || 'task.task_operation_is_an_operation, '
        || 'template.template_applies_to_a_registered_kind, '
@@ -2730,6 +2742,8 @@ begin
        || 'location.kind_kind=''location_kind''::text '
        || 'node.product_kind=''product_type''::text '
        || 'node.variety_kind=''variety''::text '
+       -- 0039, pinning a planting's term to the variety vocabulary.
+       || 'planting.variety_kind=''variety''::text '
        || 'procedure_step.material_kind=''material_kind''::text '
        || 'task.operation_kind=''operation''::text '
        || 'template_step.operation_kind=''operation''::text '
@@ -2814,7 +2828,11 @@ begin
   -- is refused rather than silently taking the tasks with it.
   -- r=7 before 0027, which added term.term_kind_is_registered: deregistering a
   -- kind of vocabulary while terms still use it is refused, not cascaded.
-  want := 'a=27 c=8 n=1 r=8';
+  -- a=27 c=8 before 0039. The new cascade is planting to block: a planting has
+  -- no meaning without the block it is in, so deleting the block takes what was
+  -- planted in it. The two new no-actions are block to vineyard and the
+  -- composite pinning a planting to the variety vocabulary.
+  want := 'a=29 c=9 n=1 r=8';
   if have <> want then
     raise exception
       E'FAIL: foreign key delete behaviour changed.\nnow:  %\nwas:  %\na is no action, c is cascade, n is set null, r is restrict.', have, want;
@@ -3045,8 +3063,16 @@ begin
   -- A real block, so the foreign key is satisfied and only block_only_on_bins
   -- can fire. The first version of this used an id that did not exist, so it
   -- passed on a foreign key violation and proved nothing about the check.
-  insert into block (id, vineyard, name, variety)
-    values ('00000000-0000-0000-0000-00000000a0b1', 'Eola Springs', 'Assertion Block', 'Pinot Noir')
+  -- 0039 made a vineyard a row rather than a string on the block, so the
+  -- fixture names one. This broke when the column moved, which is the fixture
+  -- doing its job: a test that kept compiling against a column that no longer
+  -- existed would be a test of nothing.
+  insert into vineyard (id, name)
+    values ('00000000-0000-0000-0000-00000000a0d1', 'Eola Springs')
+    on conflict do nothing;
+  insert into block (id, vineyard_id, name)
+    values ('00000000-0000-0000-0000-00000000a0b1',
+            '00000000-0000-0000-0000-00000000a0d1', 'Assertion Block')
     on conflict do nothing;
 
   begin
@@ -5716,6 +5742,250 @@ begin
   delete from node where id in ('00000000-0000-0000-0000-00000000e301',
                                 '00000000-0000-0000-0000-00000000e302');
   delete from vessel where name like 'ASRTBIN%' or name like 'ASRTLOAN%';
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- taking a copy away, and cancelling a pick'; end $$;
+
+-- 0037. The export is the thing that survives the one desktop the database is
+-- on, so the question it has to answer is "is everything in here", and the way
+-- that goes wrong is a table added later and never added to the export.
+do $$
+declare missing text; e jsonb; n int;
+begin
+  e := export_cellar();
+
+  select string_agg(c.relname, ', ') into missing
+    from pg_class c
+    join pg_namespace ns on ns.oid = c.relnamespace
+   where ns.nspname = 'public' and c.relkind = 'r'
+     and not (e -> 'tables' ? c.relname);
+  if missing is not null then
+    raise exception
+      'FAIL: these tables are in the database and not in the export: %. A copy that is quietly short is worse than none', missing;
+  end if;
+  perform test_ok('every table in the database appears in the export, so a copy cannot be quietly short');
+
+  -- An empty table is an answer. Distinguishing "nothing you may read" from
+  -- "not included" is the whole reason the empty array is kept rather than
+  -- skipped, and it is the A13 shape if they collapse.
+  if jsonb_typeof(e -> 'tables' -> 'task') <> 'array' then
+    raise exception 'FAIL: an empty table is % in the export rather than an empty list',
+      jsonb_typeof(e -> 'tables' -> 'task');
+  end if;
+  perform test_ok('a table with nothing in it exports as an empty list rather than going missing');
+
+  select count(*) into n from jsonb_object_keys(e -> 'tables');
+  if (e ->> 'table_count')::int <> n then
+    raise exception 'FAIL: the export says % tables and carries %', e ->> 'table_count', n;
+  end if;
+  perform test_ok('the export counts what it actually contains');
+end $$;
+
+-- The export runs as whoever asked, which is the difference between a copy of
+-- the record and a copy of the database. A client taking one must not get the
+-- facility's lots in it.
+do $$
+declare admin_rows int; client_rows int;
+begin
+  -- `set local role authenticated` matters and is the whole test. The suite runs
+  -- as the owning superuser, for whom row level security is not enforced at all,
+  -- so without this both numbers come back as every lot in the cellar and the
+  -- assertion passes while proving nothing. The first version of this did
+  -- exactly that.
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+  set local role authenticated;
+  select jsonb_array_length(export_cellar() -> 'tables' -> 'node') into admin_rows;
+  reset role;
+
+  perform test_act_as('00000000-0000-0000-0000-00000000a003');
+  set local role authenticated;
+  select jsonb_array_length(export_cellar() -> 'tables' -> 'node') into client_rows;
+  reset role;
+
+  if client_rows >= admin_rows then
+    raise exception
+      'FAIL: a client exported % lots and an administrator exported %, so the export is not going through row level security',
+      client_rows, admin_rows;
+  end if;
+  perform test_ok('an export carries only what the person asking may read, so two people get two different files');
+
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+end $$;
+
+-- 0038. Cancelling keeps what was measured; removing is for a row that never
+-- measured anything.
+do $$
+declare
+  pick_id uuid := '00000000-0000-0000-0000-00000000cc01';
+  out_js  jsonb;
+  n       int;
+begin
+  update term set attributes = attributes || '{"tare_lbs": 55}'::jsonb
+   where kind = 'vessel_type' and value = 'picking_bin';
+
+  out_js := add_bins_to_pick(
+    jsonb_build_object('id', pick_id, 'variety_id', term_id('variety', 'riesling'),
+                       'vintage', 2026),
+    null, 2, term_id('vessel_type', 'picking_bin'), 'ASRTCANC', 100);
+
+  out_js := cancel_pick(pick_id, 'fruit went somewhere else');
+  if (out_js ->> 'bins_freed')::int <> 2 then
+    raise exception 'FAIL: cancelling freed % of 2 bins, so a bin is still held by a pick that is not happening',
+      out_js ->> 'bins_freed';
+  end if;
+  perform test_ok('cancelling a pick gives the bins back, which is most of what cancelling is for');
+
+  select count(*) into n from node
+   where id = pick_id and status = 'closed'
+     and (attributes ->> 'cancelled')::boolean
+     and attributes ->> 'cancelled_reason' = 'fruit went somewhere else';
+  if n <> 1 then
+    raise exception 'FAIL: a cancelled pick does not say that it was cancelled, or why';
+  end if;
+  perform test_ok('a cancelled pick records that it was cancelled and the reason given');
+
+  -- Nothing was weighed, so there is no observation to keep and removing it
+  -- destroys no record. That is the only condition under which it is allowed.
+  perform remove_pick(pick_id);
+  select count(*) into n from node where id = pick_id;
+  if n <> 0 then
+    raise exception 'FAIL: a cancelled pick with nothing weighed into it was not removed';
+  end if;
+  perform test_ok('a cancelled pick that measured nothing can be removed outright');
+
+  delete from vessel where name like 'ASRTCANC%';
+end $$;
+
+-- The refusals, which are the part that protects the record.
+do $$
+declare pick_id uuid := '00000000-0000-0000-0000-00000000cc02'; bins uuid[];
+begin
+  perform add_bins_to_pick(
+    jsonb_build_object('id', pick_id, 'variety_id', term_id('variety', 'riesling'),
+                       'vintage', 2026),
+    null, 1, term_id('vessel_type', 'picking_bin'), 'ASRTKEEP', 100);
+
+  begin
+    perform remove_pick(pick_id);
+    raise exception 'FAIL: a pick that had not been cancelled was removed';
+  exception when others then
+    if position('has not been cancelled' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('removing a pick that was never cancelled is refused, so removal is a second decision');
+  end;
+
+  select array_agg(vessel_id) into bins from unweighed_bin where node_id = pick_id;
+  perform weigh_bins(pick_id, bins, 400);
+  perform cancel_pick(pick_id);
+
+  begin
+    perform remove_pick(pick_id);
+    raise exception 'FAIL: a pick somebody weighed fruit into was deleted';
+  exception when others then
+    if position('weighing' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a cancelled pick that was weighed keeps its weighings and refuses to be removed');
+  end;
+
+  delete from event where subject_type = 'node' and subject_id = pick_id;
+  delete from placement where node_id = pick_id;
+  delete from node where id = pick_id;
+  delete from vessel where name like 'ASRTKEEP%';
+  update term set attributes = attributes - 'tare_lbs'
+   where kind = 'vessel_type' and value = 'picking_bin';
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- the vineyard, and what a planting inherits'; end $$;
+
+-- 0039. Three levels, and the middle one answers for the bottom one when it has
+-- nothing to say. The inheritance is derived on read, so a block corrected next
+-- spring corrects every planting relying on it, which is T0-2.
+do $$
+declare
+  vy   uuid := '00000000-0000-0000-0000-00000000da01';
+  blk  uuid := '00000000-0000-0000-0000-00000000da02';
+  r    record;
+begin
+  insert into vineyard (id, name, location) values (vy, 'Assert Vineyard', 'A road');
+  insert into block (id, vineyard_id, name, planted_year, rootstock, soil)
+  values (blk, vy, 'Assert Block', 2008, '3309', 'Jory');
+
+  insert into planting (block_id, variety_id) values (blk, term_id('variety', 'chardonnay'));
+  insert into planting (block_id, variety_id, planted_year, rootstock)
+  values (blk, term_id('variety', 'pinot_noir'), 2014, 'Riparia');
+
+  select * into r from planting_detail
+   where block_id = blk and variety = 'Chardonnay';
+  if r.planted_year <> 2008 or r.rootstock <> '3309' or r.soil <> 'Jory' then
+    raise exception 'FAIL: a planting that says nothing did not take the block''s answers';
+  end if;
+  if not (r.inherited @> array['planted_year', 'rootstock', 'soil']) then
+    raise exception 'FAIL: a planting borrowed the block''s answers and does not say which: %', r.inherited;
+  end if;
+  perform test_ok('a planting with nothing of its own takes the block''s answers and says which it borrowed');
+
+  select * into r from planting_detail
+   where block_id = blk and variety = 'Pinot Noir';
+  if r.planted_year <> 2014 or r.rootstock <> 'Riparia' then
+    raise exception 'FAIL: a planting with its own answers was overruled by the block';
+  end if;
+  if 'planted_year' = any(r.inherited) then
+    raise exception 'FAIL: a planting that gave its own year is reported as having borrowed one';
+  end if;
+  if not ('soil' = any(r.inherited)) then
+    raise exception 'FAIL: a planting that gave no soil is not reported as borrowing it';
+  end if;
+  perform test_ok('a planting that answers for itself overrules the block, field by field rather than all or nothing');
+
+  -- Corrected at the block, and every planting relying on it moves. This is the
+  -- thing a copied value could not do.
+  update block set soil = 'Willakenzie' where id = blk;
+  select count(*) into r from planting_detail where block_id = blk and soil = 'Willakenzie';
+  perform test_ok('correcting the block corrects every planting that was relying on it, because nothing was copied');
+
+  -- The composite key, the same one every pointer into `term` has carried since
+  -- 0027. A block planted to a vessel type is not a thing.
+  begin
+    insert into planting (block_id, variety_id) values (blk, term_id('vessel_type', 'barrel'));
+    raise exception 'FAIL: a block was planted to a vessel type';
+  exception when foreign_key_violation then
+    perform test_ok('a planting names a variety or nothing, which the composite key is what enforces');
+  end;
+
+  -- S-53's other half. `resolve_subject_name` runs its expression inside an
+  -- exception handler that returns null, so moving the vineyard out of `block`
+  -- would not have failed: every block would silently have stopped having a
+  -- name. This is the assertion that would have caught it.
+  if resolve_subject_name('block', blk) is distinct from 'Assert Vineyard Assert Block' then
+    raise exception 'FAIL: a block names itself % rather than by its vineyard and name',
+      coalesce(resolve_subject_name('block', blk), 'nothing');
+  end if;
+  if resolve_subject_name('vineyard', vy) is distinct from 'Assert Vineyard' then
+    raise exception 'FAIL: a vineyard does not name itself';
+  end if;
+  perform test_ok('a block still names itself after the vineyard stopped being a column on it');
+
+  delete from planting where block_id = blk;
+  delete from block where id = blk;
+  delete from vineyard where id = vy;
+end $$;
+
+-- Both views added since 0017 have to run as their caller. This is the third
+-- time this has been worth asserting and the second time it was nearly missed.
+do $$
+declare leaky text;
+begin
+  select string_agg(c.relname, ', ') into leaky
+    from pg_class c
+    join pg_namespace ns on ns.oid = c.relnamespace
+   where ns.nspname = 'public' and c.relkind = 'v'
+     and c.relname in ('planting_detail', 'bin_to_return', 'unweighed_bin')
+     and (c.reloptions is null or not ('security_invoker=true' = any(c.reloptions)));
+  if leaky is not null then
+    raise exception
+      'FAIL: these views run as their owner rather than their caller, so they hand a client somebody else data: %', leaky;
+  end if;
+  perform test_ok('every view added for intake and the vineyard runs as whoever asks');
 end $$;
 
 -- ---------------------------------------------------------------------------

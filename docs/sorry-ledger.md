@@ -642,6 +642,34 @@ time somebody has to answer "whose bins do we still have", which is the question
 of them turns on.
 
 
+**S-54. An export is not a restore, and a file called an export looks like one.**
+`0037` gives anybody a copy of everything they may read, as one document, which is what makes
+the harvest survive the one desktop the database is on. What it does not give them is a way to
+put it back. Restoring means re-inserting through the API in dependency order against a database
+whose migrations have already seeded vocabulary with different ids, which is S-29 one level up:
+there, a reset reissues variety ids and orphans the lots pointing at them, and here the same
+mismatch arrives between two different installations. **The file is a faithful record and not a
+restore point, and nothing in its name says so**, which is the gap: somebody holding it will
+reasonably believe they are covered. *Resolves when:* either an importer exists that matches rows
+by natural key rather than by id, which is the real fix and is a session of its own, or the file
+carries a header saying in words what it can and cannot do, which is an hour and is most of the
+protection. *Load-bearing:* yes, and immediately. The export exists because the desktop is a
+single point of failure, and the moment it is needed is the moment nobody can ask a question
+about it.
+
+
+**S-55. Acres and elevation are numbers with no unit recorded beside them.**
+`0039` stores a block's size as `acres` and leaves elevation, spacing and the rest as free text.
+Acres because this is Oregon and that is what the winemaker would type; free text for the others
+because guessing feet against metres nine times over would have been nine guesses. **The
+consequence is that `acres` is a column whose name is its unit**, which works exactly as long as
+nobody hands this to a winery that thinks in hectares, and then it is a silent factor of 2.47
+rather than an error. Same shape as S-49, one table over. *Resolves when:* the facility has a
+unit setting and these become a magnitude and a unit, which is one decision covering weight,
+area and temperature together rather than three. *Load-bearing:* no, for one winery in Oregon.
+It becomes load-bearing on the first import from a vineyard module that reports hectares.
+
+
 ## Discharged
 
 **S-25. An account belonging to no party is staff, so a client who signs up

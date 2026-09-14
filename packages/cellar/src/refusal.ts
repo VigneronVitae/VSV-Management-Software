@@ -93,6 +93,18 @@ export function describeRefusal(error: unknown, scope: ViewerScope | null): stri
   // instead, which is the standing the refusal happened under, because that is
   // the thing that would have to change.
   if (message && POSTGRES_OWN_WORDS.some((p) => p.test(message))) {
+    // "Ask an administrator" is useless advice to an administrator, and it is
+    // worse than useless: it sends the one person who could act on it looking
+    // for somebody else. An administrator hitting a database level refusal is
+    // not short of a role, so the sentence has to say what is actually true,
+    // which is that the grant is wrong rather than the sign-in.
+    if (scope?.may_admin) {
+      return (
+        "The database refused that, and not because of who you are signed in as: " +
+        "you are an administrator and it still said no. That is a grant on the " +
+        "database rather than a role in the app, so it needs changing in a migration."
+      );
+    }
     return `That is not something this account may do. ${standing(scope)}. If it should be, an administrator changes that.`;
   }
 

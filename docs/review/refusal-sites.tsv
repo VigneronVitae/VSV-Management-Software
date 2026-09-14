@@ -39,6 +39,15 @@ bind_vessel_code:guard:1	bind_vessel_code	guard	if found then	if false then	1
 bind_vessel_code:guard:2	bind_vessel_code	guard	if existing.vessel_id = p_vessel_id then	if false then	1
 bind_vessel_code:guard:3	bind_vessel_code	guard	if not is_admin() then	if false then	1
 bind_vessel_code:raise:1	bind_vessel_code	raise	raise exception	raise notice	1
+cancel_pick:guard:1	cancel_pick	guard	if n.id is null then	if false then	1
+cancel_pick:raise:1	cancel_pick	raise	raise exception 'no pick with id %', p_node_id;	raise notice 'no pick with id %', p_node_id;	1
+cancel_pick:guard:2	cancel_pick	guard	if n.stage <> 'bin' then	if false then	1
+cancel_pick:raise:2	cancel_pick	raise	raise exception '% is not a pick, so cancelling it is not the right word', n.name;	raise notice '% is not a pick, so cancelling it is not the right word', n.name;	1
+cancel_pick:guard:3	cancel_pick	guard	if coalesce((n.attributes ->> 'cancelled')::boolean, false) then	if false then	1
+cancel_pick:raise:3	cancel_pick	raise	raise exception '% was already cancelled', n.name;	raise notice '% was already cancelled', n.name;	1
+cancel_pick:guard:4	cancel_pick	guard	if exists (select 1 from lineage where parent_id = p_node_id) then	if false then	1
+cancel_pick:raise:4	cancel_pick	raise	raise exception	raise notice	4
+cancel_pick:silent:1	cancel_pick	silent	where node_id = p_node_id and to_at is null;	where node_id = p_node_id and true;	1
 cellar_writable_columns:guard:1	cellar_writable_columns	guard	if current_user not in ('authenticated', 'anon') then	if false then	1
 cellar_writable_columns:earlyreturn:1	cellar_writable_columns	earlyreturn	return new;	null;	1
 cellar_writable_columns:guard:2	cellar_writable_columns	guard	if is_admin() then	if false then	1
@@ -177,6 +186,20 @@ refuse_self_granted_standing:guard:1	refuse_self_granted_standing	guard	if new.p
 refuse_self_granted_standing:raise:1	refuse_self_granted_standing	raise	raise exception	raise notice	1
 register_subject_resolver:guard:1	register_subject_resolver	guard	if not is_admin() then	if false then	1
 register_subject_resolver:raise:1	register_subject_resolver	raise	raise exception 'only an administrator may register a resolver'	raise notice 'only an administrator may register a resolver'	1
+remove_pick:guard:1	remove_pick	guard	if n.id is null then	if false then	1
+remove_pick:raise:1	remove_pick	raise	raise exception 'no pick with id %', p_node_id;	raise notice 'no pick with id %', p_node_id;	1
+remove_pick:guard:2	remove_pick	guard	if n.stage <> 'bin' then	if false then	1
+remove_pick:raise:2	remove_pick	raise	raise exception '% is not a pick', n.name;	raise notice '% is not a pick', n.name;	1
+remove_pick:guard:3	remove_pick	guard	if not coalesce((n.attributes ->> 'cancelled')::boolean, false) then	if false then	1
+remove_pick:raise:3	remove_pick	raise	raise exception	raise notice	3
+remove_pick:guard:4	remove_pick	guard	if exists (select 1 from lineage where parent_id = p_node_id or child_id = p_node_id) then	if false then	1
+remove_pick:raise:4	remove_pick	raise	raise exception '% is part of a lineage, so removing it would orphan something', n.name;	raise notice '% is part of a lineage, so removing it would orphan something', n.name;	1
+remove_pick:guard:5	remove_pick	guard	if weighs > 0 then	if false then	1
+remove_pick:raise:5	remove_pick	raise	raise exception	raise notice	5
+remove_pick:guard:6	remove_pick	guard	if exists (select 1 from event where subject_type = 'node' and subject_id = p_node_id) then	if false then	1
+remove_pick:raise:6	remove_pick	raise	raise exception '% has events recorded against it, so it is a record rather than a mistake', n.name;	raise notice '% has events recorded against it, so it is a record rather than a mistake', n.name;	1
+remove_pick:guard:7	remove_pick	guard	if gone = 0 then	if false then	1
+remove_pick:raise:7	remove_pick	raise	raise exception 'that pick was not removed. Removing a pick is something only an administrator may do';	raise notice 'that pick was not removed. Removing a pick is something only an administrator may do';	1
 resolve_subject_name:notfound:1	resolve_subject_name	notfound	if not found then	if false then	1
 resolve_subject_name:earlyreturn:1	resolve_subject_name	earlyreturn	return null;	null;	1
 resolve_subject_name:guard:1	resolve_subject_name	guard	if to_regclass('public.' || quote_ident(r.relation)) is null then	if false then	1

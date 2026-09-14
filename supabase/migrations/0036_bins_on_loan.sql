@@ -5,7 +5,7 @@
 --           a party at this winery."
 -- Depends on: [supabase/migrations/0034_press.sql,
 --              supabase/migrations/0035_bins_in_bulk.sql]
--- Depended on by: [tests/schema_assertions.sql]
+-- Depended on by: [tests/schema_assertions.sql, supabase/migrations/0037_export.sql]
 -- Axioms enforced: T1-4 (intake must be fast before it is complete)
 -- Open sorries: S-53 (a grower is a string in two places and nothing joins
 --               them)

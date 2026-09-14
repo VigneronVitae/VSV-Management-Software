@@ -11,6 +11,7 @@ import type {
   NodePayload,
   Party,
   Pick,
+  PlantingDetail,
   PressResult,
   Term,
   TermKind,
@@ -20,6 +21,7 @@ import type {
   VesselRow,
   VesselState,
   ViewerScope,
+  Vineyard,
   WalkResult,
   Weighing,
 } from "./types.ts";
@@ -680,14 +682,85 @@ export async function vesselPhotoUrl(path: string): Promise<string | null> {
 // Build order 2, and the one where a missed record cannot be reconstructed. See
 // migration 0033 for why a pick is one node and a weighing is an event.
 
+export async function vineyards(): Promise<Vineyard[]> {
+  const { data, error } = await kernel()
+    .from("vineyard")
+    .select("id,name,location,notes,created_at")
+    .order("name");
+  if (error) throw new KernelError(error);
+  return (data ?? []) as Vineyard[];
+}
+
+export async function addVineyard(v: {
+  id: Uuid;
+  name: string;
+  location?: string | null;
+  notes?: string | null;
+}): Promise<void> {
+  const { error } = await kernel().from("vineyard").insert(v);
+  if (error) throw new KernelError(error);
+}
+
+export async function updateVineyard(
+  id: Uuid,
+  patch: Partial<Omit<Vineyard, "id" | "created_at">>,
+): Promise<void> {
+  const { error } = await kernel().from("vineyard").update(patch).eq("id", id);
+  if (error) throw new KernelError(error);
+}
+
 export async function blocks(): Promise<Block[]> {
   const { data, error } = await kernel()
     .from("block")
-    .select("id,vineyard,name,variety,notes")
-    .order("vineyard")
+    .select(
+      "id,vineyard_id,name,notes,acres,planted_year,clone,rootstock,spacing,trellis,aspect,elevation,soil",
+    )
     .order("name");
   if (error) throw new KernelError(error);
   return (data ?? []) as Block[];
+}
+
+export async function updateBlock(
+  id: Uuid,
+  patch: Partial<Omit<Block, "id">>,
+): Promise<void> {
+  const { error } = await kernel().from("block").update(patch).eq("id", id);
+  if (error) throw new KernelError(error);
+}
+
+// A variety in a block, with the block's answers where it has none of its own.
+export async function plantings(blockId?: Uuid): Promise<PlantingDetail[]> {
+  let q = kernel()
+    .from("planting_detail")
+    .select(
+      "planting_id,block_id,block_name,vineyard_id,vineyard_name,variety_id,variety,notes,inherited,acres,planted_year,clone,rootstock,spacing,trellis,aspect,elevation,soil",
+    );
+  if (blockId) q = q.eq("block_id", blockId);
+  const { data, error } = await q.order("block_name").order("variety");
+  if (error) throw new KernelError(error);
+  return (data ?? []) as PlantingDetail[];
+}
+
+export async function addPlanting(p: {
+  id: Uuid;
+  block_id: Uuid;
+  variety_id: Uuid;
+}): Promise<void> {
+  const { error } = await kernel().from("planting").insert(p);
+  if (error) throw new KernelError(error);
+}
+
+export async function updatePlanting(
+  id: Uuid,
+  patch: Record<string, unknown>,
+): Promise<void> {
+  const { error } = await kernel().from("planting").update(patch).eq("id", id);
+  if (error) throw new KernelError(error);
+}
+
+export async function removePlanting(id: Uuid): Promise<void> {
+  const { error } = await kernel().from("planting").delete().eq("id", id);
+  if (error) throw new KernelError(error);
 }
 
 // S-51: block carries an admin-write policy, so a cellar hand gets a refusal
@@ -695,9 +768,8 @@ export async function blocks(): Promise<Block[]> {
 // until somebody decides who may name a vineyard.
 export async function addBlock(block: {
   id: Uuid;
-  vineyard: string;
+  vineyard_id: Uuid;
   name: string;
-  variety: string;
 }): Promise<void> {
   const { error } = await kernel().from("block").insert(block);
   if (error) throw new KernelError(error);
@@ -837,4 +909,49 @@ export async function addBinsToPick(args: {
     bins: number;
     unweighed: number;
   };
+}
+
+// --- export ----------------------------------------------------------------
+
+// Everything the caller may read, as one document. Runs as the caller, so row
+// level security applies: two people get two different files and both are
+// correct. Not a backup, which is pg_dump and lives in scripts/. See 0037 and
+// sorry S-54.
+export type CellarExport = {
+  exported_at: string;
+  by: Uuid | null;
+  rows: number;
+  table_count: number;
+  tables: Record<string, unknown[]>;
+};
+
+export async function exportCellar(): Promise<CellarExport> {
+  const { data, error } = await kernel().rpc("export_cellar");
+  if (error) throw new KernelError(error);
+  return data as CellarExport;
+}
+
+// --- cancelling a pick -----------------------------------------------------
+
+// The fruit did not come, or the wrong block was tapped. Frees the bins, takes
+// the pick off the list, and keeps every weighing, because a weighing is an
+// observation and observations are not unmade. See 0038.
+export async function cancelPick(
+  nodeId: Uuid,
+  reason?: string | null,
+): Promise<{ node_id: Uuid; bins_freed: number; weighings_kept: number }> {
+  const { data, error } = await kernel().rpc("cancel_pick", {
+    p_node_id: nodeId,
+    p_reason: reason ?? null,
+  });
+  if (error) throw new KernelError(error);
+  return data as { node_id: Uuid; bins_freed: number; weighings_kept: number };
+}
+
+// Narrow on purpose: a cancelled pick, nothing weighed into it, nothing
+// descending from it. Such a row holds no observation, which is the only
+// condition under which deleting it destroys no record. Administrators only.
+export async function removePick(nodeId: Uuid): Promise<void> {
+  const { error } = await kernel().rpc("remove_pick", { p_node_id: nodeId });
+  if (error) throw new KernelError(error);
 }
