@@ -773,6 +773,53 @@ should be built in the same commit as the private kernel rather than after someb
 morning's weights. A private kernel without that list is not a smaller version of this
 design, it is a worse version of the current one.
 
+### "The diff, essentially"
+
+His word for that list, and it is the better one, because it says what the thing *is*
+instead of what it is for.
+
+**A diff is derived, and a queue is stored.** The difference matters here more than it
+usually does. A pending-submissions table is a cache of "what has not gone yet", and T0-2
+says never store what is derived, and C-3 is the compost entry for the last time this
+project cached a derivation. A diff needs no such table: it is what this kernel holds that
+the public one does not, computed by asking.
+
+**And computing it is nearly trivial, because of two decisions already made.** Ids are
+client-generated uuids, ruled at the top of CLAUDE.md so that an offline write has identity
+before the server sees it. Events are append-only, T0-5, and corrections are new events
+rather than edits. Together those mean the diff over the part that matters is a set
+difference on ids. No timestamps, no vector clocks, no last-writer-wins, and no merge: two
+kernels cannot disagree about an event, because neither can change one.
+
+**The mutable columns do not need to travel at all.** `node.quantity`, `node.status`,
+`placement.to_at` are recomputed from events by triggers and functions already in the
+schema. Ship the events and the receiving kernel arrives at the same numbers by running the
+same code. That is the same property `weigh_bins` relies on when it recomputes a pick's
+total from its weighings rather than adding to it, and it is why a submit protocol is mostly
+an insert in dependency order rather than a reconciliation.
+
+### A correction to the cost above
+
+The paragraph further up says this design "contains S-32's unanswered question about who
+authored an event that crossed a boundary". **That is wrong and it made the estimate worse
+than it should have been.** S-32 is about an event arriving from *another facility*, whose
+author has no account here and never will, which is why `has_an_author` refuses the row. The
+private and public kernels of one winery are not that case: they are the same staff, the
+same roster, and the author of every event submitted from a phone already has an account on
+the server, because that is how they signed in to record it.
+
+So the hard problem in S-32 belongs to import and export across wineries, and not to this.
+What is genuinely left is narrower: the order rows must be inserted in, and what discard
+means for something already submitted, which is a question about wine rather than about
+schemas. A fortnight was the wrong number and it was arrived at by conflating two boundaries
+that look alike and are not.
+
+**One more thing falls out.** If submit is "the rows this kernel has that yours does not, in
+dependency order", then the export and import work in spec.md §7 is the same mechanism
+pointed at a stranger instead of at your own server, with S-32 as the extra thing that is
+true only in the stranger case. Building submit gets most of export for free, which is the
+opposite of the usual relationship between a sync feature and a migration feature.
+
 **AR-Q5. Solera truncation depth.**
 *Status:* open question
 Perpetual fractional draw has no terminating lineage walk. Composition converges as a
