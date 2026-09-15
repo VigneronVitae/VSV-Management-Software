@@ -821,7 +821,8 @@ true only in the stranger case. Building submit gets most of export for free, wh
 opposite of the usual relationship between a sync feature and a migration feature.
 
 **AR-Q10. What runs the kernel on the device.**
-*Status:* measured, not yet built
+*Status:* open question. Measured rather than argued, and the measurement is evidence
+rather than a decision: nothing is built on it yet.
 *Asked by the winemaker, 2026-09-15: "what could run the kernel on the device?", and
 "could we just do the whole thing on the phone not needing postgres?"*
 
