@@ -721,6 +721,58 @@ twenty minutes where this is a fortnight. That is a cost decision rather than a 
 and it is written down here so that nobody later reads the second stack as a considered
 rejection of this.
 
+### What ships, asked the same evening
+
+"Perhaps the private kernel will be shipped as the actual kernel and practice mode will be
+the debug mode? Or should the regular one also ship with both?"
+
+**They are two axes and not a sequence, which is what makes the answer clean.** Private
+against public is about *authority*: who has agreed that this is true. Your device holds
+what you have said; the server holds what the winery has accepted. Practice against real is
+about *consequence*: whether there is wine involved at all. All four quadrants mean
+something, which is the test for whether two things are really one axis. Private and real
+is a phone in a barn before anybody submits. Public and real is the record. Private and
+practice is somebody trying a thing. Public and practice is two people rehearsing a
+handover, or training somebody, or testing that a submit does what they think.
+
+**So the private kernel is the kernel, and not a mode.** The app writes to the device
+first, always, with no setting for it. "Practice" then stops being somewhere you go and
+becomes an ordinary thing that happens: you did some things, you did not submit them, you
+deleted them. The per-user practice mode built today is subsumed entirely, and with it goes
+its single failure, which is being in the wrong one. There is no wrong one to be in.
+
+**What survives is smaller and it is not a mode.** Public-and-practice still needs a second
+server, because rehearsing a *submit* cannot be done on the side that is not submitting, and
+training a new hire on a two-person workflow needs two people against one shared thing. But
+that is an installation an administrator points at, the way a staging environment is, not a
+switch on every phone. It does not need a band on every screen, because somebody signed into
+a different winery is not confused about which winery they are in.
+
+*So the answer to "should the regular one ship with both" is no.* Ship the private kernel as
+the kernel, ship a rehearsal installation as an administrator's option, and delete
+practice-as-a-mode on the day the first of those lands. What was built on 2026-09-15 is
+scaffolding with a known end, and this paragraph is the end.
+
+### The risk inverts, and the inverted one is worse
+
+Worth writing down before anybody builds this, because it is the thing that will be missed.
+
+Today's danger is recording a real pick into practice: loud, recoverable, and defended
+against with a band on every screen. **A private kernel replaces it with recording a real
+pick and never submitting it.** The weight sits on one phone in a barn, nobody else can see
+it, the person who recorded it believes they are done, and every screen agrees with them.
+That is A13 in a new place and it is worse than the one it replaces, because the failure is
+silent and looks exactly like success.
+
+This repository already has the answer to that shape and has used it five times.
+`unweighed_bin` exists because T1-4 allows a bin with no weight, which is only safe if the
+count of them is somewhere nobody has to go looking for it. `bin_to_return`,
+`measurement_to_propagate`, `supply_below_level` and `weighing_without_photo` are the same
+move. **An unsubmitted count belongs on the home screen next to the unweighed bins**, and it
+should be built in the same commit as the private kernel rather than after somebody loses a
+morning's weights. A private kernel without that list is not a smaller version of this
+design, it is a worse version of the current one.
+
 **AR-Q5. Solera truncation depth.**
 *Status:* open question
 Perpetual fractional draw has no terminating lineage walk. Composition converges as a

@@ -55,6 +55,20 @@ separate logins and the session genuinely cannot travel. That is also the point:
 being asked to sign in again is the clearest possible signal that you have moved,
 at the one moment it matters most.
 
+**Sign in with the same email and password as the real cellar.** `practice seed`
+copies the whole database, which includes the `auth` schema, so your login exists
+on both sides with the same id and the same password. Nothing to sign up for.
+
+That also means you are an administrator in practice if you are one in the
+cellar, which is most of the point: the things only an administrator may do, like
+deleting a photograph, are exactly the things worth rehearsing somewhere that does
+not matter.
+
+A practice stack that was reset rather than seeded has no logins at all. The
+first account to claim one becomes the administrator, the same as a fresh
+install, which is itself a thing worth rehearsing once before handing this to
+somebody else.
+
 **Every screen in practice carries a band across the top, and the page carries a
 border.** If you cannot see one, you are in the real cellar and what you record
 counts. The band is built in `ui.ts`'s `screen()`, which every screen in the app
