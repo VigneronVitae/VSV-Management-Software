@@ -24,7 +24,8 @@ export type TermKind =
   // 0064. S-61 again, for the third time: this union is hand-maintained
   // against `term_kind` and nothing checks it, so a vocabulary added by a
   // migration is invisible here until somebody remembers.
-  | "fact_kind";
+  | "fact_kind"
+  | "wine_colour";
 
 export type Effect = "measurement" | "treatment" | "movement" | "transformation";
 
@@ -678,4 +679,83 @@ export type SupplyCount = {
   expected: number;
   difference: number;
   unit: string;
+};
+
+// --- colour ----------------------------------------------------------------
+
+// A lot nobody has said a colour for, and whose parents have not said either.
+// `likely` is read off the variety and is a starting point for a person, never a
+// value anything writes on their behalf: five of six varieties here are white
+// and the sixth is made three ways.
+export type LotWithoutColour = {
+  id: Uuid;
+  name: string;
+  stage: string;
+  status: string;
+  created_at: string;
+  variety: string | null;
+  likely: string | null;
+};
+
+// Red, white or unknown, derived from everything the barrel has held since it
+// was last reconditioned. Unknown is not white: it means the barrel has held a
+// lot nobody has typed, and calling that white is the mistake this exists to
+// prevent.
+export type BarrelColour = {
+  id: Uuid;
+  name: string;
+  colour: "red" | "white" | "unknown";
+  went_red_with: string | null;
+  went_red_at: string | null;
+  reconditioned_at: string | null;
+  location_id: Uuid | null;
+  active: boolean;
+};
+
+// Wine that does not stain, sitting in a barrel that has held wine that does.
+// Not an error and never refused: a barrel can be filled before anybody records
+// it, which is the case that made this a list rather than a guard.
+export type ColourConflict = {
+  vessel_id: Uuid;
+  vessel: string;
+  node_id: Uuid;
+  lot: string;
+  lot_colour: string;
+  went_red_with: string | null;
+  went_red_at: string | null;
+  filled_at: string;
+};
+
+// What the kernel says about putting one lot in one vessel. A vessel that is not
+// a barrel warns about nothing.
+export type BarrelWarning = {
+  warn: boolean;
+  colour?: string;
+  why?: string;
+};
+
+// Everything about one lot, in one read. A lot standing in two vessels comes
+// back as two rows, which is the truth rather than a problem to be flattened.
+export type LotDetail = {
+  id: Uuid;
+  name: string;
+  stage: string;
+  status: string;
+  vintage: number | null;
+  non_vintage: boolean;
+  variety: string | null;
+  product_type: string | null;
+  colour: string | null;
+  colour_label: string | null;
+  // Said about this lot, as against inherited from a parent. The screen needs
+  // the difference: one is an answer and the other is an answer nobody gave.
+  colour_told: boolean;
+  owner_id: Uuid | null;
+  owner_name: string | null;
+  provenance: string;
+  created_at: string;
+  vessel_id: Uuid | null;
+  vessel: string | null;
+  volume_l: number | null;
+  filled_at: string | null;
 };

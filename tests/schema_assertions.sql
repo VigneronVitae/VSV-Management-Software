@@ -36,7 +36,15 @@
 --              supabase/migrations/0031_scheduling_to_core.sql,
 --              supabase/migrations/0032_vessel_maker_and_room_temperature.sql, supabase/migrations/0033_intake.sql, supabase/migrations/0034_press.sql, supabase/migrations/0035_bins_in_bulk.sql, supabase/migrations/0036_bins_on_loan.sql, supabase/migrations/0037_export.sql, supabase/migrations/0038_cancel_a_pick.sql, supabase/migrations/0039_vineyard.sql, supabase/migrations/0040_block_variety_is_history.sql, supabase/migrations/0041_daily_log.sql, supabase/migrations/0042_weighing_photo.sql, supabase/migrations/0043_record_propagation.sql, supabase/migrations/0044_finishing_a_pick.sql, supabase/migrations/0045_press_detail.sql, supabase/migrations/0046_supply_inventory.sql, supabase/migrations/0047_attachments.sql, supabase/migrations/0048_pick_weighing.sql, supabase/migrations/0049_every_lot_says_its_vintage.sql, supabase/migrations/0050_additions.sql, supabase/migrations/0051_supplies_for_addition.sql, supabase/migrations/0052_press_as_a_process.sql, supabase/migrations/0053_a_press_is_a_vessel.sql, supabase/migrations/0054_a_spent_pick_is_spent.sql, supabase/migrations/0055_press_draws.sql, supabase/migrations/0056_draw_to_a_level.sql, supabase/migrations/0057_the_contract.sql, supabase/migrations/0058_an_open_pick_is_a_view.sql, supabase/migrations/0061_two_declarations_were_wrong.sql, supabase/migrations/0063_a_note_is_a_thing_too.sql, supabase/migrations/0065_confirming_without_owning.sql, supabase/migrations/0066_a_guard_that_can_be_weakened.sql, supabase/migrations/0067_sampling.sql, supabase/migrations/0068_an_invite_to_claim.sql,
 --              supabase/migrations/0069_the_contract_hears_about_the_invite.sql,
---              supabase/migrations/0070_a_code_worth_guessing.sql, supabase/migrations/0064_typing_a_note.sql, supabase/migrations/0062_a_note_on_anything.sql, supabase/migrations/0060_the_contract_catches_up.sql, supabase/migrations/0059_a_weighing_says_its_pick.sql]
+--              supabase/migrations/0070_a_code_worth_guessing.sql, supabase/migrations/0064_typing_a_note.sql, supabase/migrations/0062_a_note_on_anything.sql, supabase/migrations/0060_the_contract_catches_up.sql, supabase/migrations/0059_a_weighing_says_its_pick.sql,
+--              supabase/migrations/0071_a_wine_says_its_colour.sql,
+--              supabase/migrations/0072_a_barrel_remembers.sql,
+--              supabase/migrations/0073_the_contract_hears_about_colour.sql,
+--              supabase/migrations/0074_an_unknown_colour_is_not_a_safe_one.sql,
+--              supabase/migrations/0075_two_parents_that_disagree.sql,
+--              supabase/migrations/0076_a_tie_goes_to_the_barrel.sql,
+--              supabase/migrations/0077_a_barrel_can_arrive_red.sql,
+--              supabase/migrations/0078_the_wine_in_a_vessel.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -2875,7 +2883,12 @@ begin
   -- app_user for who issued it and who used it. Both of those are nullable, and
   -- deliberately: an invite exists before anybody has used it, which is the
   -- whole of its working life.
-  want := 'c=39 f=71 p=39 u=20';
+  -- c=39 f=71 p=39 u=20 before 0071, whose one new foreign key is the composite
+  -- pinning a lot''s colour to the wine_colour vocabulary, the same shape the
+  -- variety and the product type already use. No new check: a lot with no
+  -- colour is legal and is caught by a worklist rather than refused, which is
+  -- what the winemaker asked for.
+  want := 'c=39 f=72 p=39 u=20';
   if have <> want then
     raise exception
       E'FAIL: the constraint inventory changed.\nnow:  %\nwas:  %\nIf that is deliberate, update this line in the same commit that changed the schema.', have, want;
@@ -2906,6 +2919,10 @@ begin
 
   want := 'event.event_operation_is_an_operation, '
        || 'location.location_kind_is_a_location_kind, '
+       -- 0071. A lot says its colour, pinned the way the variety and the
+       -- product type already are. It is the fact a barrel's own colour is
+       -- derived from, and no other column in this schema can answer it.
+       || 'node.node_colour_is_a_wine_colour, '
        || 'node.node_product_type_is_a_product_type, '
        || 'node.node_variety_is_a_variety, '
        || 'note.note_kind_is_a_fact_kind, '
@@ -2928,7 +2945,7 @@ begin
     raise exception
       E'FAIL: the composite foreign keys into term(id, kind) changed.\nnow:  %\nwas:  %', have, want;
   end if;
-  perform test_ok('nine composite foreign keys tie a typed id to its kind, which is what phase 5 moves');
+  perform test_ok('every composite foreign key ties a typed id to its kind, which is what phase 5 moves');
 end $$;
 
 -- And the nine generated columns that supply the kind half of each of those
@@ -2949,6 +2966,8 @@ begin
   -- through a positional alias list and reordering node silently rebinds it.
   want := 'event.operation_kind=''operation''::text '
        || 'location.kind_kind=''location_kind''::text '
+       -- 0071, the kind half of the colour key.
+       || 'node.colour_kind=''wine_colour''::text '
        || 'node.product_kind=''product_type''::text '
        || 'node.variety_kind=''variety''::text '
        || 'note.kind_kind=''fact_kind''::text '
@@ -3084,7 +3103,10 @@ begin
   -- invite and who used it. Neither cascades and neither sets null, because a
   -- used invite is the only record there will ever be of who admitted whom, and
   -- it should survive either of them leaving.
-  want := 'a=41 c=14 n=2 r=14';
+  -- a=41 c=14 n=2 r=14 before 0071. The new no-action is a lot''s colour into
+  -- the vocabulary: a colour is retired by deactivating the term, not by
+  -- deleting the row, so nothing needs to cascade and nothing needs to restrict.
+  want := 'a=42 c=14 n=2 r=14';
   if have <> want then
     raise exception
       E'FAIL: foreign key delete behaviour changed.\nnow:  %\nwas:  %\na is no action, c is cascade, n is set null, r is restrict.', have, want;
@@ -4080,11 +4102,14 @@ begin
   -- Six until 0045 registered press_cut and press_program, both winemaking: how
   -- a press was divided and what it was run on are not things core could have an
   -- opinion about.
-  if (select count(*) from term_kind where module <> 'core') <> 8 then
-    raise exception 'FAIL: % of the kinds are owned by a module other than core, and the claim is eight',
+  -- Nine since 0071 registered wine_colour, which is winemaking by the same
+  -- argument press_cut is: whether a wine is red is a fact about wine, and core
+  -- has no opinion about what oak does.
+  if (select count(*) from term_kind where module <> 'core') <> 9 then
+    raise exception 'FAIL: % of the kinds are owned by a module other than core, and the claim is nine',
       (select count(*) from term_kind where module <> 'core');
   end if;
-  perform test_ok('the registry says which module owns each kind, and six of the eight are not core''s');
+  perform test_ok('the registry says which module owns each kind, and nine of them are not core''s');
 end $$;
 
 -- A term cannot name a kind nobody registered, and adding a kind is a row.
@@ -8861,6 +8886,358 @@ begin
     raise exception 'FAIL: these do not pin search_path and will break in a restore: %', unpinned;
   end if;
   perform test_ok('every function pins its search_path, so a restore does not trip over it');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- a wine says its colour, and a barrel remembers'; end $$;
+
+-- 0071 through 0076. The winemaker asked for red and white barrels and then
+-- said the better version: the colour belongs to the wine, and the barrel's own
+-- colour is derived from what has been in it.
+--
+-- These assertions are about the derivation, because the derivation is the
+-- whole feature. Nothing here refuses a fill and that is deliberate: "warn and
+-- let through because somebody could put the wine in the barrel before using
+-- the app". A refusal assertion would be asserting a decision that was made the
+-- other way.
+--
+-- **Every placement carries an explicit time.** Everything inside one
+-- transaction shares a single now(), so a sequence built on the default would
+-- put the recondition and every fill on the same instant, and this would be
+-- measuring the tie-break in 0076 rather than the rule. Days are counted
+-- backwards from now, and the one deliberate tie is marked where it happens.
+do $$
+declare
+  b_white uuid := '00000000-0000-0000-0000-0000000c0001';
+  b_red   uuid := '00000000-0000-0000-0000-0000000c0002';
+  l_red   uuid := '00000000-0000-0000-0000-0000000c0101';
+  l_white uuid := '00000000-0000-0000-0000-0000000c0102';
+  l_rose  uuid := '00000000-0000-0000-0000-0000000c0103';
+  l_child uuid := '00000000-0000-0000-0000-0000000c0104';
+  l_mixed uuid := '00000000-0000-0000-0000-0000000c0105';
+  l_bare  uuid := '00000000-0000-0000-0000-0000000c0106';
+  a_tank  uuid;
+  got     text;
+  js      jsonb;
+begin
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+  select id into a_tank from vessel where type_id = term_id('vessel_type','tank') limit 1;
+
+  insert into vessel (id, type_id, name, capacity_l) values
+    (b_white, term_id('vessel_type','barrel'), 'C7 clean',   228),
+    (b_red,   term_id('vessel_type','barrel'), 'C7 stained', 228);
+
+  insert into node (id, stage, name, vintage) values
+    (l_red,   'maturation', 'C7 a red',    2025),
+    (l_white, 'maturation', 'C7 a white',  2025),
+    (l_rose,  'maturation', 'C7 a rose',   2025),
+    (l_child, 'maturation', 'C7 a child',  2025),
+    (l_mixed, 'maturation', 'C7 a blend',  2025),
+    (l_bare,  'maturation', 'C7 untyped',  2025);
+
+  -- **The vocabulary carries the rule.** Which colours stain is a column on a
+  -- row rather than a list inside a function, so a fifth colour is an insert
+  -- and a change of mind about orange is an update.
+  if not colour_stains(term_id('wine_colour','red')) then
+    raise exception 'FAIL: red does not stain';
+  end if;
+  if colour_stains(term_id('wine_colour','rose')) then
+    raise exception 'FAIL: rose stains, and the winemaker said it does not';
+  end if;
+  if colour_stains(term_id('wine_colour','white'))
+     or colour_stains(term_id('wine_colour','orange')) then
+    raise exception 'FAIL: a colour that should not stain does';
+  end if;
+  perform test_ok('which colours stain is a property of the vocabulary, so a fifth colour is an insert rather than an edit to a function');
+
+  -- 0074, and the reason it exists. A predicate that answers null where the
+  -- caller expects false permits whatever it guards, which is ledger A25.
+  if colour_stains(null) is not false then
+    raise exception 'FAIL: colour_stains(null) is %, and a caller writing "not colour_stains(x)" would get nothing', colour_stains(null);
+  end if;
+  perform test_ok('an unknown colour answers false rather than null, so a caller asking whether it does not stain gets an answer instead of silence');
+
+  perform set_colour(l_red, 'red');
+  perform set_colour(l_white, 'white');
+  perform set_colour(l_rose, 'rose');
+
+  -- **A colour told once is inherited.** A press cut of a red lot is red and so
+  -- is everything racked out of it. Copying the value down at each step would be
+  -- storing what is derived, which is C-3, so only the told value is stored.
+  insert into lineage (parent_id, child_id, fraction) values (l_red, l_child, 1.0);
+  if lot_colour(l_child) <> term_id('wine_colour','red') then
+    raise exception 'FAIL: a child of a red lot did not inherit red';
+  end if;
+  if (select colour_id from node where id = l_child) is not null then
+    raise exception 'FAIL: inheriting a colour wrote it onto the child, which is C-3';
+  end if;
+  perform test_ok('a lot inherits its colour from its parents and nothing is copied down the lineage, so saying it once on a pick is enough');
+
+  -- 0075. Two parents that disagree are a question rather than an answer.
+  -- Deciding that red wins would be inventing a winemaking rule nobody stated,
+  -- and the first version of this picked whichever colour sorted first by uuid.
+  insert into lineage (parent_id, child_id, fraction) values
+    (l_red,   l_mixed, 0.5),
+    (l_white, l_mixed, 0.5);
+  if lot_colour(l_mixed) is not null then
+    raise exception 'FAIL: a blend of a red and a white parent was given a colour';
+  end if;
+  perform test_ok('a lot blended from parents of different colours has no colour until somebody says, because red winning would be a rule nobody stated');
+
+  -- The derivation follows the lineage rather than the column.
+  insert into placement (node_id, vessel_id, volume_l, from_at)
+    values (l_child, b_white, 200, now() - interval '9 days');
+  select colour into got from barrel_colour where id = b_white;
+  if got <> 'red' then
+    raise exception 'FAIL: a barrel holding an inherited red reads %', got;
+  end if;
+  perform test_ok('a barrel goes red from a lot that inherited red, so the derivation follows the lineage rather than the column');
+
+  update placement set to_at = now() - interval '8 days'
+   where vessel_id = b_white and to_at is null;
+  delete from lineage where child_id = l_child;
+
+  -- Rose does not turn a white barrel red. This is the one rule in this feature
+  -- that is pure winery practice and could not be guessed from anything else in
+  -- the schema.
+  insert into placement (node_id, vessel_id, volume_l, from_at)
+    values (l_rose, b_red, 200, now() - interval '7 days');
+  select colour into got from barrel_colour where id = b_red;
+  if got <> 'white' then
+    raise exception 'FAIL: rose turned a barrel %, and it should turn it nothing', got;
+  end if;
+  perform test_ok('rose leaves a barrel white, because it goes in either and turns neither');
+
+  update placement set to_at = now() - interval '6 days'
+   where vessel_id = b_red and to_at is null;
+  insert into placement (node_id, vessel_id, volume_l, from_at)
+    values (l_red, b_red, 200, now() - interval '5 days');
+  select colour into got from barrel_colour where id = b_red;
+  if got <> 'red' then
+    raise exception 'FAIL: red in a barrel left it %', got;
+  end if;
+  perform test_ok('red in a barrel makes it a red barrel, which is the whole of what was asked for');
+
+  -- **A barrel that has held an untyped lot is unknown, not white.** Calling it
+  -- white would be a default permitting the exact mistake this exists to
+  -- prevent, which is the A25 class: an absent answer read as a favourable one.
+  insert into placement (node_id, vessel_id, volume_l, from_at)
+    values (l_bare, b_white, 100, now() - interval '4 days');
+  select colour into got from barrel_colour where id = b_white;
+  if got <> 'unknown' then
+    raise exception 'FAIL: a barrel holding a lot nobody typed reads %, and white would be a guess in the caller''s favour', got;
+  end if;
+  perform test_ok('a barrel that has held a lot nobody typed is unknown rather than white, because an absent colour is not evidence of a harmless one');
+
+  -- The worklist is the catching mechanism, so it has to actually contain it.
+  if not exists (select 1 from lot_without_colour where id = l_bare) then
+    raise exception 'FAIL: an untyped lot is not on the list of untyped lots';
+  end if;
+  if exists (select 1 from lot_without_colour where id = l_red) then
+    raise exception 'FAIL: a lot that said its colour is still on the list';
+  end if;
+  perform test_ok('the list of lots with no colour holds exactly the lots with no colour, because nothing refuses one and the list is the only thing that catches it');
+
+  -- **Reconditioning.** Told, not derived, and the one refusal in this feature:
+  -- a barrel that has held red is white again because somebody did something to
+  -- it, and which thing is the whole of the evidence.
+  update placement set to_at = now() - interval '3 days'
+   where vessel_id = b_red and to_at is null;
+
+  begin
+    perform recondition_barrel(b_red, '');
+    raise exception 'FAIL: a barrel was reconditioned with no method';
+  exception when others then
+    if position('say what was done to it' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('reconditioning with no method is refused, because an event saying a barrel was treated and not saying how is paperwork for a thing that may not have happened');
+  end;
+
+  begin
+    perform recondition_barrel(a_tank, 'deep clean');
+    raise exception 'FAIL: a tank was reconditioned';
+  exception when others then
+    if position('reconditioning is a thing done to a barrel' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a tank cannot be reconditioned, because stainless does not hold colour and the word would mean nothing');
+  end;
+
+  -- The event lands at now(), which is after every placement above.
+  perform recondition_barrel(b_red, 'retoasted');
+  select colour into got from barrel_colour where id = b_red;
+  if got <> 'white' then
+    raise exception 'FAIL: a reconditioned barrel still reads %', got;
+  end if;
+  perform test_ok('a reconditioned barrel is white again, and only a recorded process does that');
+
+  -- 0076, deliberately at the recondition's own instant: a fill recorded at the
+  -- same moment as the treatment counts as after it, because the other reading
+  -- calls a barrel with red in it white. This is the one placement in this block
+  -- that uses the default time, and it is the tie.
+  insert into placement (node_id, vessel_id, volume_l) values (l_red, b_red, 200);
+  select colour into got from barrel_colour where id = b_red;
+  if got <> 'red' then
+    raise exception 'FAIL: red recorded at the same instant as the recondition left the barrel %, and a tie has to go to the barrel', got;
+  end if;
+  perform test_ok('a fill recorded at the same instant as a recondition counts as after it, because calling a barrel with red in it white is the one wrong answer that costs a wine');
+
+  -- **The catch.** White sitting in a red barrel, which nothing refused.
+  update placement set to_at = now() where vessel_id = b_red and to_at is null;
+  insert into placement (node_id, vessel_id, volume_l) values (l_white, b_red, 200);
+  if not exists (select 1 from white_in_a_red_barrel where vessel_id = b_red) then
+    raise exception 'FAIL: a white lot in a red barrel is not on the list of white lots in red barrels';
+  end if;
+  perform test_ok('a white lot in a red barrel appears on the worklist, which is the catch, since the winemaker asked for a warning rather than a refusal');
+
+  -- An untyped lot is not on that list. It is a different question with a
+  -- different answer, and running the two together would turn a list somebody
+  -- clears into a list somebody ignores.
+  if exists (select 1 from white_in_a_red_barrel where node_id = l_bare) then
+    raise exception 'FAIL: a lot with no colour is being reported as a white in a red barrel';
+  end if;
+  perform test_ok('a lot with no colour is not reported as a white in a red barrel, because not knowing is a different question from knowing it is wrong');
+
+  -- The same question, asked the way a screen asks it.
+  js := barrel_warning(b_red, l_white);
+  if not (js ->> 'warn')::boolean then
+    raise exception 'FAIL: the kernel says a white going into a red barrel is not worth a word';
+  end if;
+  js := barrel_warning(b_red, l_red);
+  if (js ->> 'warn')::boolean then
+    raise exception 'FAIL: the kernel warns about red going into a red barrel';
+  end if;
+  js := barrel_warning(b_red, l_bare);
+  if not (js ->> 'warn')::boolean then
+    raise exception 'FAIL: the kernel says nothing about an untyped lot going into a red barrel';
+  end if;
+  js := barrel_warning(a_tank, l_white);
+  if (js ->> 'warn')::boolean then
+    raise exception 'FAIL: the kernel warns about a tank, which cannot hold colour';
+  end if;
+  perform test_ok('the kernel answers whether a fill is worth a word, so a second periphery asking gets the same answer as the first and neither works it out for itself');
+
+  -- 0077. **A barrel can arrive red.** The winemaker buys used barrels, red and
+  -- white neutral, and a barrel that has held three vintages of somebody else's
+  -- Pinot has no placements here at all. Deriving from an empty history gave the
+  -- one answer that could ruin a wine.
+  declare
+    bought uuid := '00000000-0000-0000-0000-0000000c0003';
+  begin
+    insert into vessel (id, type_id, name, capacity_l)
+      values (bought, term_id('vessel_type','barrel'), 'C7 bought used', 228);
+
+    select colour into got from barrel_colour where id = bought;
+    if got <> 'white' then
+      raise exception 'FAIL: a barrel with no history and nothing said reads %', got;
+    end if;
+
+    perform declare_barrel_colour(bought, 'red', 'bought from a red house');
+    select colour into got from barrel_colour where id = bought;
+    if got <> 'red' then
+      raise exception 'FAIL: a barrel declared red reads %', got;
+    end if;
+    perform test_ok('a barrel bought used can be told it arrived red, because nothing in its placements here could ever say so');
+
+    -- Red outranks unknown. A declared red barrel holding a lot nobody typed is
+    -- still red: unknown means nothing says red, and something does.
+    insert into placement (node_id, vessel_id, volume_l) values (l_bare, bought, 100);
+    select colour into got from barrel_colour where id = bought;
+    if got <> 'red' then
+      raise exception 'FAIL: an untyped lot in a declared red barrel made it %', got;
+    end if;
+    perform test_ok('a barrel declared red stays red while holding a lot nobody typed, because unknown means nothing says red and something does');
+
+    -- **A declaration is not a process.** Saying a barrel is white after it has
+    -- held red here would be the way around the one rule the winemaker stated
+    -- twice: red barrels do not turn white unless somebody does something to
+    -- them.
+    begin
+      perform declare_barrel_colour(bought, 'white');
+      raise exception 'FAIL: a red barrel was declared white';
+    exception when check_violation then
+      perform test_ok('a barrel that has held red cannot be declared white, because a declaration is not a shave, a retoast or a deep clean');
+    end;
+
+    -- And the vocabularies stay apart. A wine is red, orange, rose or white; a
+    -- barrel has either held something that stains or it has not.
+    begin
+      perform declare_barrel_colour(bought, 'rose');
+      raise exception 'FAIL: a barrel was declared rose';
+    exception when others then
+      if position('a barrel is red or white' in sqlerrm) = 0 then raise; end if;
+      perform test_ok('a barrel cannot be declared rose, because what a wine is and what it does to oak are two different vocabularies');
+    end;
+
+    -- A declared white barrel still turns red the moment red goes in it. This is
+    -- the half that must not be given up in exchange for the told floor.
+    update placement set to_at = now() where vessel_id = bought and to_at is null;
+    perform recondition_barrel(bought, 'shaved');
+    insert into placement (node_id, vessel_id, volume_l) values (l_red, bought, 100);
+    select colour into got from barrel_colour where id = bought;
+    if got <> 'red' then
+      raise exception 'FAIL: red in a reconditioned barrel left it %', got;
+    end if;
+    perform test_ok('what somebody said is where the derivation starts and never where it stops, so a barrel told it is white still goes red the next time red goes in it');
+  end;
+
+  -- 0078. The wine in a vessel is somewhere you can go. The screen behind this
+  -- is the answer to "I also need a way to edit (add/append only is fine) wine
+  -- in vessels, like to add the color", and it needs one read rather than four,
+  -- because a lot assembled out of pieces in a client is how two clients end up
+  -- disagreeing about what a lot is.
+  declare
+    d record;
+    n_rows int;
+  begin
+    select * into d from lot_detail where id = l_child limit 1;
+    if d.id is null then
+      raise exception 'FAIL: a lot is not in lot_detail';
+    end if;
+
+    -- The colour comes through the lineage, and the screen has to be able to
+    -- tell an inherited answer from one somebody gave about this lot: one is an
+    -- answer and the other is an answer nobody gave.
+    insert into lineage (parent_id, child_id, fraction) values (l_red, l_child, 1.0);
+    select * into d from lot_detail where id = l_child limit 1;
+    if d.colour <> 'red' then
+      raise exception 'FAIL: lot_detail says a child of a red lot is %', coalesce(d.colour, 'nothing');
+    end if;
+    if d.colour_told then
+      raise exception 'FAIL: lot_detail claims an inherited colour was told about this lot';
+    end if;
+
+    perform set_colour(l_child, 'red');
+    select * into d from lot_detail where id = l_child limit 1;
+    if not d.colour_told then
+      raise exception 'FAIL: lot_detail does not notice a colour told about the lot itself';
+    end if;
+    perform test_ok('one read says what colour a lot is and whether anybody said it about this lot or it came down the lineage, which is the difference a screen has to show');
+
+    -- A lot in two vessels is two rows. Flattening it would be inventing a
+    -- single answer to a question that has two.
+    -- Both barrels are holding something from the assertions above, and a
+    -- vessel holds one lot at a time.
+    update placement set to_at = now()
+     where to_at is null and (node_id = l_child or vessel_id in (b_white, b_red));
+    insert into placement (node_id, vessel_id, volume_l) values (l_child, b_white, 100);
+    insert into placement (node_id, vessel_id, volume_l) values (l_child, b_red, 100);
+    select count(*) into n_rows from lot_detail where id = l_child and vessel_id is not null;
+    if n_rows <> 2 then
+      raise exception 'FAIL: a lot standing in two vessels came back as % row(s)', n_rows;
+    end if;
+    perform test_ok('a lot standing in two vessels is two rows, because one row would be a single answer to a question that has two');
+
+    delete from lineage where child_id = l_child;
+  end;
+
+  -- T0-2, stated as a check rather than as a comment. A column caching this is
+  -- exactly what C-3 is about.
+  if exists (
+    select 1 from information_schema.columns
+     where table_schema = 'public' and table_name = 'vessel'
+       and column_name in ('colour', 'colour_id', 'is_red', 'barrel_colour')
+  ) then
+    raise exception 'FAIL: vessel carries a colour column, and a barrel colour is derived';
+  end if;
+  perform test_ok('no column on vessel caches a barrel colour, so the derivation cannot drift from what the barrel has actually held');
 end $$;
 
 do $$ begin raise notice '--- all assertions passed'; end $$;

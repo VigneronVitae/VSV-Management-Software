@@ -78,7 +78,11 @@ export type Place =
   // Type three letters instead of remembering where a thing lives.
   | { at: "go" }
   | { at: "sampling" }
-  | { at: "sample"; id: string };
+  | { at: "sample"; id: string }
+  // What colour each wine is, and what that has made of the barrels.
+  | { at: "colours" }
+  // The wine in a vessel, as opposed to the vessel. Addressed by the lot.
+  | { at: "wine"; id: string };
 
 export const HOME: Place = { at: "home" };
 
@@ -116,6 +120,7 @@ const WITHOUT_ID = new Set([
   "invites",
   "sampling",
   "go",
+  "colours",
 ]);
 
 // A calendar day, which is what the day log is addressed by.
@@ -131,6 +136,7 @@ const WITH_ID = new Set([
   "vessel-photos",
   "sample",
   "block",
+  "wine",
 ]);
 
 export function encode(place: Place): string {

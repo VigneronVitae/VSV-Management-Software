@@ -952,6 +952,19 @@ and no site in it, and 186 sites is the size of the gap between what the asserti
 believed to check and what they check. **`claim_account` was two of those 186 tonight, found
 by this run and fixed before landing, which is the argument for the whole apparatus.**
 
+**S-80. Only barrels have a colour, and oak is not the only thing that stains.**
+`barrel_colour` derives from placements into vessels whose type is `barrel`, and nothing
+else. Concrete, amphora and any other porous vessel this winery buys later would stain the
+same way and would read as having no colour at all, which is worse than reading `unknown`:
+they are not in the view, so they are not on any list. Stainless genuinely cannot stain and
+is correctly absent.
+It is scoped this way because the winemaker asked for barrels, the cellar has four of them
+and no concrete, and generalising a rule used in one place to vessels that do not exist here
+is a guess dressed as foresight. *Resolves when:* this winery has a porous vessel that is not
+a barrel, at which point the fix is a `porous` attribute on the `vessel_type` vocabulary and
+one changed join, because the rule already lives on a registry row rather than in a function.
+*Load-bearing:* no, and it becomes load-bearing the day a concrete egg arrives, silently.
+
 ## Discharged
 **S-78. Anybody who can sign up becomes staff.** *Discharged by `0068`.*
 `enable_signup = true`, and `claim_account` gave any authenticated identity that had not

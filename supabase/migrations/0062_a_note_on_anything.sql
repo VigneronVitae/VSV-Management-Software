@@ -4,7 +4,8 @@
 --           whoever knows, without the saying ever counting as evidence."
 -- Depends on: [supabase/migrations/0023_subject_resolver.sql,
 --              supabase/migrations/0047_attachments.sql]
--- Depended on by: [tests/schema_assertions.sql, supabase/migrations/0063_a_note_is_a_thing_too.sql, supabase/migrations/0064_typing_a_note.sql]
+-- Depended on by: [tests/schema_assertions.sql, supabase/migrations/0063_a_note_is_a_thing_too.sql, supabase/migrations/0064_typing_a_note.sql,
+--                  supabase/migrations/0078_the_wine_in_a_vessel.sql]
 -- Axioms enforced: T0-3 (a note carries who said it and when), T0-5 (a note is
 --                  appended; removing one is an administrator's act)
 -- Open sorries: S-73 (day_note and vessel_type_note are not subsumed, so there

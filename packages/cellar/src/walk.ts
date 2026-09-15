@@ -19,13 +19,17 @@ import {
   addVineyard,
   appUsers,
   attachmentsFor,
+  type BarrelColour,
   type Block,
+  barrelColours,
+  barrelWarning,
   bindCode,
   binsToReturn,
   blocks,
   cancelPick,
   captionPhoto,
   claimAccount,
+  colourConflicts,
   confirmNote,
   contract,
   countSupply,
@@ -36,6 +40,7 @@ import {
   type DayNote,
   dayLog,
   dayNotes,
+  declareBarrelColour,
   drawCut,
   drawToLevel,
   exportCellar,
@@ -44,9 +49,12 @@ import {
   finishPress,
   invites,
   type Location,
+  type LotWithoutColour,
   type LotWithoutVintage,
   locations,
   lotAdditions,
+  lotDetail,
+  lotsWithoutColour,
   lotsWithoutVintage,
   makeInvite,
   markBought,
@@ -74,6 +82,7 @@ import {
   pressesInProgress,
   rackPlan,
   rackTransfer,
+  reconditionBarrel,
   removeDayNote,
   removePick,
   removePlanting,
@@ -84,6 +93,7 @@ import {
   type SubjectNote,
   type SupplyOnHand,
   samples,
+  setColour,
   setMakerMakes,
   setPaperRecordOperations,
   setPartyLogin,
@@ -125,6 +135,7 @@ import {
   vesselById,
   vesselByIdOrNull,
   vesselPhotoUrl,
+  vesselStateById,
   vessels,
   vesselTypeNotes,
   viewerScope,
@@ -305,7 +316,11 @@ async function screenFor(place: Place): Promise<HTMLElement> {
     case "home":
       return homeScreen(user, facility);
     case "vessels":
-      return vesselListScreen(await vessels(), await locations());
+      return vesselListScreen(
+        await vessels(),
+        await locations(),
+        await barrelColours(),
+      );
     case "vessel-new":
       return vesselScreen();
     case "vessel-wine":
@@ -342,6 +357,10 @@ async function screenFor(place: Place): Promise<HTMLElement> {
       return storesScreen();
     case "vintages":
       return vintagesScreen();
+    case "colours":
+      return coloursScreen();
+    case "wine":
+      return wineScreen(place.id);
     case "additions":
       return additionsScreen();
     case "practice":
@@ -400,7 +419,15 @@ async function screenFor(place: Place): Promise<HTMLElement> {
             "may belong to somebody else.",
         );
       }
-      if (place.at === "vessel") return vesselChoiceScreen(vessel.id, vessel.name);
+      if (place.at === "vessel") {
+        const state = await vesselStateById(vessel.id);
+        return vesselChoiceScreen(
+          vessel.id,
+          vessel.name,
+          state?.node_id ?? null,
+          state?.lot_name ?? null,
+        );
+      }
       if (place.at === "vessel-edit") return vesselEditScreen(vessel.id, vessel.name);
       return fillVesselScreen(vessel.id, vessel.name);
     }
@@ -917,17 +944,29 @@ function section(title: string, ...body: Node[]): HTMLElement {
 
 async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> {
   const practising = currentBackend() === "practice";
-  const [places, kit, unweighed, owedBins, owedPaper, buying, silent, pressing] =
-    await Promise.all([
-      locations(),
-      vessels(),
-      unweighedBins(),
-      binsToReturn(),
-      toPropagate(),
-      shoppingList(),
-      lotsWithoutVintage(),
-      pressesInProgress(),
-    ]);
+  const [
+    places,
+    kit,
+    unweighed,
+    owedBins,
+    owedPaper,
+    buying,
+    silent,
+    pressing,
+    uncoloured,
+    clashes,
+  ] = await Promise.all([
+    locations(),
+    vessels(),
+    unweighedBins(),
+    binsToReturn(),
+    toPropagate(),
+    shoppingList(),
+    lotsWithoutVintage(),
+    pressesInProgress(),
+    lotsWithoutColour(),
+    colourConflicts(),
+  ]);
   const filled = kit.filter((v) => !v.is_empty).length;
   // On the home screen on purpose. T1-4 allows a bin to exist with no weight,
   // which is only safe if the count of them is somewhere nobody has to go
@@ -1052,6 +1091,25 @@ async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> 
           },
         ]
       : []),
+    // 0072. Two counts, one entry. A lot with no colour is why a barrel reads
+    // unknown, and a white sitting in a red barrel is the thing that count is
+    // for, so putting them behind separate doors would hide the second behind
+    // the first. Always present rather than conditional, unlike the vintage
+    // list above: that one can only shrink and this one fills up every time
+    // fruit comes in.
+    {
+      name: "Colour",
+      note:
+        clashes.length > 0
+          ? "A wine is sitting in a barrel that has held red."
+          : "What colour each wine is, and what that has made of the barrels.",
+      ...(clashes.length > 0
+        ? { badge: `${clashes.length} to look at` }
+        : uncoloured.length > 0
+          ? { badge: `${uncoloured.length} to say` }
+          : {}),
+      go: () => go({ at: "colours" }),
+    },
   ];
 
   const setup: MenuItem[] = [
@@ -1289,7 +1347,11 @@ function installBlock(): HTMLElement {
 // why there are three stores now and what each is for.
 type VesselOrder = "name" | "fullest" | "emptiest" | "type" | "recent";
 
-function vesselListScreen(kit: VesselState[], places: Location[]): HTMLElement {
+function vesselListScreen(
+  kit: VesselState[],
+  places: Location[],
+  barrels: BarrelColour[],
+): HTMLElement {
   const body = el("div", {});
   const count = el("p", { class: "lede" });
 
@@ -1343,7 +1405,7 @@ function vesselListScreen(kit: VesselState[], places: Location[]): HTMLElement {
       key: "map",
       label: "Map",
       note: "The rooms, with what is standing in them. Sized by capacity, filled by how full.",
-      render: () => cellarMapLayout(shown(), places),
+      render: () => cellarMapLayout(shown(), places, barrels),
     },
   ];
 
@@ -1474,7 +1536,16 @@ function vesselListScreen(kit: VesselState[], places: Location[]): HTMLElement {
 // height rather than a number, and whose wine it is when it is not ours. A
 // vessel somebody else owns is the thing you most need to not make a mistake
 // with, and a list buries that in a column.
-function cellarMapLayout(kit: VesselState[], places: Location[]): Node {
+function cellarMapLayout(
+  kit: VesselState[],
+  places: Location[],
+  barrels: BarrelColour[] = [],
+): Node {
+  // 0072. A barrel is red, white or unknown, derived from what has been in it.
+  // On a map it is a rim colour rather than a word, because the question it
+  // answers is asked while standing in the barrel room looking for somewhere to
+  // put a white, and a person scanning a wall of shapes is not reading labels.
+  const colourOf = new Map(barrels.map((b) => [b.id, b.colour]));
   // Grouped by the room it stands in. A vessel with no location is in its own
   // group at the end rather than hidden: "nobody has said where this is" is a
   // real state and the map is where it becomes obvious.
@@ -1513,6 +1584,7 @@ function cellarMapLayout(kit: VesselState[], places: Location[]): Node {
           `map-vessel map-${v.type.toLowerCase().replace(/[^a-z]+/g, "-")}` +
           (cap ? "" : " map-nosize") +
           (v.is_empty ? " map-empty" : "") +
+          (colourOf.has(v.id) ? ` map-barrel-${colourOf.get(v.id)}` : "") +
           (v.lot_facility_owned === false ? " map-theirs" : ""),
         style: `--size:${size}px; --fill:${fill.toFixed(3)}`,
         title:
@@ -1532,8 +1604,11 @@ function cellarMapLayout(kit: VesselState[], places: Location[]): Node {
       }),
     );
 
+    // Always the choice screen, for the same reason the list rows are: a barrel
+    // on a map is a barrel with wine in it, and the wine is usually what
+    // somebody tapping it wants.
     on(shape, "click", () => {
-      go(v.is_empty ? { at: "vessel", id: v.id } : { at: "vessel-edit", id: v.id });
+      go({ at: "vessel", id: v.id });
     });
     return shape;
   }
@@ -1631,13 +1706,16 @@ function vesselList(kit: VesselState[]): HTMLElement {
         // deeper.
         el("span", {
           class: "vessel-edit-hint",
-          text: v.is_empty ? "Fill or edit" : "Edit",
+          text: v.is_empty ? "Fill or edit" : "Open",
         }),
       );
-      // An empty vessel offers the choice; a full one goes straight to the edit
-      // screen, because there is only one thing left to do to it.
-      const openRow = () =>
-        go(v.is_empty ? { at: "vessel", id: v.id } : { at: "vessel-edit", id: v.id });
+      // Both offer the choice now. A full one used to go straight to the vessel
+      // edit screen under a comment saying that was the only thing left to do to
+      // it, which stopped being true when a lot gained facts somebody says after
+      // intake: "I also need a way to edit (add/append only is fine) wine in
+      // vessels, like to add the color." The wine and the vessel are two things
+      // and the row cannot know which one you meant.
+      const openRow = () => go({ at: "vessel", id: v.id });
       on(row, "click", openRow);
       on(row, "keydown", (ev) => {
         if (ev.key === "Enter" || ev.key === " ") {
@@ -2667,6 +2745,22 @@ function rackScreen(): HTMLElement {
             ),
           ),
         );
+
+        // 0072. Asked of the kernel, once per destination, and never worked out
+        // here: a client that decided which barrel is red would be a second
+        // implementation of the rule and the two would disagree the first time
+        // somebody said a colour. Nothing is blocked. The winemaker: "warn and
+        // let through because somebody could put the wine in the barrel before
+        // using the app".
+        const goingIn = plan.parents[0]?.node_id;
+        if (goingIn) {
+          const said = await Promise.all(
+            d.map((leg) => barrelWarning(leg.vessel_id, goingIn)),
+          );
+          for (const w of said) {
+            if (w.warn && w.why) preview.append(banner(w.why, "note"));
+          }
+        }
         if (plan.overfill.length > 0) {
           const confirm = checkbox("Record it anyway");
           on(confirm.input, "change", () => {
@@ -3128,7 +3222,218 @@ function vesselTypeScreen(user: AppUser, type: Term): HTMLElement {
 // Two things you might want and no way to guess which, so ask rather than
 // bury one of them. Only appears for an empty vessel: a full one has no fill
 // action until racking exists.
-function vesselChoiceScreen(vesselId: string, vesselName: string): HTMLElement {
+// --- the wine, as opposed to the vessel -----------------------------------
+
+// The winemaker: "I also need a way to edit (add/append only is fine) wine in
+// vessels, like to add the color."
+//
+// **There was nowhere to do that.** Tapping a full vessel went to the vessel
+// edit screen, under a comment saying that is the only thing left to do to it.
+// That was true when every fact about a lot arrived at intake and stopped, and
+// it stopped being true the moment a lot had a colour somebody says afterwards.
+//
+// Append only, which is what he offered and is also what the kernel wants: a
+// colour and a vintage are told values with one blessed function each, and
+// everything else anybody wants to say about a lot is a note, which is the
+// untyped floor from 0064 and can be turned into a fact later without anybody
+// deciding in advance which facts exist.
+function wineScreen(nodeId: string): HTMLElement {
+  const body = el("div", {}, empty("Loading."));
+  const view = screen("The wine", body);
+
+  async function load(): Promise<void> {
+    const [rows_, palette, notes] = await Promise.all([
+      lotDetail(nodeId),
+      terms("wine_colour"),
+      notesFor("node", nodeId),
+    ]);
+
+    const lot = rows_[0];
+    if (!lot) {
+      body.replaceChildren(
+        empty("That lot is not there to open."),
+        button("Back", () => goBack(), "quiet"),
+      );
+      return;
+    }
+
+    view.querySelector("h1")?.replaceChildren(document.createTextNode(lot.name));
+
+    const said = el("div", {});
+    const note = field({
+      label: "Add a note",
+      placeholder: "Fruit condition was mostly good",
+      hint: "Anything at all. It can be turned into a fact later, or left as prose.",
+    });
+
+    // Every vessel it is standing in, because a lot split across four barrels
+    // is four rows and flattening that would be inventing a single answer.
+    const standing = rows_.filter((r) => r.vessel_id !== null);
+
+    body.replaceChildren(
+      rows(
+        el(
+          "div",
+          { class: "summary" },
+          summaryRow("Variety", lot.variety ?? "not said"),
+          summaryRow(
+            "Vintage",
+            lot.non_vintage
+              ? "non-vintage"
+              : lot.vintage
+                ? String(lot.vintage)
+                : "not said",
+          ),
+          summaryRow(
+            "Colour",
+            lot.colour_label
+              ? lot.colour_told
+                ? lot.colour_label
+                : `${lot.colour_label}, inherited from what it came off`
+              : "nobody has said",
+          ),
+          summaryRow("Owner", lot.owner_name ?? "this winery"),
+          ...(standing.length === 0
+            ? [summaryRow("Where", "not in a vessel")]
+            : standing.map((r) =>
+                summaryRow(
+                  r === standing[0] ? "Where" : "and",
+                  `${r.vessel}, ${r.volume_l ?? "?"} L`,
+                ),
+              )),
+        ),
+
+        // Colour first, because it is the thing he came here for and the thing
+        // a barrel's own state is derived from.
+        el("h2", { class: "section-head", text: "Colour" }),
+        el("p", {
+          class: "field-hint",
+          text: lot.colour_told
+            ? "Said about this lot. Saying it again replaces it."
+            : lot.colour_label
+              ? "This came down from what the lot was made from. Saying it here pins it to this lot."
+              : "Nothing that comes off this lot can be called white or red until somebody says.",
+        }),
+        el(
+          "div",
+          { class: "button-row" },
+          ...palette.map((c) =>
+            button(
+              c.label,
+              async () => {
+                try {
+                  await setColour(nodeId, c.value);
+                  await load();
+                } catch (error) {
+                  said.replaceChildren(fail(error));
+                }
+              },
+              c.value === lot.colour ? "primary" : "secondary",
+            ),
+          ),
+        ),
+
+        ...(lot.vintage === null && !lot.non_vintage
+          ? [
+              el("h2", { class: "section-head", text: "Vintage" }),
+              el("p", {
+                class: "field-hint",
+                text: "This lot says neither a year nor non-vintage.",
+              }),
+              button("Say which year", () => go({ at: "vintages" }), "secondary"),
+            ]
+          : []),
+
+        el("h2", { class: "section-head", text: "Notes" }),
+        note.root,
+        button("Add it", async () => {
+          if (!note.value().trim()) {
+            said.replaceChildren(banner("Type something first.", "error"));
+            return;
+          }
+          try {
+            await addNote({
+              subjectType: "node",
+              subjectId: nodeId,
+              body: note.value(),
+            });
+            note.input.value = "";
+            await load();
+          } catch (error) {
+            said.replaceChildren(fail(error));
+          }
+        }),
+        said,
+        notes.length === 0
+          ? empty("Nothing said about this lot yet.")
+          : el(
+              "ul",
+              { class: "vessel-list" },
+              ...notes.slice(0, 20).map((n) =>
+                el(
+                  "li",
+                  { class: "vessel-row" },
+                  el("span", { class: "vessel-name", text: n.body }),
+                  el("span", {
+                    class: "vessel-detail",
+                    text: `${n.by_name ?? "somebody"}, ${new Date(n.at).toLocaleString()}`,
+                  }),
+                ),
+              ),
+            ),
+
+        button("Back", () => goBack(), "quiet"),
+      ),
+    );
+  }
+
+  void (async () => {
+    try {
+      await load();
+    } catch (error) {
+      body.replaceChildren(
+        fail(error),
+        button("Back", () => goBack(), "quiet"),
+      );
+    }
+  })();
+
+  return view;
+}
+
+// What a vessel offers, which depends on whether there is wine in it. It used
+// to be reached only when empty, because a full vessel went straight to its own
+// edit screen. Now both come here: the wine and the vessel are two different
+// things to open and a tap on a row cannot know which one somebody meant.
+function vesselChoiceScreen(
+  vesselId: string,
+  vesselName: string,
+  nodeId: string | null = null,
+  lotName: string | null = null,
+): HTMLElement {
+  if (nodeId) {
+    return screen(
+      vesselName,
+      lede(`${lotName ?? "Wine"} is in this vessel.`),
+      rows(
+        // First, because it is the one that was missing and because the wine is
+        // what somebody standing in front of a barrel is thinking about.
+        button("The wine in it", () => go({ at: "wine", id: nodeId })),
+        button(
+          "Edit the vessel",
+          () => go({ at: "vessel-edit", id: vesselId }),
+          "secondary",
+        ),
+        button(
+          "Notes and photographs",
+          () => go({ at: "vessel-photos", id: vesselId }),
+          "secondary",
+        ),
+        button("Back", () => goBack(), "quiet"),
+      ),
+    );
+  }
+
   return screen(
     vesselName,
     lede("This vessel is empty."),
@@ -4980,6 +5285,12 @@ function paletteScreen(): HTMLElement {
           go: () => go({ at: "fact-kinds" }),
         },
         {
+          label: "Colour",
+          note: "What colour each wine is, and what that made of the barrels.",
+          hay: "colour color red white rose orange barrel stain",
+          go: () => go({ at: "colours" }),
+        },
+        {
           label: "Take a copy",
           note: "Everything you can read, as one file.",
           hay: "export backup copy",
@@ -5011,8 +5322,7 @@ function paletteScreen(): HTMLElement {
         label: v.name,
         note: v.is_empty ? `${v.type}, empty` : `${v.type}, ${v.lot_name ?? "wine"}`,
         hay: `${v.name} ${v.type} ${v.lot_name ?? ""}`,
-        go: () =>
-          go(v.is_empty ? { at: "vessel", id: v.id } : { at: "vessel-edit", id: v.id }),
+        go: () => go({ at: "vessel", id: v.id }),
       }));
 
       const all = [...places, ...doable, ...named];
@@ -5103,6 +5413,9 @@ function capabilityRoute(key: string): Place | null {
     "cellar.take_sample": { at: "sampling" },
     "cellar.count_supply": { at: "stores" },
     "cellar.set_vintage": { at: "vintages" },
+    "cellar.set_colour": { at: "colours" },
+    "cellar.recondition_barrel": { at: "colours" },
+    "cellar.declare_barrel_colour": { at: "colours" },
     "cellar.cancel_pick": { at: "intake" },
   };
   return routes[key] ?? null;
@@ -5811,6 +6124,258 @@ function practiceScreen(): HTMLElement {
 // The year read off a lot's own name is offered and never filled in for them. A
 // lot called "2024 Eola Springs" is almost certainly a 2024, and almost
 // certainly not a thing software may decide on somebody's behalf.
+// --- colour ----------------------------------------------------------------
+
+// The winemaker asked for red and white barrels and then said the better thing:
+// "obviously this is something we are missing in the wine type, which should be
+// red/orange/rose/white". So this screen is about wine, and the barrels are what
+// falls out of it.
+//
+// It is one screen rather than two because the two halves only make sense
+// together: a barrel reads `unknown` exactly as long as it has held a lot nobody
+// has typed, so the list of untyped lots is the thing that turns the barrel list
+// from guesswork into an answer. Splitting them would leave somebody looking at
+// four unknown barrels with no idea what to do about it.
+function coloursScreen(): HTMLElement {
+  const body = el("div", {}, empty("Loading."));
+  const view = screen(
+    "Colour",
+    lede(
+      "What colour each wine is, and what that has made of the barrels. A barrel " +
+        "goes red when red goes in it and stays red until somebody reconditions it.",
+    ),
+    body,
+  );
+
+  async function load(): Promise<void> {
+    const [waiting, barrels, conflicts, palette] = await Promise.all([
+      lotsWithoutColour(),
+      barrelColours(),
+      colourConflicts(),
+      terms("wine_colour"),
+    ]);
+
+    function lotRow(lot: LotWithoutColour): HTMLElement {
+      const said = el("div", {});
+
+      async function answer(colour: string): Promise<void> {
+        try {
+          const out = await setColour(lot.id, colour);
+          said.replaceChildren(
+            banner(
+              out.left === 0
+                ? "Done, and that was the last one."
+                : `Done. ${out.left} lot${out.left === 1 ? "" : "s"} still to say.`,
+              "good",
+            ),
+          );
+          await load();
+        } catch (error) {
+          said.replaceChildren(fail(error));
+        }
+      }
+
+      return el(
+        "details",
+        { class: "more" },
+        el("summary", { text: `${lot.name} (${lot.stage})` }),
+        rows(
+          summaryRow("Variety", lot.variety ?? "not said"),
+          // Offered as a sentence, never as a filled box. Pinot Noir is made
+          // here as a red, a rose and a blanc de noir, so a prefilled answer is
+          // a wrong answer somebody taps past.
+          el("p", {
+            class: "field-hint",
+            text: lot.likely
+              ? `${lot.variety} is almost always white, but say it rather than assume it.`
+              : "Pinot Noir is made three ways here, so this one needs somebody who knows.",
+          }),
+          el(
+            "div",
+            { class: "button-row" },
+            ...palette.map((c) =>
+              button(c.label, () => void answer(c.value), "secondary"),
+            ),
+          ),
+          said,
+        ),
+      );
+    }
+
+    function barrelRow(b: BarrelColour): HTMLElement {
+      const said = el("div", {});
+      const method = field({
+        label: "What was done to it",
+        placeholder: "Shaved, retoasted, deep cleaned",
+        hint: "Required. It is the whole of the evidence that this barrel is white again.",
+      });
+
+      const detail =
+        b.colour === "red"
+          ? `Went red with ${b.went_red_with ?? "an earlier lot"}` +
+            (b.went_red_at ? ` on ${new Date(b.went_red_at).toLocaleDateString()}` : "")
+          : b.colour === "unknown"
+            ? "Has held a lot nobody has said a colour for"
+            : "Nothing that stains has been in it";
+
+      return el(
+        "details",
+        { class: "more" },
+        el(
+          "summary",
+          {},
+          el("span", { class: `colour-dot colour-${b.colour}` }),
+          el("span", { text: `${b.name}, ${b.colour}` }),
+        ),
+        rows(
+          summaryRow("Why", detail),
+          ...(b.reconditioned_at
+            ? [
+                summaryRow(
+                  "Last reconditioned",
+                  new Date(b.reconditioned_at).toLocaleDateString(),
+                ),
+              ]
+            : []),
+          // For a barrel bought used, which has no history here and would
+          // otherwise read white. Offered on anything not already red: a red
+          // barrel has nothing to learn from being told it is red, and telling
+          // it that it is white is refused by the kernel anyway, because a
+          // declaration is not a process.
+          ...(b.colour === "red"
+            ? []
+            : [
+                el("p", {
+                  class: "field-hint",
+                  text:
+                    "Bought used? Say what it arrived as. Everything after that " +
+                    "still comes from what goes in it.",
+                }),
+                el(
+                  "div",
+                  { class: "button-row" },
+                  button(
+                    "It arrived red",
+                    async () => {
+                      try {
+                        await declareBarrelColour(b.id, "red", null);
+                        await load();
+                      } catch (error) {
+                        said.replaceChildren(fail(error));
+                      }
+                    },
+                    "secondary",
+                  ),
+                  button(
+                    "It arrived neutral white",
+                    async () => {
+                      try {
+                        await declareBarrelColour(b.id, "white", null);
+                        await load();
+                      } catch (error) {
+                        said.replaceChildren(fail(error));
+                      }
+                    },
+                    "secondary",
+                  ),
+                ),
+                said,
+              ]),
+          // Only offered where it means something. Reconditioning a barrel that
+          // is already white records a process that had no effect, and a control
+          // that does nothing is worse than no control.
+          ...(b.colour === "red"
+            ? [
+                method.root,
+                button(
+                  "Reconditioned, so it is white again",
+                  async () => {
+                    try {
+                      await reconditionBarrel(b.id, method.value(), null);
+                      await load();
+                    } catch (error) {
+                      said.replaceChildren(fail(error));
+                    }
+                  },
+                  "secondary",
+                ),
+                said,
+              ]
+            : []),
+        ),
+      );
+    }
+
+    body.replaceChildren(
+      rows(
+        // The conflicts first, because they are the only part of this screen
+        // that is about something already wrong.
+        ...(conflicts.length === 0
+          ? []
+          : [
+              el("h2", { class: "section-head", text: "Worth a look" }),
+              banner(
+                `${conflicts.length} lot${conflicts.length === 1 ? " is" : "s are"} ` +
+                  "sitting in a barrel that has held red. Nothing stopped it and " +
+                  "nothing will: a barrel can be filled before anybody records it.",
+                "note",
+              ),
+              el(
+                "ul",
+                { class: "vessel-list" },
+                ...conflicts.map((c) =>
+                  el(
+                    "li",
+                    { class: "vessel-row" },
+                    el("span", {
+                      class: "vessel-name",
+                      text: `${c.lot} in ${c.vessel}`,
+                    }),
+                    el("span", {
+                      class: "vessel-detail",
+                      text: `${c.lot_colour} wine, and ${c.vessel} went red with ${c.went_red_with ?? "an earlier lot"}`,
+                    }),
+                  ),
+                ),
+              ),
+            ]),
+
+        el("h2", { class: "section-head", text: "Wines with no colour" }),
+        waiting.length === 0
+          ? banner("Every wine says its colour.", "good")
+          : rows(
+              el("p", {
+                class: "field-hint",
+                text:
+                  "Say it once on a pick and everything that comes off it " +
+                  "inherits it. A barrel cannot be called white while it has " +
+                  "held one of these.",
+              }),
+              ...waiting.map(lotRow),
+            ),
+
+        el("h2", { class: "section-head", text: "Barrels" }),
+        barrels.length === 0 ? empty("No barrels.") : rows(...barrels.map(barrelRow)),
+
+        button("Back", () => goBack(), "quiet"),
+      ),
+    );
+  }
+
+  void (async () => {
+    try {
+      await load();
+    } catch (error) {
+      body.replaceChildren(
+        fail(error),
+        button("Back", () => goBack(), "quiet"),
+      );
+    }
+  })();
+
+  return view;
+}
+
 function vintagesScreen(): HTMLElement {
   const body = el("div", {}, empty("Loading."));
   const view = screen(

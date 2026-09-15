@@ -4,9 +4,12 @@ import type {
   AdditionResult,
   AppUser,
   Attachment,
+  BarrelColour,
+  BarrelWarning,
   BinToReturn,
   Block,
   CodePayload,
+  ColourConflict,
   Contract,
   CutDrawn,
   DayEntry,
@@ -17,6 +20,8 @@ import type {
   LevelDrawn,
   Location,
   LotAddition,
+  LotDetail,
+  LotWithoutColour,
   LotWithoutVintage,
   NodePayload,
   PaperRecord,
@@ -498,6 +503,18 @@ export async function vessels(): Promise<VesselState[]> {
   const { data, error } = await kernel().from("vessel_state").select("*").order("name");
   if (error) throw new KernelError(error);
   return (data ?? []) as VesselState[];
+}
+
+// One vessel, with what is in it. `vessels()` answers this too and fetches the
+// whole cellar to do it, which is right for a list and wrong for a tap.
+export async function vesselStateById(id: Uuid): Promise<VesselState | null> {
+  const { data, error } = await kernel()
+    .from("vessel_state")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw new KernelError(error);
+  return (data ?? null) as VesselState | null;
 }
 
 // Scanning is a read. A code already bound answers with its vessel rather than
@@ -1807,4 +1824,118 @@ export async function renameTerm(id: Uuid, label: string): Promise<void> {
 export async function retireTerm(id: Uuid, active: boolean): Promise<void> {
   const { error } = await kernel().from("term").update({ active }).eq("id", id);
   if (error) throw new KernelError(error);
+}
+
+// --- colour ----------------------------------------------------------------
+
+// "Obviously this is something we are missing in the wine type, which should be
+// red/orange/rose/white." It is the fact a barrel's own colour is derived from,
+// and no other field in the schema can answer it: five of six varieties here are
+// white and Pinot Noir is made as a red, a rose and a blanc de noir.
+export async function lotsWithoutColour(): Promise<LotWithoutColour[]> {
+  const { data, error } = await kernel()
+    .from("lot_without_colour")
+    .select("id,name,stage,status,created_at,variety,likely")
+    .order("created_at", { ascending: false });
+  if (error) throw new KernelError(error);
+  return (data ?? []) as LotWithoutColour[];
+}
+
+export async function setColour(
+  nodeId: Uuid,
+  colour: string,
+): Promise<{ id: Uuid; colour: string; left: number }> {
+  const { data, error } = await kernel().rpc("set_colour", {
+    p_node_id: nodeId,
+    p_colour: colour,
+  });
+  if (error) throw new KernelError(error);
+  return data as { id: Uuid; colour: string; left: number };
+}
+
+export async function barrelColours(): Promise<BarrelColour[]> {
+  const { data, error } = await kernel()
+    .from("barrel_colour")
+    .select(
+      "id,name,colour,went_red_with,went_red_at,reconditioned_at,location_id,active",
+    )
+    .order("name");
+  if (error) throw new KernelError(error);
+  return (data ?? []) as BarrelColour[];
+}
+
+export async function colourConflicts(): Promise<ColourConflict[]> {
+  const { data, error } = await kernel()
+    .from("white_in_a_red_barrel")
+    .select(
+      "vessel_id,vessel,node_id,lot,lot_colour,went_red_with,went_red_at,filled_at",
+    );
+  if (error) throw new KernelError(error);
+  return (data ?? []) as ColourConflict[];
+}
+
+// Asked before a fill, and answered by the kernel rather than worked out here.
+// A client that decided this for itself would be a second implementation of the
+// rule, and the two would disagree the first time somebody added a colour.
+export async function barrelWarning(
+  vesselId: Uuid,
+  nodeId: Uuid,
+): Promise<BarrelWarning> {
+  const { data, error } = await kernel().rpc("barrel_warning", {
+    p_vessel_id: vesselId,
+    p_node_id: nodeId,
+  });
+  if (error) throw new KernelError(error);
+  return (data ?? { warn: false }) as BarrelWarning;
+}
+
+// "It also belongs on the barrel, like for the red and white neutral barrels we
+// purchase." A barrel bought used has no placements here and would otherwise
+// read white, which is the one answer that could ruin a wine. Everything after
+// the declaration still derives.
+export async function declareBarrelColour(
+  vesselId: Uuid,
+  colour: "red" | "white",
+  note: string | null,
+): Promise<{ event: Uuid; vessel: Uuid; colour: string }> {
+  const { data, error } = await kernel().rpc("declare_barrel_colour", {
+    p_vessel_id: vesselId,
+    p_colour: colour,
+    p_note: note,
+  });
+  if (error) throw new KernelError(error);
+  return data as { event: Uuid; vessel: Uuid; colour: string };
+}
+
+// A barrel that has held red is white again only because somebody shaved it,
+// retoasted it or deep cleaned it, so the method is required and the kernel
+// refuses without one.
+export async function reconditionBarrel(
+  vesselId: Uuid,
+  method: string,
+  note: string | null,
+): Promise<{ event: Uuid; vessel: Uuid; method: string }> {
+  const { data, error } = await kernel().rpc("recondition_barrel", {
+    p_vessel_id: vesselId,
+    p_method: method,
+    p_note: note,
+  });
+  if (error) throw new KernelError(error);
+  return data as { event: Uuid; vessel: Uuid; method: string };
+}
+
+// "I also need a way to edit (add/append only is fine) wine in vessels, like to
+// add the color." One read rather than four, because a screen assembling a lot
+// out of pieces is how two clients end up disagreeing about what a lot is.
+export async function lotDetail(nodeId: Uuid): Promise<LotDetail[]> {
+  const { data, error } = await kernel()
+    .from("lot_detail")
+    // One literal, deliberately: the client library derives the row type from
+    // the text of this string, and a concatenation is opaque to it.
+    .select(
+      "id,name,stage,status,vintage,non_vintage,variety,product_type,colour,colour_label,colour_told,owner_id,owner_name,provenance,created_at,vessel_id,vessel,volume_l,filled_at",
+    )
+    .eq("id", nodeId);
+  if (error) throw new KernelError(error);
+  return (data ?? []) as LotDetail[];
 }

@@ -1107,6 +1107,48 @@ body.practising {
   border-width: 3px;
 }
 
+/* Barrel colour, 0072. Derived from what the barrel has held, never stored.
+   A rim rather than a word: the question is asked while standing in front of a
+   wall of barrels looking for somewhere to put a white, and nobody reads labels
+   doing that. Unknown is drawn as its own state rather than as white, because
+   the whole point of the three states is that an untold colour is not an
+   absence of red. */
+.map-barrel-red {
+  box-shadow: inset 0 0 0 3px #7b1e3a;
+}
+
+.map-barrel-white {
+  box-shadow: inset 0 0 0 3px #c9b37e;
+}
+
+.map-barrel-unknown {
+  box-shadow: inset 0 0 0 3px var(--muted);
+}
+
+/* The same three states in a list, where there is room for a word beside it. */
+.colour-dot {
+  display: inline-block;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  margin-right: 0.5rem;
+  vertical-align: baseline;
+  border: 1px solid var(--muted);
+}
+
+.colour-red {
+  background: #7b1e3a;
+}
+
+.colour-white {
+  background: #c9b37e;
+}
+
+.colour-unknown {
+  background: transparent;
+  border-style: dashed;
+}
+
 /* --- daylight ------------------------------------------------------------ */
 
 /* A phone in a vineyard at noon.

@@ -15,7 +15,7 @@ had seen, and two more, A24 and A25, by the phase B and phase 2 reads in W-3 and
 is 80.
 
 **The tree this describes has moved a long way from the tree it was written against.** It
-is 70 migrations, `0001` through `0032`. This paragraph used to name a head sha and a
+is 78 migrations, `0001` through `0032`. This paragraph used to name a head sha and a
 branch, and both went stale within two commits, which is X-3-8 and is exactly the mistake
 `docs/review/CURRENT-BASELINE.md` exists to correct. That file states the current facts and
 supersedes the canary block in every archived prompt; a sha does not belong in a second
@@ -362,7 +362,7 @@ forty two files and five migrations, which is the tree it was written against an
 tree it now governs.*
 
 **Front matter corrected only.** The entries are not re-derived. What changed is the
-statement of what this document is about: 70 migrations rather than five, the current head
+statement of what this document is about: 78 migrations rather than five, the current head
 named, and a pointer to `docs/review/CURRENT-BASELINE.md` for the rest. The count of
 distinct defects is 80 rather than 78, which corrects an arithmetic slip in 1.3: A24 and
 A25 were added and the total was not moved.

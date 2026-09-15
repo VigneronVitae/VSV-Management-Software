@@ -11,7 +11,8 @@
 --              docs/architecture-rulings.md]
 -- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql,
 --                  supabase/migrations/0031_scheduling_to_core.sql,
---                  supabase/migrations/0032_vessel_maker_and_room_temperature.sql, supabase/migrations/0033_intake.sql, supabase/migrations/0043_record_propagation.sql, supabase/migrations/0045_press_detail.sql, supabase/migrations/0046_supply_inventory.sql, supabase/migrations/0057_the_contract.sql, supabase/migrations/0064_typing_a_note.sql]
+--                  supabase/migrations/0032_vessel_maker_and_room_temperature.sql, supabase/migrations/0033_intake.sql, supabase/migrations/0043_record_propagation.sql, supabase/migrations/0045_press_detail.sql, supabase/migrations/0046_supply_inventory.sql, supabase/migrations/0057_the_contract.sql, supabase/migrations/0064_typing_a_note.sql,
+--                  supabase/migrations/0071_a_wine_says_its_colour.sql]
 -- Axioms enforced: none new. Like 0026 this removes a wrong-way edge rather than
 --                  adding a rule.
 -- Open sorries: none new. A16 is untouched and is neither better nor worse; see
