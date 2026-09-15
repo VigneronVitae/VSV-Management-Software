@@ -898,6 +898,20 @@ S-63 is answered for weight, volume, area and count, and a fact kind's unit join
 answer rather than getting its own. *Load-bearing:* no, while a person types every value and
 would notice. Yes the first time a value arrives from anywhere but a person's hands.
 
+**S-76. A sample is of a place, and "the Pinot Gris" is not a place.**
+The winemaker asked for samples assigned to "vineyards and blocks and varieties". The first
+two are subjects and the third is not: a variety is a `term`, a word, and sampling a word is
+not a thing. `0067` reads "a variety" as "a variety in a block", which is a `planting` and
+is a real row, and registers that. **That covers what somebody standing in a vineyard means
+and does not cover what somebody at a desk might mean**, which is "every Pinot Gris we have,
+across four blocks and two vineyards". That second thing is a query over plantings rather
+than a subject, and answering it by registering `variety` as a subject would make a sample
+of a word possible, which is worse than the gap. *Resolves when:* somebody wants a reading
+that spans blocks, at which point the question is what it averages and by what weight, and
+that is a report with a decision in it rather than a missing subject type. *Load-bearing:*
+no. It is a shape of question nobody has asked, recorded so that the absence is deliberate
+rather than an oversight.
+
 ## Discharged
 **S-52. A press recorded no cuts.** *Discharged by `0045`.*
 The entry said that pressing free run and hard press separately recorded shares proportional to

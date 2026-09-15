@@ -5,7 +5,7 @@
 --           and the thing somebody actually said are one object."
 -- Depends on: [supabase/migrations/0027_term_kind_registry.sql,
 --              supabase/migrations/0062_a_note_on_anything.sql]
--- Depended on by: [tests/schema_assertions.sql, supabase/migrations/0065_confirming_without_owning.sql]
+-- Depended on by: [tests/schema_assertions.sql, supabase/migrations/0065_confirming_without_owning.sql, supabase/migrations/0067_sampling.sql]
 -- Axioms enforced: T0-4 (an agent may write inferred and may never write
 --                  confirmed), AR-E6 (the list of fact kinds is registry rows,
 --                  so an unsettled list is data rather than schema)

@@ -6,7 +6,7 @@
 -- Depends on: [supabase/migrations/0001_core_schema.sql,
 --              supabase/migrations/0026_subject_type_registry.sql,
 --              supabase/migrations/0038_cancel_a_pick.sql]
--- Depended on by: [tests/schema_assertions.sql, supabase/migrations/0040_block_variety_is_history.sql]
+-- Depended on by: [tests/schema_assertions.sql, supabase/migrations/0040_block_variety_is_history.sql, supabase/migrations/0067_sampling.sql]
 -- Axioms enforced: T0-2 (never store what is derived: a planting inherits the
 --                  block's answer by being asked, not by being copied)
 -- Open sorries: S-55 (acres and years are typed, and no unit is recorded

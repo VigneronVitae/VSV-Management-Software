@@ -34,7 +34,7 @@
 --              supabase/migrations/0029_viewer_scope.sql,
 --              supabase/migrations/0030_writable_columns.sql,
 --              supabase/migrations/0031_scheduling_to_core.sql,
---              supabase/migrations/0032_vessel_maker_and_room_temperature.sql, supabase/migrations/0033_intake.sql, supabase/migrations/0034_press.sql, supabase/migrations/0035_bins_in_bulk.sql, supabase/migrations/0036_bins_on_loan.sql, supabase/migrations/0037_export.sql, supabase/migrations/0038_cancel_a_pick.sql, supabase/migrations/0039_vineyard.sql, supabase/migrations/0040_block_variety_is_history.sql, supabase/migrations/0041_daily_log.sql, supabase/migrations/0042_weighing_photo.sql, supabase/migrations/0043_record_propagation.sql, supabase/migrations/0044_finishing_a_pick.sql, supabase/migrations/0045_press_detail.sql, supabase/migrations/0046_supply_inventory.sql, supabase/migrations/0047_attachments.sql, supabase/migrations/0048_pick_weighing.sql, supabase/migrations/0049_every_lot_says_its_vintage.sql, supabase/migrations/0050_additions.sql, supabase/migrations/0051_supplies_for_addition.sql, supabase/migrations/0052_press_as_a_process.sql, supabase/migrations/0053_a_press_is_a_vessel.sql, supabase/migrations/0054_a_spent_pick_is_spent.sql, supabase/migrations/0055_press_draws.sql, supabase/migrations/0056_draw_to_a_level.sql, supabase/migrations/0057_the_contract.sql, supabase/migrations/0058_an_open_pick_is_a_view.sql, supabase/migrations/0061_two_declarations_were_wrong.sql, supabase/migrations/0063_a_note_is_a_thing_too.sql, supabase/migrations/0065_confirming_without_owning.sql, supabase/migrations/0066_a_guard_that_can_be_weakened.sql, supabase/migrations/0064_typing_a_note.sql, supabase/migrations/0062_a_note_on_anything.sql, supabase/migrations/0060_the_contract_catches_up.sql, supabase/migrations/0059_a_weighing_says_its_pick.sql]
+--              supabase/migrations/0032_vessel_maker_and_room_temperature.sql, supabase/migrations/0033_intake.sql, supabase/migrations/0034_press.sql, supabase/migrations/0035_bins_in_bulk.sql, supabase/migrations/0036_bins_on_loan.sql, supabase/migrations/0037_export.sql, supabase/migrations/0038_cancel_a_pick.sql, supabase/migrations/0039_vineyard.sql, supabase/migrations/0040_block_variety_is_history.sql, supabase/migrations/0041_daily_log.sql, supabase/migrations/0042_weighing_photo.sql, supabase/migrations/0043_record_propagation.sql, supabase/migrations/0044_finishing_a_pick.sql, supabase/migrations/0045_press_detail.sql, supabase/migrations/0046_supply_inventory.sql, supabase/migrations/0047_attachments.sql, supabase/migrations/0048_pick_weighing.sql, supabase/migrations/0049_every_lot_says_its_vintage.sql, supabase/migrations/0050_additions.sql, supabase/migrations/0051_supplies_for_addition.sql, supabase/migrations/0052_press_as_a_process.sql, supabase/migrations/0053_a_press_is_a_vessel.sql, supabase/migrations/0054_a_spent_pick_is_spent.sql, supabase/migrations/0055_press_draws.sql, supabase/migrations/0056_draw_to_a_level.sql, supabase/migrations/0057_the_contract.sql, supabase/migrations/0058_an_open_pick_is_a_view.sql, supabase/migrations/0061_two_declarations_were_wrong.sql, supabase/migrations/0063_a_note_is_a_thing_too.sql, supabase/migrations/0065_confirming_without_owning.sql, supabase/migrations/0066_a_guard_that_can_be_weakened.sql, supabase/migrations/0067_sampling.sql, supabase/migrations/0064_typing_a_note.sql, supabase/migrations/0062_a_note_on_anything.sql, supabase/migrations/0060_the_contract_catches_up.sql, supabase/migrations/0059_a_weighing_says_its_pick.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -8532,6 +8532,107 @@ begin
   perform test_act_as('00000000-0000-0000-0000-00000000a001');
   delete from note where subject_type = 'note';
   delete from note where id in (plain, typed);
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- sampling a place, and the readings that come off it'; end $$;
+
+-- 0067. "Samples should be able to be assigned to vineyards and blocks and
+-- varieties, both as a sampling button and in the vineyard button."
+--
+-- Two of the three were subjects already. The third is the interesting one: a
+-- variety is a word, and what somebody actually samples is a variety in a block,
+-- which is a planting and has been a row since 0039.
+do $$
+declare
+  vy    uuid := '00000000-0000-0000-0000-00000000d001';
+  bk    uuid := '00000000-0000-0000-0000-00000000d002';
+  pl    uuid;
+  ev    uuid;
+  note1 uuid;
+  out_js jsonb;
+  n     int;
+begin
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+
+  insert into vineyard (id, name) values (vy, 'Assert Vineyard');
+  insert into block (id, vineyard_id, name) values (bk, vy, 'Assert Block');
+  insert into planting (block_id, variety_id)
+    values (bk, term_id('variety', 'riesling'))
+  returning id into pl;
+
+  -- A planting resolves to something a person can pick out of a list, which is
+  -- the whole reason it is registered rather than just being a row.
+  if resolve_subject_name('planting', pl) not like '%Assert Block%' then
+    raise exception 'FAIL: a planting does not name the block it is in, so nobody could pick the right one';
+  end if;
+  if resolve_subject_name('planting', pl) not like '%Riesling%' then
+    raise exception 'FAIL: a planting does not name its variety';
+  end if;
+  perform test_ok('a variety in a block is a subject you can sample, and it names the block, because which Riesling is the whole question');
+
+  -- All three, and a refusal for the fourth.
+  perform take_sample('vineyard', vy);
+  perform take_sample('block', bk);
+  out_js := take_sample('planting', pl, null, '50 berries off the north end');
+  ev := (out_js ->> 'event_id')::uuid;
+  select count(*) into n from sample where subject_id in (vy, bk, pl);
+  if n <> 3 then
+    raise exception 'FAIL: three things were sampled and % samples exist', n;
+  end if;
+  perform test_ok('a vineyard, a block and a variety in a block can each be sampled, which is the three the winemaker asked for');
+
+  begin
+    perform take_sample('variety', term_id('variety', 'riesling'));
+    raise exception 'FAIL: a word was sampled';
+  exception when others then
+    if position('nothing in this system is a variety' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a variety on its own cannot be sampled, because a variety is a word and sampling a word is not a thing somebody does. S-76');
+  end;
+
+  begin
+    perform take_sample('block', '00000000-0000-0000-0000-0000000000ff');
+    raise exception 'FAIL: a block that does not exist was sampled';
+  exception when others then
+    if position('to sample' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a sample of something that is not there is refused, which is the only check available because event.subject_id cannot be a foreign key');
+  end;
+
+  -- **The one that matters.** A sample carries no readings of its own.
+  select count(*) into n from event
+   where id = ev and (data ? 'brix' or data ? 'ph' or data ? 'value' or data ? 'readings');
+  if n <> 0 then
+    raise exception 'FAIL: a sample stored a reading of its own, which is nine columns for four forms all over again';
+  end if;
+  select readings into n from sample where event_id = ev;
+  if n <> 0 then
+    raise exception 'FAIL: a fresh sample claims % readings', n;
+  end if;
+  perform test_ok('a sample stores no readings, because the readings are typed notes about it and a column per parameter is the thing 0064 exists to avoid');
+
+  -- The readings, as notes typed against the sample.
+  note1 := (add_note('planting', pl, 'off the north end', ev) ->> 'id')::uuid;
+  perform type_note(note1, 'fruit_condition', null, 'mostly good');
+  select readings into n from sample where event_id = ev;
+  if n <> 1 then
+    raise exception 'FAIL: a reading typed against a sample shows as % readings', n;
+  end if;
+  perform test_ok('a reading is a note typed against the sample, so one sample carries a condition and a Brix and a remark without a column for any of them');
+
+  -- And an untyped note about the sample is not a reading, which is the floor
+  -- doing its job in the place it will matter most.
+  perform add_note('planting', pl, 'wind picked up while we were out there', ev);
+  select readings into n from sample where event_id = ev;
+  if n <> 1 then
+    raise exception 'FAIL: talking about the weather counted as a reading';
+  end if;
+  perform test_ok('an untyped note about a sample is not a reading, so a remark about the weather never becomes a measurement');
+
+  delete from note where about_event = ev;
+  delete from event where subject_id in (vy, bk, pl);
+  delete from planting where id = pl;
+  delete from block where id = bk;
+  delete from vineyard where id = vy;
 end $$;
 
 -- ---------------------------------------------------------------------------

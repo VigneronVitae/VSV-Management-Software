@@ -461,6 +461,21 @@ export type TypedFact = {
   by_name: string | null;
 };
 
+// A sample: somebody went out and took fruit, or drew off a tank. It carries no
+// readings of its own. The readings are typed notes whose `about_event` is this,
+// which is how one sample holds a Brix and a pH and a remark about the weather
+// without a column for any of them. See 0067.
+export type Sample = {
+  event_id: Uuid;
+  subject_type: string;
+  subject_id: Uuid;
+  of_what: string | null;
+  at: string;
+  note: string | null;
+  by_name: string | null;
+  readings: number;
+};
+
 // --- photographs -----------------------------------------------------------
 
 // A photograph of anything the subject resolver knows about. See migration

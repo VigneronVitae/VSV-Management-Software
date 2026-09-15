@@ -27,6 +27,7 @@ import type {
   PressInProgress,
   PressResult,
   PressStarted,
+  Sample,
   ShoppingItem,
   SubjectNote,
   SupplyCount,
@@ -782,6 +783,45 @@ export async function addPhoto(args: {
   const path = await uploadPhoto(args.subjectType, args.subjectId, args.file);
   const out = await attachPhoto({ ...args, path });
   return { ...out, path };
+}
+
+// --- sampling --------------------------------------------------------------
+
+export async function samples(
+  subjectType?: string,
+  subjectId?: Uuid,
+): Promise<Sample[]> {
+  let q = kernel()
+    .from("sample")
+    .select("event_id,subject_type,subject_id,of_what,at,note,by_name,readings");
+  if (subjectType) q = q.eq("subject_type", subjectType);
+  if (subjectId) q = q.eq("subject_id", subjectId);
+  const { data, error } = await q.order("at", { ascending: false });
+  if (error) throw new KernelError(error);
+  return (data ?? []) as Sample[];
+}
+
+/** Records the act. The readings are typed onto the event afterwards, which is
+ * why the event id comes back. */
+export async function takeSample(args: {
+  subjectType: string;
+  subjectId: Uuid;
+  at?: string | null;
+  note?: string | null;
+}): Promise<{ event_id: Uuid; subject_type: string; subject_id: Uuid; of: string }> {
+  const { data, error } = await kernel().rpc("take_sample", {
+    p_subject_type: args.subjectType,
+    p_subject_id: args.subjectId,
+    p_at: args.at ?? null,
+    p_note: args.note ?? null,
+  });
+  if (error) throw new KernelError(error);
+  return data as {
+    event_id: Uuid;
+    subject_type: string;
+    subject_id: Uuid;
+    of: string;
+  };
 }
 
 // --- notes -----------------------------------------------------------------

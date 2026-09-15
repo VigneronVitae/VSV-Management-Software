@@ -394,6 +394,12 @@ start_press:guard:8	start_press	guard	if total_lbs > 0 then	if false then	1
 start_press:silent:1	start_press	silent	where node_id = src and to_at is null;	where node_id = src and true;	1
 start_procedure_session:guard:1	start_procedure_session	guard	if coalesce(array_length(p_vessel_ids, 1), 0) = 0 then	if false then	1
 start_procedure_session:raise:1	start_procedure_session	raise	raise exception 'a session needs at least one vessel';	raise notice 'a session needs at least one vessel';	1
+take_sample:guard:1	take_sample	guard	if not is_facility_user() then	if false then	1
+take_sample:raise:1	take_sample	raise	raise exception 'samples are taken by people who work here';	raise notice 'samples are taken by people who work here';	1
+take_sample:guard:2	take_sample	guard	if not exists (select 1 from subject_resolver where subject_type = p_subject_type) then	if false then	1
+take_sample:raise:2	take_sample	raise	raise exception 'nothing in this system is a %, so a sample cannot be of one',	raise notice 'nothing in this system is a %, so a sample cannot be of one',	1
+take_sample:guard:3	take_sample	guard	if name is null then	if false then	1
+take_sample:raise:3	take_sample	raise	raise exception 'there is no % with id % to sample', p_subject_type, p_subject_id;	raise notice 'there is no % with id % to sample', p_subject_type, p_subject_id;	1
 topping_check:guard:1	topping_check	guard	if tgt is null then	if false then	1
 topping_check:earlyreturn:1	topping_check	earlyreturn	return;	null;	1
 topping_check:guard:2	topping_check	guard	if (src -> f) is distinct from (tgt -> f) then	if false then	1

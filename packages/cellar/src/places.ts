@@ -71,7 +71,10 @@ export type Place =
   | { at: "practice" }
   // The kinds of fact a note can be typed as. A list that is data rather than
   // schema is only useful if somebody can add to it.
-  | { at: "fact-kinds" };
+  | { at: "fact-kinds" }
+  // Sampling, and one sample with the readings that came off it.
+  | { at: "sampling" }
+  | { at: "sample"; id: string };
 
 export const HOME: Place = { at: "home" };
 
@@ -106,6 +109,7 @@ const WITHOUT_ID = new Set([
   "additions",
   "practice",
   "fact-kinds",
+  "sampling",
 ]);
 
 // A calendar day, which is what the day log is addressed by.
@@ -119,6 +123,7 @@ const WITH_ID = new Set([
   "pick-bins",
   "pick-photos",
   "vessel-photos",
+  "sample",
   "block",
 ]);
 

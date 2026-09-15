@@ -79,6 +79,7 @@ import {
   type SiteFields,
   type SubjectNote,
   type SupplyOnHand,
+  samples,
   setMakerMakes,
   setPaperRecordOperations,
   setPartyLogin,
@@ -100,6 +101,7 @@ import {
   type ThermalMode,
   type ToPropagate,
   type TypedFact,
+  takeSample,
   terms,
   termsForVesselField,
   toPropagate,
@@ -341,6 +343,10 @@ async function screenFor(place: Place): Promise<HTMLElement> {
       return practiceScreen();
     case "fact-kinds":
       return factKindsScreen();
+    case "sampling":
+      return samplingScreen();
+    case "sample":
+      return sampleScreen(place.id);
     case "day":
       return dayScreen(place.id);
     case "paper":
@@ -943,6 +949,13 @@ async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> 
       name: "Weigh bins",
       note: "What the scale said, with the bins' own weight taken off.",
       go: () => go({ at: "scale" }),
+    },
+    {
+      name: "Sampling",
+      note:
+        "What was sampled and what it read. A vineyard, a block, one variety " +
+        "in one block, or a tank with wine in it.",
+      go: () => go({ at: "sampling" }),
     },
     {
       name: "Press",
@@ -4682,6 +4695,364 @@ function additionsScreen(): HTMLElement {
   return view;
 }
 
+// --- sampling --------------------------------------------------------------
+
+// "Samples should be able to be assigned to vineyards and blocks and varieties,
+// both as a sampling button and in the vineyard button."
+//
+// Two of those three are subjects already. The third is the interesting one: a
+// variety is a word, and sampling a word is not a thing somebody does. What they
+// do is walk into the Southeast block and pick Pinot Gris, and that is a
+// planting, which `0039` already made a row. So the picker below offers
+// vineyards, blocks and plantings, and the third reads as "Vitae Springs
+// Vineyard Southeast Pinot Gris" rather than as "Pinot Gris", because which
+// Pinot Gris is the whole question.
+//
+// **A sample carries no readings.** It is the act; the numbers are typed notes
+// about it. So taking one lands you on the thing that holds them, and the same
+// control that turns any note into a fact turns "21.5" into a Brix.
+function samplingScreen(subjectType?: string, subjectId?: string): HTMLElement {
+  const body = el("div", {}, empty("Loading."));
+  const message = el("div", {});
+  const view = screen(
+    "Sampling",
+    lede(
+      "Record that somebody sampled something. The readings go on afterwards, " +
+        "which is what lets one sample carry a Brix and a pH and a remark about the weather.",
+    ),
+    body,
+  );
+
+  async function load(): Promise<void> {
+    const [vines, blockRows, plantingRows, taken, kit] = await Promise.all([
+      vineyards(),
+      blocks(),
+      plantings(),
+      samples(subjectType, subjectId),
+      vessels(),
+    ]);
+
+    // Everything you can sample, as one list, because standing in a vineyard
+    // you do not care which table a thing is in.
+    type Target = { type: string; id: string; label: string; group: string };
+    const targets: Target[] = [
+      ...vines.map((v) => ({
+        type: "vineyard",
+        id: v.id,
+        label: v.name,
+        group: "Vineyards",
+      })),
+      ...blockRows.map((b) => ({
+        type: "block",
+        id: b.id,
+        label:
+          (vines.find((v) => v.id === b.vineyard_id)?.name ?? "") +
+          ` ${b.name}`.trimEnd(),
+        group: "Blocks",
+      })),
+      ...plantingRows.map((p) => ({
+        type: "planting",
+        id: p.planting_id,
+        label: `${p.block_name} ${p.variety ?? ""}`.trim(),
+        group: "Varieties in a block",
+      })),
+      ...kit
+        .filter((v) => !v.is_empty)
+        .map((v) => ({
+          type: "vessel",
+          id: v.id,
+          label: `${v.name} (${v.lot_name ?? "wine"})`,
+          group: "Vessels with wine",
+        })),
+    ];
+
+    const pick = el("select", { class: "input" });
+    const groups = [...new Set(targets.map((t) => t.group))];
+    pick.replaceChildren(
+      ...groups.map((g) =>
+        el(
+          "optgroup",
+          { label: g },
+          ...targets
+            .filter((t) => t.group === g)
+            .map((t) =>
+              el("option", {
+                value: `${t.type}:${t.id}`,
+                text: t.label,
+                ...(subjectType === t.type && subjectId === t.id
+                  ? { selected: "true" }
+                  : {}),
+              }),
+            ),
+        ),
+      ),
+    );
+
+    const when = field({
+      label: "When",
+      type: "datetime-local",
+      hint: "Blank means now. Useful for a sample taken this morning.",
+    });
+    const about = field({
+      label: "About the sample itself",
+      placeholder: "north end, 50 berries",
+      hint: "How it was taken. The readings go on next.",
+    });
+
+    body.replaceChildren(
+      rows(
+        el(
+          "div",
+          { class: "field" },
+          el("span", { class: "field-label", text: "What was sampled" }),
+          pick,
+          el("span", {
+            class: "field-hint",
+            text:
+              "A whole vineyard, one block, or one variety in one block. " +
+              "Sampling a variety means sampling it somewhere.",
+          }),
+        ),
+        when.root,
+        about.root,
+        button("Record the sample", async () => {
+          const [type, id] = pick.value.split(":");
+          if (!type || !id) {
+            message.replaceChildren(banner("Pick what was sampled.", "error"));
+            return;
+          }
+          try {
+            const out = await takeSample({
+              subjectType: type,
+              subjectId: id,
+              at: when.value() ? new Date(when.value()).toISOString() : null,
+              note: about.value() || null,
+            });
+            message.replaceChildren(
+              banner(
+                `Sampled ${out.of}. Add the readings below: each one is a note ` +
+                  "you turn into a fact.",
+                "good",
+              ),
+            );
+            about.input.value = "";
+            await load();
+          } catch (error) {
+            message.replaceChildren(fail(error));
+          }
+        }),
+        message,
+
+        el("h2", { class: "section-head", text: "Samples" }),
+        taken.length === 0
+          ? empty("Nothing sampled yet.")
+          : el(
+              "ul",
+              { class: "vessel-list" },
+              ...taken.slice(0, 30).map((sm) => {
+                const row = el(
+                  "li",
+                  {
+                    class: "vessel-row vessel-row-tappable",
+                    role: "button",
+                    tabindex: "0",
+                  },
+                  el("span", {
+                    class: "vessel-name",
+                    text: sm.of_what ?? "something that is no longer there",
+                  }),
+                  el("span", {
+                    class: "vessel-detail",
+                    text:
+                      `${new Date(sm.at).toLocaleString()}` +
+                      (sm.note ? `, ${sm.note}` : "") +
+                      `, ${sm.readings} reading${sm.readings === 1 ? "" : "s"}`,
+                  }),
+                  // Zero readings on a sample is the state worth seeing: somebody
+                  // took fruit and the numbers never got entered.
+                  sm.readings === 0
+                    ? el("span", { class: "tag tag-inherited", text: "no readings" })
+                    : null,
+                );
+                // Into the sample itself, which is what the readings hang off.
+                // Not into the block: two samples of one block a week apart are
+                // two different sets of numbers.
+                const open = () => go({ at: "sample", id: sm.event_id });
+                on(row, "click", open);
+                on(row, "keydown", (ev) => {
+                  if (ev.key === "Enter" || ev.key === " ") {
+                    ev.preventDefault();
+                    open();
+                  }
+                });
+                return row;
+              }),
+            ),
+        button("Back", () => goBack(), "quiet"),
+      ),
+    );
+  }
+
+  void (async () => {
+    try {
+      await load();
+    } catch (error) {
+      body.replaceChildren(
+        fail(error),
+        button("Back", () => goBack(), "quiet"),
+      );
+    }
+  })();
+
+  return view;
+}
+
+// --- one sample, and what came off it --------------------------------------
+
+// The readings live on the sample rather than on the block, because two samples
+// of one block a week apart are two different sets of numbers and watching them
+// move is the whole point of sampling.
+//
+// A reading is a note written and typed in one go: the words and the value
+// together, with `about_event` pointing at this sample. Same machinery as every
+// other note, which is why there is no reading table anywhere in this schema.
+function sampleScreen(eventId: string): HTMLElement {
+  const body = el("div", {}, empty("Loading."));
+  const message = el("div", {});
+  const view = screen("Sample", body);
+
+  async function load(): Promise<void> {
+    const [all, kinds] = await Promise.all([samples(), terms("fact_kind")]);
+    const sm = all.find((x) => x.event_id === eventId);
+    if (!sm) {
+      body.replaceChildren(
+        empty("That sample is not there."),
+        button("Back", () => goBack(), "quiet"),
+      );
+      return;
+    }
+    const facts = (await typedFacts(sm.subject_type, sm.subject_id)).filter(
+      (f) => f.about_event === eventId,
+    );
+
+    const kind = el("select", { class: "input" });
+    kind.replaceChildren(
+      ...kinds.map((k) => el("option", { value: k.value, text: k.label })),
+    );
+    const value = field({ label: "Reading", placeholder: "21.5" });
+    const words = field({
+      label: "Anything worth saying",
+      placeholder: "off the north end, a bit shrivelled",
+      hint: "Kept beside the number, which is the reason this is not a column.",
+    });
+
+    function shapeOf(): string {
+      const picked = kinds.find((k) => k.value === kind.value);
+      return String(picked?.attributes?.value_type ?? "text");
+    }
+    on(kind, "change", () => {
+      value.input.type = shapeOf() === "number" ? "number" : "text";
+    });
+    value.input.type = shapeOf() === "number" ? "number" : "text";
+
+    body.replaceChildren(
+      rows(
+        summaryRow("Of", sm.of_what ?? "something that is no longer there"),
+        summaryRow("Taken", new Date(sm.at).toLocaleString()),
+        summaryRow("By", sm.by_name ?? "somebody"),
+        ...(sm.note ? [summaryRow("Note", sm.note)] : []),
+
+        el("h2", { class: "section-head", text: "Readings" }),
+        facts.length === 0
+          ? empty("Nothing read off this sample yet.")
+          : el(
+              "ul",
+              { class: "vessel-list" },
+              ...facts.map((f) =>
+                el(
+                  "li",
+                  { class: "vessel-row" },
+                  el("span", {
+                    class: "vessel-name",
+                    text: `${f.kind_label}: ${f.value}${f.unit ? ` ${f.unit}` : ""}`,
+                  }),
+                  el("span", { class: "vessel-detail", text: f.body }),
+                  f.provenance === "confirmed"
+                    ? el("span", { class: "tag", text: "confirmed" })
+                    : null,
+                ),
+              ),
+            ),
+
+        el("h2", { class: "section-head", text: "Add a reading" }),
+        kinds.length === 0
+          ? banner(
+              "No kinds of fact are set up, so there is nothing to record a reading as. " +
+                "Set up, then Kinds of fact.",
+              "note",
+            )
+          : el("span", {}),
+        el(
+          "div",
+          { class: "field" },
+          el("span", { class: "field-label", text: "What was measured" }),
+          kind,
+        ),
+        value.root,
+        words.root,
+        button("Record it", async () => {
+          if (!kind.value) {
+            message.replaceChildren(banner("Say what was measured.", "error"));
+            return;
+          }
+          if (!value.value()) {
+            message.replaceChildren(banner("Give the reading.", "error"));
+            return;
+          }
+          try {
+            // Two calls rather than one: the note is written, then typed. The
+            // composition is the client's and both rules are the kernel's.
+            const label = kinds.find((k) => k.value === kind.value)?.label ?? "reading";
+            const made = await addNote({
+              subjectType: sm.subject_type,
+              subjectId: sm.subject_id,
+              body: words.value() || `${label} ${value.value()}`,
+              aboutEvent: eventId,
+              at: sm.at,
+            });
+            await typeNote({
+              noteId: made.id,
+              kind: kind.value,
+              valueNum: shapeOf() === "number" ? Number(value.value()) : null,
+              valueText: shapeOf() === "number" ? null : value.value(),
+            });
+            value.input.value = "";
+            words.input.value = "";
+            await load();
+          } catch (error) {
+            message.replaceChildren(fail(error));
+          }
+        }),
+        message,
+        button("Back", () => goBack(), "quiet"),
+      ),
+    );
+  }
+
+  void (async () => {
+    try {
+      await load();
+    } catch (error) {
+      body.replaceChildren(
+        fail(error),
+        button("Back", () => goBack(), "quiet"),
+      );
+    }
+  })();
+
+  return view;
+}
+
 // --- kinds of fact ---------------------------------------------------------
 
 // The list that makes `0064` worth having.
@@ -6778,6 +7149,9 @@ function blockScreen(blockId: string): HTMLElement {
             }
           }),
           message,
+          // The second way in he asked for. Standing in a block, the thing you
+          // want is to sample this block, not to go to a list and find it.
+          button("Sample this block", () => go({ at: "sampling" }), "secondary"),
           button("Back", () => goBack(), "quiet"),
         ),
       );
