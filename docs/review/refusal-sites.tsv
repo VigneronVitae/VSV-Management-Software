@@ -99,6 +99,16 @@ cellar_writable_columns:raise:1	cellar_writable_columns	raise	raise exception	ra
 claim_account:guard:1	claim_account	guard	if auth.uid() is null then	if false then	1
 claim_account:raise:1	claim_account	raise	raise exception 'not signed in' using errcode = 'insufficient_privilege';	raise notice 'not signed in' using errcode = 'insufficient_privilege';	1
 claim_account:guard:2	claim_account	guard	if found then	if false then	1
+claim_account:guard:3	claim_account	guard	if is_first then	if false then	1
+claim_account:guard:4	claim_account	guard	if p_invite is null or btrim(p_invite) = '' then	if false then	1
+claim_account:raise:2	claim_account	raise	raise exception	raise notice	2
+claim_account:guard:5	claim_account	guard	if inv.code is null then	if false then	1
+claim_account:raise:3	claim_account	raise	raise exception 'that invite code is not one of ours'	raise notice 'that invite code is not one of ours'	1
+claim_account:guard:6	claim_account	guard	if inv.used_at is not null then	if false then	1
+claim_account:raise:4	claim_account	raise	raise exception 'that invite has already been used, by somebody else'	raise notice 'that invite has already been used, by somebody else'	1
+claim_account:guard:7	claim_account	guard	if inv.expires_at < now() then	if false then	1
+claim_account:raise:5	claim_account	raise	raise exception 'that invite has expired; ask for another'	raise notice 'that invite has expired; ask for another'	1
+claim_account:guard:8	claim_account	guard	if not is_first then	if false then	1
 claim_task:guard:1	claim_task	guard	if who is null then	if false then	1
 claim_task:raise:1	claim_task	raise	raise exception 'not signed in, so there is nobody to claim this task for'	raise notice 'not signed in, so there is nobody to claim this task for'	1
 claim_task:guard:2	claim_task	guard	if not is_facility_user() then	if false then	1
@@ -195,6 +205,8 @@ generate_inferred_history:guard:1	generate_inferred_history	guard	if n.id is nul
 generate_inferred_history:raise:1	generate_inferred_history	raise	raise exception 'no such node %', p_node_id;	raise notice 'no such node %', p_node_id;	1
 generate_inferred_history:guard:2	generate_inferred_history	guard	if n.variety_id is null then	if false then	1
 generate_inferred_history:guard:3	generate_inferred_history	guard	if tmpl is null then	if false then	1
+make_invite:guard:1	make_invite	guard	if not is_admin() then	if false then	1
+make_invite:raise:1	make_invite	raise	raise exception 'only an administrator lets somebody in';	raise notice 'only an administrator lets somebody in';	1
 move_bins:guard:1	move_bins	guard	if coalesce(array_length(p_vessel_ids, 1), 0) = 0 then	if false then	1
 move_bins:raise:1	move_bins	raise	raise exception 'no vessels were named, so there is nothing to move';	raise notice 'no vessels were named, so there is nothing to move';	1
 move_bins:guard:2	move_bins	guard	if not exists (select 1 from location where id = p_location_id) then	if false then	1

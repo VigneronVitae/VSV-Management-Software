@@ -13,6 +13,7 @@ import type {
   DayNote,
   EventRow,
   HistoryRow,
+  Invite,
   LevelDrawn,
   Location,
   LotAddition,
@@ -143,8 +144,14 @@ export async function currentSession(): Promise<{
 // function as a bare object while a set-returning one comes back as an array.
 // This is the first call a stranger's first run makes, so it accepts either
 // rather than betting on which.
-export async function claimAccount(name: string): Promise<AppUser> {
-  const { data, error } = await kernel().rpc("claim_account", { p_name: name });
+export async function claimAccount(
+  name: string,
+  invite?: string | null,
+): Promise<AppUser> {
+  const { data, error } = await kernel().rpc("claim_account", {
+    p_name: name,
+    p_invite: invite ?? null,
+  });
   if (error) throw new KernelError(error);
   const row = Array.isArray(data) ? data[0] : data;
   if (!row) throw new Error("claim_account returned nothing");
@@ -181,6 +188,34 @@ export async function writableColumns(table: string): Promise<string[]> {
   });
   if (error) throw new KernelError(error);
   return (data ?? []) as string[];
+}
+
+/** An invite is permission to become somebody this winery trusts, and only an
+ * administrator issues one. See 0068 and S-78. */
+export async function makeInvite(
+  role: "admin" | "cellar" = "cellar",
+  note?: string | null,
+): Promise<{ code: string; role: string; expires_at: string }> {
+  const { data, error } = await kernel().rpc("make_invite", {
+    p_role: role,
+    p_note: note ?? null,
+  });
+  if (error) throw new KernelError(error);
+  return data as { code: string; role: string; expires_at: string };
+}
+
+export async function invites(): Promise<Invite[]> {
+  const { data, error } = await kernel()
+    .from("invite")
+    .select("code,role,note,created_at,used_by,used_at,expires_at")
+    .order("created_at", { ascending: false });
+  if (error) throw new KernelError(error);
+  return (data ?? []) as Invite[];
+}
+
+export async function withdrawInvite(code: string): Promise<void> {
+  const { error } = await kernel().from("invite").delete().eq("code", code);
+  if (error) throw new KernelError(error);
 }
 
 export async function currentAppUser(): Promise<AppUser | null> {

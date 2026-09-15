@@ -8,7 +8,8 @@
 --              supabase/migrations/0056_draw_to_a_level.sql]
 -- Depended on by: [tests/schema_assertions.sql, supabase/migrations/0058_an_open_pick_is_a_view.sql,
 --                  supabase/migrations/0059_a_weighing_says_its_pick.sql,
---                  supabase/migrations/0060_the_contract_catches_up.sql]
+--                  supabase/migrations/0060_the_contract_catches_up.sql,
+--                  supabase/migrations/0069_the_contract_hears_about_the_invite.sql]
 -- Axioms enforced: AR-Q8 (an interface is a periphery over a read and write
 --                  contract), AR-E6 (the declaration is registry rows, so
 --                  another winery's contract is data), R-4 (a client that

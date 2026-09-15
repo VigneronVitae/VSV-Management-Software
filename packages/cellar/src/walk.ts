@@ -42,11 +42,13 @@ import {
   facilityParty,
   fillVessel,
   finishPress,
+  invites,
   type Location,
   type LotWithoutVintage,
   locations,
   lotAdditions,
   lotsWithoutVintage,
+  makeInvite,
   markBought,
   markPropagated,
   moveSupply,
@@ -129,6 +131,7 @@ import {
   vineyards,
   weighBins,
   weighingsWithoutPhoto,
+  withdrawInvite,
   writableColumns,
 } from "core";
 import {
@@ -345,6 +348,8 @@ async function screenFor(place: Place): Promise<HTMLElement> {
       return practiceScreen();
     case "fact-kinds":
       return factKindsScreen();
+    case "invites":
+      return invitesScreen(user);
     case "go":
       return paletteScreen();
     case "sampling":
@@ -605,21 +610,32 @@ function claimScreen(email: string): HTMLElement {
     placeholder: "How the board should show you",
     hint: "This is the name on tasks you claim and events you record.",
   });
+  // 0068. Somebody already here has to let you in, from the second person
+  // onwards. The first claim on a fresh install needs none, which is what
+  // creates the person who issues the rest, so this field is offered rather
+  // than required and the kernel decides which case it is.
+  const invite = field({
+    label: "Invite code",
+    placeholder: "K7QM2P",
+    hint: "From whoever runs the cellar. Not needed for the very first account.",
+  });
   const message = el("div", {});
 
   return screen(
     "One more thing",
     lede(
-      `Signed in as ${email}. The cellar needs a name to put against what you record. ` +
-        "The first account to do this becomes the administrator, which is decided by the " +
-        "database rather than here.",
+      `Signed in as ${email}. The cellar needs a name to put against what you record, ` +
+        "and an invite from somebody already here. The very first account needs no " +
+        "invite and becomes the administrator, which the database decides rather than " +
+        "this screen.",
     ),
     rows(
       name.root,
+      invite.root,
       button("Continue", async () => {
         if (!name.value()) return;
         try {
-          await claimAccount(name.value());
+          await claimAccount(name.value(), invite.value() || null);
           await route();
         } catch (error) {
           // A token can outlive the account it names: the JWT secret is fixed
@@ -1069,6 +1085,11 @@ async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> 
       name: "Clients",
       note: "Custom crush clients, and which login sees their wine.",
       go: () => go({ at: "clients" }),
+    },
+    {
+      name: "Letting somebody in",
+      note: "An invite code for a new intern. Six characters, good for a week, used once.",
+      go: () => go({ at: "invites" }),
     },
     {
       name: "Take a copy",
@@ -5426,6 +5447,160 @@ function sampleScreen(eventId: string): HTMLElement {
           }
         }),
         message,
+        button("Back", () => goBack(), "quiet"),
+      ),
+    );
+  }
+
+  void (async () => {
+    try {
+      await load();
+    } catch (error) {
+      body.replaceChildren(
+        fail(error),
+        button("Back", () => goBack(), "quiet"),
+      );
+    }
+  })();
+
+  return view;
+}
+
+// --- letting somebody in ---------------------------------------------------
+
+// The winemaker: "how could I do this so my interns don't need to download an
+// app besides the vitae springs app?"
+//
+// They do not have to. It is a web page they add to their home screen, and the
+// install prompt has been there since `install.ts`. What was in the way is that
+// the only route to it is Tailscale, and getting off Tailscale means being
+// reachable by strangers, and **reaching the sign-up page used to be the same
+// thing as working here**.
+//
+// So: an invite. An administrator makes one, reads six characters out loud, and
+// the intern types them when they claim. No email, because a winery hands
+// somebody a phone in a barn rather than asking them to check their inbox, and
+// because email delivery would be a dependency this project has not taken.
+function invitesScreen(user: AppUser): HTMLElement {
+  if (user.role !== "admin") {
+    return screen(
+      "Letting somebody in",
+      banner(
+        "Only an administrator hands out invites. That is the point of them: a " +
+          "cellar hand who could issue one could admit their own second account.",
+        "note",
+      ),
+      button("Back", () => goBack(), "quiet"),
+    );
+  }
+
+  const body = el("div", {}, empty("Loading."));
+  const message = el("div", {});
+  const view = screen(
+    "Letting somebody in",
+    lede(
+      "A code somebody types when they sign up. Six characters, good for a week, " +
+        "and usable once.",
+    ),
+    body,
+  );
+
+  async function load(): Promise<void> {
+    const list = await invites();
+    const asAdmin = checkbox("They should be an administrator", false);
+    const why = field({
+      label: "Who is it for",
+      placeholder: "Sam, harvest intern",
+      hint: "So that a code sitting unused in a month still means something.",
+    });
+
+    const waiting = list.filter((i) => !i.used_at);
+    const spent = list.filter((i) => i.used_at);
+
+    body.replaceChildren(
+      rows(
+        why.root,
+        asAdmin.root,
+        button("Make an invite", async () => {
+          try {
+            const made = await makeInvite(
+              asAdmin.input.checked ? "admin" : "cellar",
+              why.value() || null,
+            );
+            message.replaceChildren(
+              banner(
+                `${made.code}. Read that to them. It works once and expires in a week.`,
+                "good",
+              ),
+            );
+            why.input.value = "";
+            await load();
+          } catch (error) {
+            message.replaceChildren(fail(error));
+          }
+        }),
+        message,
+
+        el("h2", { class: "section-head", text: "Outstanding" }),
+        waiting.length === 0
+          ? empty("Nothing waiting to be used.")
+          : el(
+              "ul",
+              { class: "vessel-list" },
+              ...waiting.map((i) =>
+                el(
+                  "li",
+                  { class: "vessel-row" },
+                  el("span", { class: "vessel-name", text: i.code }),
+                  el("span", {
+                    class: "vessel-detail",
+                    text:
+                      (i.note ? `${i.note}, ` : "") +
+                      `${i.role}, ` +
+                      (new Date(i.expires_at) < new Date()
+                        ? "expired"
+                        : `good until ${new Date(i.expires_at).toLocaleDateString()}`),
+                  }),
+                  button(
+                    "Withdraw",
+                    async () => {
+                      try {
+                        await withdrawInvite(i.code);
+                        await load();
+                      } catch (error) {
+                        message.replaceChildren(fail(error));
+                      }
+                    },
+                    "quiet",
+                  ),
+                ),
+              ),
+            ),
+
+        // Used ones are kept rather than deleted, because who let somebody in is
+        // the only record of it there will ever be.
+        ...(spent.length === 0
+          ? []
+          : [
+              el("h2", { class: "section-head", text: "Used" }),
+              el(
+                "ul",
+                { class: "vessel-list" },
+                ...spent.map((i) =>
+                  el(
+                    "li",
+                    { class: "vessel-row" },
+                    el("span", { class: "vessel-name", text: i.code }),
+                    el("span", {
+                      class: "vessel-detail",
+                      text:
+                        (i.note ? `${i.note}, ` : "") +
+                        `used ${new Date(i.used_at ?? "").toLocaleDateString()}`,
+                    }),
+                  ),
+                ),
+              ),
+            ]),
         button("Back", () => goBack(), "quiet"),
       ),
     );

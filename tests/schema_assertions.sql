@@ -34,7 +34,9 @@
 --              supabase/migrations/0029_viewer_scope.sql,
 --              supabase/migrations/0030_writable_columns.sql,
 --              supabase/migrations/0031_scheduling_to_core.sql,
---              supabase/migrations/0032_vessel_maker_and_room_temperature.sql, supabase/migrations/0033_intake.sql, supabase/migrations/0034_press.sql, supabase/migrations/0035_bins_in_bulk.sql, supabase/migrations/0036_bins_on_loan.sql, supabase/migrations/0037_export.sql, supabase/migrations/0038_cancel_a_pick.sql, supabase/migrations/0039_vineyard.sql, supabase/migrations/0040_block_variety_is_history.sql, supabase/migrations/0041_daily_log.sql, supabase/migrations/0042_weighing_photo.sql, supabase/migrations/0043_record_propagation.sql, supabase/migrations/0044_finishing_a_pick.sql, supabase/migrations/0045_press_detail.sql, supabase/migrations/0046_supply_inventory.sql, supabase/migrations/0047_attachments.sql, supabase/migrations/0048_pick_weighing.sql, supabase/migrations/0049_every_lot_says_its_vintage.sql, supabase/migrations/0050_additions.sql, supabase/migrations/0051_supplies_for_addition.sql, supabase/migrations/0052_press_as_a_process.sql, supabase/migrations/0053_a_press_is_a_vessel.sql, supabase/migrations/0054_a_spent_pick_is_spent.sql, supabase/migrations/0055_press_draws.sql, supabase/migrations/0056_draw_to_a_level.sql, supabase/migrations/0057_the_contract.sql, supabase/migrations/0058_an_open_pick_is_a_view.sql, supabase/migrations/0061_two_declarations_were_wrong.sql, supabase/migrations/0063_a_note_is_a_thing_too.sql, supabase/migrations/0065_confirming_without_owning.sql, supabase/migrations/0066_a_guard_that_can_be_weakened.sql, supabase/migrations/0067_sampling.sql, supabase/migrations/0064_typing_a_note.sql, supabase/migrations/0062_a_note_on_anything.sql, supabase/migrations/0060_the_contract_catches_up.sql, supabase/migrations/0059_a_weighing_says_its_pick.sql]
+--              supabase/migrations/0032_vessel_maker_and_room_temperature.sql, supabase/migrations/0033_intake.sql, supabase/migrations/0034_press.sql, supabase/migrations/0035_bins_in_bulk.sql, supabase/migrations/0036_bins_on_loan.sql, supabase/migrations/0037_export.sql, supabase/migrations/0038_cancel_a_pick.sql, supabase/migrations/0039_vineyard.sql, supabase/migrations/0040_block_variety_is_history.sql, supabase/migrations/0041_daily_log.sql, supabase/migrations/0042_weighing_photo.sql, supabase/migrations/0043_record_propagation.sql, supabase/migrations/0044_finishing_a_pick.sql, supabase/migrations/0045_press_detail.sql, supabase/migrations/0046_supply_inventory.sql, supabase/migrations/0047_attachments.sql, supabase/migrations/0048_pick_weighing.sql, supabase/migrations/0049_every_lot_says_its_vintage.sql, supabase/migrations/0050_additions.sql, supabase/migrations/0051_supplies_for_addition.sql, supabase/migrations/0052_press_as_a_process.sql, supabase/migrations/0053_a_press_is_a_vessel.sql, supabase/migrations/0054_a_spent_pick_is_spent.sql, supabase/migrations/0055_press_draws.sql, supabase/migrations/0056_draw_to_a_level.sql, supabase/migrations/0057_the_contract.sql, supabase/migrations/0058_an_open_pick_is_a_view.sql, supabase/migrations/0061_two_declarations_were_wrong.sql, supabase/migrations/0063_a_note_is_a_thing_too.sql, supabase/migrations/0065_confirming_without_owning.sql, supabase/migrations/0066_a_guard_that_can_be_weakened.sql, supabase/migrations/0067_sampling.sql, supabase/migrations/0068_an_invite_to_claim.sql,
+--              supabase/migrations/0069_the_contract_hears_about_the_invite.sql,
+--              supabase/migrations/0070_a_code_worth_guessing.sql, supabase/migrations/0064_typing_a_note.sql, supabase/migrations/0062_a_note_on_anything.sql, supabase/migrations/0060_the_contract_catches_up.sql, supabase/migrations/0059_a_weighing_says_its_pick.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -195,11 +197,27 @@ insert into auth.users (id) values
 -- the claimant is a cellar user, which is the half that protects a live winery
 -- from the next person who signs up, and it is the half that was never asserted.
 do $$
-declare u app_user; was_empty boolean;
+declare u app_user; was_empty boolean; boot text; an_admin uuid;
 begin
   select count(*) = 0 into was_empty from app_user;
+
+  -- 0068. Against a database that already has people in it, which is every run
+  -- against a copy of the cellar, the suite's own fixture accounts have to be
+  -- let in like anybody else. So borrow an administrator who is already there
+  -- and have them issue the invite. Against an empty database `boot` stays null
+  -- and the first claim needs none, which is the case this block is about.
+  if not was_empty then
+    select id into an_admin from app_user where role = 'admin' and active limit 1;
+    if an_admin is null then
+      raise exception
+        'FAIL: app_user has rows and no active administrator, so nothing can let the fixtures in';
+    end if;
+    perform test_act_as(an_admin);
+    boot := make_invite('cellar', 'the suite''s first fixture') ->> 'code';
+  end if;
+
   perform test_act_as('00000000-0000-0000-0000-00000000a001');
-  u := claim_account('First Account');
+  u := claim_account('First Account', boot);
 
   if was_empty then
     if u.role <> 'admin' then raise exception 'FAIL: the first account is not admin'; end if;
@@ -219,18 +237,89 @@ begin
   if u.name <> 'First Account' then raise exception 'FAIL: claim_account is not idempotent'; end if;
   perform test_ok('claiming twice returns the existing account rather than a second one');
 
-  perform test_act_as('00000000-0000-0000-0000-00000000a002');
-  u := claim_account('Harvest Intern');
-  if u.role <> 'cellar' then raise exception 'FAIL: the second account is not cellar'; end if;
-  perform test_ok('every account after the first is cellar');
+  -- 0068. From the second person onwards, somebody already here has to let you
+  -- in. The admin above issues the invite, which is the shape a real winery has:
+  -- an intern is handed a phone and a code by whoever runs the cellar.
+  declare
+    inv text;
+  begin
+    inv := make_invite('cellar', 'the suite''s intern') ->> 'code';
+
+    perform test_act_as('00000000-0000-0000-0000-00000000a002');
+    -- Which refusal, not merely that one happened. `claim_account` declines
+    -- this call at four separate guards and every one of them raises
+    -- insufficient_privilege, so an assertion that catches the sqlstate covers
+    -- the function and no site in it. The mutation harness proved that: with
+    -- the missing-invite guard neutralised, the call fell through to the
+    -- lookup, failed to find a row for a null code, and refused with a
+    -- different message that this assertion accepted.
+    begin
+      perform claim_account('Harvest Intern');
+      raise exception 'FAIL: a second account was claimed with no invite';
+    exception when insufficient_privilege then
+      if sqlerrm not like '%has to let you in%' then
+        raise exception 'FAIL: claiming with no invite refused with "%", which is a different guard', sqlerrm;
+      end if;
+      perform test_ok('claiming without an invite is refused from the second person onwards, so reaching the sign-up page is not the same as working here');
+    end;
+
+    u := claim_account('Harvest Intern', inv);
+    if u.role <> 'cellar' then raise exception 'FAIL: the second account is not cellar'; end if;
+    perform test_ok('every account after the first is cellar, and needs somebody already here to have said so');
+
+    -- One use. A code that admitted somebody is spent, or one leaked code
+    -- admits everybody who hears it.
+    perform test_act_as('00000000-0000-0000-0000-00000000a003');
+    begin
+      perform claim_account('Second Use', inv);
+      raise exception 'FAIL: one invite admitted two people';
+    exception when insufficient_privilege then
+      if sqlerrm not like '%already been used%' then
+        raise exception 'FAIL: a second use refused with "%", which is a different guard', sqlerrm;
+      end if;
+      perform test_ok('an invite works once, so a code somebody overhears does not admit a second person');
+    end;
+
+    -- A code nobody issued. Six characters is a billion, and a refusal that
+    -- guesses in the caller's favour turns that into one attempt.
+    begin
+      perform claim_account('Made It Up', 'ZZZZZZ');
+      raise exception 'FAIL: an invite nobody issued admitted somebody';
+    exception when insufficient_privilege then
+      if sqlerrm not like '%not one of ours%' then
+        raise exception 'FAIL: an unissued code refused with "%", which is a different guard', sqlerrm;
+      end if;
+      perform test_ok('a code nobody issued admits nobody, so guessing is guessing against the whole alphabet rather than against a missing check');
+    end;
+
+    -- And an expired one. A code is good for a week because an invite left
+    -- lying in a text message is a credential with no expiry otherwise. Backdated
+    -- here rather than waited for, which is the only part of this that is not
+    -- what a winery does.
+    perform test_act_as('00000000-0000-0000-0000-00000000a001');
+    inv := make_invite('cellar', 'the suite''s stale code') ->> 'code';
+    update invite set expires_at = now() - interval '1 day' where code = inv;
+    perform test_act_as('00000000-0000-0000-0000-00000000a003');
+    begin
+      perform claim_account('Too Late', inv);
+      raise exception 'FAIL: an expired invite admitted somebody';
+    exception when insufficient_privilege then
+      if sqlerrm not like '%expired%' then
+        raise exception 'FAIL: an expired code refused with "%", which is a different guard', sqlerrm;
+      end if;
+      perform test_ok('an expired invite admits nobody, so a code in a month-old text message is worth nothing');
+    end;
+  end;
 end $$;
 
 -- a cellar user belonging to the client party, for the scoping test below
 do $$
-declare u app_user;
+declare u app_user; inv text;
 begin
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+  inv := make_invite('cellar', 'the suite''s client login') ->> 'code';
   perform test_act_as('00000000-0000-0000-0000-00000000a003');
-  u := claim_account('Client Login');
+  u := claim_account('Client Login', inv);
 end $$;
 update party set app_user_id = '00000000-0000-0000-0000-00000000a003'
  where id = '00000000-0000-0000-0000-00000000f002';
@@ -2468,7 +2557,12 @@ begin
   -- 93 before 0062, which added four on `note`: read, insert, a reword
   -- restricted to the author, and an admin delete. None reads blanket true,
   -- and the read is the same too-narrow one S-65 names for photographs.
-  want := '97';
+  -- 97 before 0068, which added one on `invite`: a single all-verbs policy
+  -- gated on is_admin(). It is the narrowest policy in the schema and that is
+  -- deliberate. An invite is a credential, so a cellar hand who could read the
+  -- list could admit their own second account, which is the thing the gate
+  -- exists to stop.
+  want := '98';
   if have <> want then
     raise exception
       'FAIL: there are % policies in public and this suite was written against %. If that is deliberate, update this number, and judge the new policy in the disposition list below if it reads or writes blanket true', have, want;
@@ -2776,7 +2870,12 @@ begin
   -- c=37 f=67 p=38 u=20 before 0064, which types a note: the check that a
   -- value without a kind is refused, and the composite pinning the kind to
   -- the fact_kind vocabulary the way every other pointer into it is pinned.
-  want := 'c=38 f=69 p=38 u=20';
+  -- c=38 f=69 p=38 u=20 before 0068, which added `invite`: its primary key, the
+  -- check that a code is at least six characters, and two foreign keys into
+  -- app_user for who issued it and who used it. Both of those are nullable, and
+  -- deliberately: an invite exists before anybody has used it, which is the
+  -- whole of its working life.
+  want := 'c=39 f=71 p=39 u=20';
   if have <> want then
     raise exception
       E'FAIL: the constraint inventory changed.\nnow:  %\nwas:  %\nIf that is deliberate, update this line in the same commit that changed the schema.', have, want;
@@ -2981,7 +3080,11 @@ begin
   -- a=37 c=14 n=2 r=14 before 0064. The two new no-actions are a note's fact
   -- kind and the composite pinning it to that vocabulary: a kind is deleted
   -- by deactivating it, not by removing the row, so nothing needs to cascade.
-  want := 'a=39 c=14 n=2 r=14';
+  -- a=39 c=14 n=2 r=14 before 0068. The two new no-actions are who issued an
+  -- invite and who used it. Neither cascades and neither sets null, because a
+  -- used invite is the only record there will ever be of who admitted whom, and
+  -- it should survive either of them leaving.
+  want := 'a=41 c=14 n=2 r=14';
   if have <> want then
     raise exception
       E'FAIL: foreign key delete behaviour changed.\nnow:  %\nwas:  %\na is no action, c is cascade, n is set null, r is restrict.', have, want;
@@ -8633,6 +8736,109 @@ begin
   delete from planting where id = pl;
   delete from block where id = bk;
   delete from vineyard where id = vy;
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- reaching the sign-up page is not the same as working here'; end $$;
+
+-- 0068. "How could I do this so my interns don't need to download an app besides
+-- the vitae springs app?" They do not have to: it is a web page they add to
+-- their home screen. What stood in the way is that the only route to it is
+-- Tailscale, and getting off Tailscale means being reachable by strangers.
+--
+-- S-78 is what made that unsafe: `claim_account` handed a `cellar` role to any
+-- identity that asked, which `is_facility_user()` reads as somebody who works
+-- here. On a private tailnet that is right. Reachable from the internet it is
+-- open registration over two custom crush clients' wine.
+do $$
+declare
+  out_js jsonb;
+  inv    text;
+  n      int;
+begin
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');   -- the admin
+
+  -- Only an administrator lets somebody in. A cellar hand who could issue an
+  -- invite could admit their own second account, which is the whole point.
+  perform test_act_as('00000000-0000-0000-0000-00000000a002');   -- a cellar user
+  begin
+    perform make_invite('cellar', 'should not work');
+    raise exception 'FAIL: a cellar user issued an invite';
+  exception when others then
+    if position('only an administrator' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('only an administrator hands out an invite, because anybody who can issue one can admit themselves twice');
+  end;
+
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+  out_js := make_invite('cellar', 'Assert intern');
+  inv := out_js ->> 'code';
+  if length(inv) <> 6 then
+    raise exception 'FAIL: an invite code is % characters', length(inv);
+  end if;
+  -- No I, O, 0 or 1, because somebody reads this out across a crush pad.
+  if inv ~ '[IO01]' then
+    raise exception 'FAIL: the code % contains a character that is read wrong out loud', inv;
+  end if;
+  perform test_ok('an invite is six characters an administrator can read out, with no letter anybody mishears as a digit');
+
+  -- **The gate itself.** There is exactly one signature, so there is no
+  -- unguarded call left to make.
+  select count(*) into n from pg_proc p
+    join pg_namespace ns on ns.oid = p.pronamespace
+   where ns.nspname = 'public' and p.proname = 'claim_account';
+  if n <> 1 then
+    raise exception
+      'FAIL: there are % versions of claim_account, and one of them is a way past the invite', n;
+  end if;
+  perform test_ok('claim_account has one signature, so the version that needed no invite is gone rather than merely unused');
+
+  -- An invite may be used once, which is checked here rather than by anything
+  -- in the client, because the client is the half a stranger does not run.
+  update invite set used_by = '00000000-0000-0000-0000-00000000a002',
+                    used_at = now()
+   where invite.code = inv;
+  select count(*) into n from invite where invite.code = inv and used_at is not null;
+  if n <> 1 then
+    raise exception 'FAIL: an invite cannot be marked used';
+  end if;
+  perform test_ok('an invite records who used it and when, so who let somebody in survives the person forgetting');
+
+  -- A used one is kept rather than deleted. It is the only record there will
+  -- ever be of who admitted whom.
+  select count(*) into n from invite where invite.code = inv;
+  if n <> 1 then
+    raise exception 'FAIL: using an invite destroyed the record of it';
+  end if;
+  perform test_ok('a used invite is kept, because who let somebody in is worth more than the row it costs');
+
+  -- A cellar hand cannot read the invite list either: a readable code is an
+  -- issuable code.
+  perform test_act_as('00000000-0000-0000-0000-00000000a002');
+  set local role authenticated;
+  select count(*) into n from invite;
+  reset role;
+  if n <> 0 then
+    raise exception 'FAIL: a cellar user can read % invite codes', n;
+  end if;
+  perform test_ok('a cellar user reads no invite codes, because a code they can read is a code they can use');
+
+  -- 0070. A source assertion, which this suite has few of and which earns its
+  -- place here: the difference between a guessable code and an unguessable one
+  -- is invisible in the output. Every code `random()` produces looks exactly
+  -- like every code `gen_random_bytes` produces, which is A13 in its purest
+  -- form, so the only place the difference is visible is the definition.
+  if pg_get_functiondef('make_invite(user_role, text)'::regprocedure) ~ 'random\(\)' then
+    raise exception
+      'FAIL: make_invite builds a credential out of random(), which is a sequence somebody holding one code can continue';
+  end if;
+  if pg_get_functiondef('make_invite(user_role, text)'::regprocedure) !~ 'gen_random_bytes' then
+    raise exception
+      'FAIL: make_invite no longer draws from a cryptographic source';
+  end if;
+  perform test_ok('an invite code comes from a cryptographic source, because one code should not be a step toward the next');
+
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+  delete from invite where note = 'Assert intern';
 end $$;
 
 -- ---------------------------------------------------------------------------

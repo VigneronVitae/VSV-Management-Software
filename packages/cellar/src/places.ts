@@ -71,6 +71,8 @@ export type Place =
   | { at: "practice" }
   // The kinds of fact a note can be typed as. A list that is data rather than
   // schema is only useful if somebody can add to it.
+  // Letting somebody in. Administrator only.
+  | { at: "invites" }
   | { at: "fact-kinds" }
   // Sampling, and one sample with the readings that came off it.
   // Type three letters instead of remembering where a thing lives.
@@ -111,6 +113,7 @@ const WITHOUT_ID = new Set([
   "additions",
   "practice",
   "fact-kinds",
+  "invites",
   "sampling",
   "go",
 ]);

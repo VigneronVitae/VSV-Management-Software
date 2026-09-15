@@ -40,6 +40,19 @@ export type Term = {
 
 export type Role = "admin" | "cellar";
 
+// Permission to become somebody this winery trusts, handed out by somebody it
+// already does. Used rather than deleted, because who let somebody in is worth
+// keeping. See 0068.
+export type Invite = {
+  code: string;
+  role: Role;
+  note: string | null;
+  created_at: string;
+  used_by: Uuid | null;
+  used_at: string | null;
+  expires_at: string;
+};
+
 export type AppUser = {
   id: Uuid;
   name: string;

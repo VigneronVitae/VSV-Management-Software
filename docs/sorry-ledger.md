@@ -2,7 +2,7 @@
 Type: record
 Purpose: "Records every open deferred-verification obligation for the winery app, one entry per gap, as the honest unit of progress."
 Depends on: [packages/cellar/docs/spec.md, docs/methodology-lineage.md]
-Depended on by: [docs/status-ledger.md, docs/findings-ledger.md, CLAUDE.md, README.md, scripts/verify.sh, scripts/db-restore.sh, docs/record-requirements.md, docs/review/2026-09-14-export-red-team.md]
+Depended on by: [docs/status-ledger.md, docs/findings-ledger.md, CLAUDE.md, README.md, scripts/verify.sh, scripts/db-restore.sh, docs/record-requirements.md, docs/review/2026-09-14-export-red-team.md, docs/getting-somebody-else-on-it.md]
 ---
 
 # Sorry Ledger
@@ -912,7 +912,67 @@ that is a report with a decision in it rather than a missing subject type. *Load
 no. It is a shape of question nobody has asked, recorded so that the absence is deliberate
 rather than an oversight.
 
+**S-77. This stack is signed with Supabase's published demo keys.**
+The anon key in use carries `iss: supabase-demo` and the JWT secret is
+`super-secret-jwt-token-with-at-least-32-characters-long`, both of which appear in Supabase's
+own public documentation because they are the defaults every local stack starts with.
+**Anybody who can reach this API can mint a `service_role` token and read and write
+everything, row level security included**, without needing a password or an account. Today
+that is bounded by Tailscale: the API is reachable only from the winemaker's own tailnet, and
+the keys are therefore not the control, the network is. *Resolves when:* the cellar moves to
+a project with generated keys, or this stack's `jwt_secret` and keys are rotated in
+`config.toml` and every client updated. *Load-bearing:* not today, and **absolutely** the
+moment anything makes this reachable from the internet, which is exactly what the intern
+question asks for. Nothing about this app may be exposed publicly until this entry is
+discharged.
+
+**S-79. The mutation ratchet has been red for eleven sessions and nothing said so.**
+`scripts/ratchet.sh` was run tonight, cleanly, for the first time since W-10 re-cut its
+baseline after `0028` and `0031`. It fails four gates. 186 refusal sites are neither
+behaviourally covered nor filed unreachable, and three declarative classes are above their
+baseline: `check` at 13 uncovered against 0, `unique` at 14 against 10, `policy` at 63
+against 32.
+**Almost none of it is tonight's.** The uncovered sites sit in `press` (25), `start_press`
+(18), `weigh_bins` (16), `draw_cut` (13), `add_to_wine` (12) and twenty six other functions,
+every one of them written in the eleven sessions since the baseline was cut. The
+declarative classes grew the same way: the schema went from 59 policies to 98 and from 22
+check constraints to 39, and a gate phrased as "no class may hold more uncovered mutations
+than it did" cannot survive a schema that doubled.
+**Why nobody noticed.** `green.sh` checks that `refusal-sites.tsv` still matches the
+schema and tells you to run the ratchet before landing. Every session since regenerated the
+inventory, which is the cheap half, and none ran the ratchet, which is the half that takes
+thirty five minutes. A gate that is not in the gate is a suggestion.
+*Resolves when:* each uncovered site is either covered by an assertion naming the specific
+refusal or filed in `refusal-dispositions.tsv` with why it is unreachable, and the
+declarative baseline is re-cut afterwards rather than before. Re-cutting first would record
+the drift as the new floor, which is the one thing a ratchet must never do.
+*Load-bearing:* not for correctness today, and yes for the claim this repo makes about
+itself. The suite's own note says an assertion that catches any error covers the function
+and no site in it, and 186 sites is the size of the gap between what the assertions are
+believed to check and what they check. **`claim_account` was two of those 186 tonight, found
+by this run and fixed before landing, which is the argument for the whole apparatus.**
+
 ## Discharged
+**S-78. Anybody who can sign up becomes staff.** *Discharged by `0068`.*
+`enable_signup = true`, and `claim_account` gave any authenticated identity that had not
+claimed one a `cellar` role, which `is_facility_user()` treats as somebody who works here.
+That was right for a winery handing a phone to a new intern on a private network, and it was
+open registration the moment the sign-up page became reachable by strangers. It was the
+survivor of S-25, which closed the narrower hole of an unlinked client account and left the
+wider one because the wider one was not reachable.
+`0068` makes claiming require an invite: six characters an administrator creates and reads
+out, good for a week and usable once, stamped with who used it rather than deleted. The first
+claim on a fresh install still needs none, because there is nobody to issue one and that claim
+is what creates the person who issues the rest.
+**`enable_signup` stays true on purpose.** A stranger may still create an auth identity, and
+an identity with no `app_user` row is nobody: it reads nothing, writes nothing, and every
+policy in the schema is a row level test against a row it does not have. Turning signup off
+would mean an administrator creating accounts in Supabase's dashboard, which is a second
+admission path nothing in this repo asserts.
+**S-77 is not discharged and is the one that matters.** Rotated keys with open registration
+would have been a locked door beside an open window; this is the window shut and the door
+still standing open. Nothing may be exposed publicly until S-77 is answered.
+
 **S-52. A press recorded no cuts.** *Discharged by `0045`.*
 The entry said that pressing free run and hard press separately recorded shares proportional to
 fruit weight, which is arithmetically sound and factually wrong, because the shares say the hard
