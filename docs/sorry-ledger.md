@@ -848,6 +848,23 @@ assertions for `0045` should then pass unchanged except for the extra generation
 difference is the thing to look at carefully. *Load-bearing:* yes, quietly, from the first press
 recorded the old way after this ships. The longer both exist the more the reconciliation costs.
 
+**S-72. The contract declares shape and says nothing about sequence.**
+`0057` declares what a periphery may read, what it may write, and what each write asks for,
+checked against the catalog so it cannot drift. It does not say that a press must be started
+before it can be drawn from, or that drawing must happen before finishing. A periphery built from
+the declaration alone can therefore offer `finish_press` for a press that has had nothing drawn
+off it, and find out it was wrong from a refusal. **That is not a disaster and it is not nothing.**
+The refusal is a sentence written for a person, so the periphery recovers; but a text or audio
+interface that offers three impossible things and one possible one is a bad interface, and the
+knowledge that would fix it is currently only in `walk.ts`, which is the thing AR-Q8 is trying to
+empty. *Resolves when:* a capability can name what must be true before it applies, most likely as
+a readable that must be non-empty, so "finish a press" is offered exactly when a press is in
+progress. That is a small addition and it is deliberately not in the first cut: guessing the shape
+of a precondition language before a second periphery has asked for one is the same mistake this
+whole entry exists inside. *Load-bearing:* no, while a periphery can afford to try and be told no.
+Yes the moment somebody wants a periphery that never offers an action that cannot work, which is
+exactly what an audio one would need.
+
 ## Discharged
 **S-52. A press recorded no cuts.** *Discharged by `0045`.*
 The entry said that pressing free run and hard press separately recorded shares proportional to

@@ -911,11 +911,13 @@ export async function addBlock(block: {
 
 // Picks that are still open: fruit at bin stage that has not been pressed away.
 export async function openPicks(): Promise<Pick[]> {
+  // `open_pick` rather than `node` with three filters. What counts as an open
+  // pick is a rule, and it was in this function until 0057 asked what relation
+  // the contract's `cellar.open_picks` names and the answer was "nothing, the
+  // client works it out". See 0058 and R-4.
   const { data, error } = await kernel()
-    .from("node")
+    .from("open_pick")
     .select("id,name,stage,status,vintage,block_id,variety_id,quantity,unit,created_at")
-    .eq("stage", "bin")
-    .neq("status", "closed")
     .order("created_at", { ascending: false });
   if (error) throw new KernelError(error);
   return (data ?? []) as Pick[];

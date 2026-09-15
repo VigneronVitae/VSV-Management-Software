@@ -588,7 +588,7 @@ answer is that it should be instrumented before it is decided: contract count ag
 count, checked on every module landing.
 
 **AR-Q8. Whether an interface is a periphery over a read and write contract.**
-*Status:* open question
+*Status:* built, 0057_the_contract.sql. The falsifier is run and not yet answered.
 *Raised by the winemaker, 2026-09-15, from a crush pad, mid press.*
 
 Four ways of recording a press shipped that day: say what came off, read the receiving
@@ -639,12 +639,28 @@ written for banners and they are exactly what a conversational or audio peripher
 its output surface. A kernel whose refusals are sentences is a kernel that was already
 being written for more than one modality without anybody saying so.
 
-*Resolves when:* somebody attempts a second periphery and the attempt is instrumented
-rather than argued. **The falsifier is the Knowledge Game's own**: can a text-only
-periphery record a press, weigh a bin and make an addition, built from a declared contract
-alone, without its author reading `walk.ts`? If yes, the contract is real and should be
-declared and versioned. If the author has to read the screens to find out what to ask, the
-declaration is documentation and the knowledge is still in the client.
+*Built 2026-09-15, same day, on his instruction.* `0057` declares what a periphery may read,
+what it may write and what each write asks for, as three registries with a `contract()`
+function returning all of it in one call. `apps/text` is the second periphery: it imports
+nothing from `cellar`, names no table, view, function or column, and renders its entire
+interface from `contract()` at runtime.
+
+**What the declaration found, on its first day, is the argument for it.** Four things, none
+of which any person had noticed. `cellar.open_picks` named a relation that did not exist,
+because what counts as an open pick was three filters typed into `kernel.ts` (0058).
+`pick_weighing` had no column naming the pick it was of, because the screen that reads it
+already knew (0059). The reverse check listed twenty nine callable functions the contract
+had never heard of, eleven sessions of drift nobody had a way to see (0060). And two
+capabilities declared from memory rather than from the catalog had wrong parameter names,
+which is the check catching the person who wrote the check (0061).
+
+*Still open, and this is what `built` does not mean.* **The falsifier has not been answered.**
+`apps/text` typechecks, lints, and starts; it has not been driven end to end against a real
+login by its author, because that is the winemaker's account and not mine to use. Until
+somebody records a press through it, this entry is a claim with an experiment attached
+rather than a finding. The specific thing to watch is whether the person driving it ever
+has to go and read a screen to know what to do next, which is S-72's gap: the contract
+declares shape and says nothing about sequence.
 
 *What it would cost to be wrong in each direction.* Building it now, on one module's worth
 of evidence, is the guess-dressed-as-foresight that CLAUDE.md forbids and that C-4 is the

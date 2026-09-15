@@ -34,7 +34,7 @@
 --              supabase/migrations/0029_viewer_scope.sql,
 --              supabase/migrations/0030_writable_columns.sql,
 --              supabase/migrations/0031_scheduling_to_core.sql,
---              supabase/migrations/0032_vessel_maker_and_room_temperature.sql, supabase/migrations/0033_intake.sql, supabase/migrations/0034_press.sql, supabase/migrations/0035_bins_in_bulk.sql, supabase/migrations/0036_bins_on_loan.sql, supabase/migrations/0037_export.sql, supabase/migrations/0038_cancel_a_pick.sql, supabase/migrations/0039_vineyard.sql, supabase/migrations/0040_block_variety_is_history.sql, supabase/migrations/0041_daily_log.sql, supabase/migrations/0042_weighing_photo.sql, supabase/migrations/0043_record_propagation.sql, supabase/migrations/0044_finishing_a_pick.sql, supabase/migrations/0045_press_detail.sql, supabase/migrations/0046_supply_inventory.sql, supabase/migrations/0047_attachments.sql, supabase/migrations/0048_pick_weighing.sql, supabase/migrations/0049_every_lot_says_its_vintage.sql, supabase/migrations/0050_additions.sql, supabase/migrations/0051_supplies_for_addition.sql, supabase/migrations/0052_press_as_a_process.sql, supabase/migrations/0053_a_press_is_a_vessel.sql, supabase/migrations/0054_a_spent_pick_is_spent.sql, supabase/migrations/0055_press_draws.sql, supabase/migrations/0056_draw_to_a_level.sql]
+--              supabase/migrations/0032_vessel_maker_and_room_temperature.sql, supabase/migrations/0033_intake.sql, supabase/migrations/0034_press.sql, supabase/migrations/0035_bins_in_bulk.sql, supabase/migrations/0036_bins_on_loan.sql, supabase/migrations/0037_export.sql, supabase/migrations/0038_cancel_a_pick.sql, supabase/migrations/0039_vineyard.sql, supabase/migrations/0040_block_variety_is_history.sql, supabase/migrations/0041_daily_log.sql, supabase/migrations/0042_weighing_photo.sql, supabase/migrations/0043_record_propagation.sql, supabase/migrations/0044_finishing_a_pick.sql, supabase/migrations/0045_press_detail.sql, supabase/migrations/0046_supply_inventory.sql, supabase/migrations/0047_attachments.sql, supabase/migrations/0048_pick_weighing.sql, supabase/migrations/0049_every_lot_says_its_vintage.sql, supabase/migrations/0050_additions.sql, supabase/migrations/0051_supplies_for_addition.sql, supabase/migrations/0052_press_as_a_process.sql, supabase/migrations/0053_a_press_is_a_vessel.sql, supabase/migrations/0054_a_spent_pick_is_spent.sql, supabase/migrations/0055_press_draws.sql, supabase/migrations/0056_draw_to_a_level.sql, supabase/migrations/0057_the_contract.sql, supabase/migrations/0058_an_open_pick_is_a_view.sql, supabase/migrations/0061_two_declarations_were_wrong.sql, supabase/migrations/0060_the_contract_catches_up.sql, supabase/migrations/0059_a_weighing_says_its_pick.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -2460,7 +2460,12 @@ begin
   -- 83 before 0047, which added four on attachment: read, insert, a caption-only
   -- update and an admin delete. None reads blanket true, and the read is in fact
   -- narrower than it should be, which is filed as S-65.
-  want := '87';
+  -- 87 before 0057, which added six across the contract's three registries:
+  -- a read and an admin write on each. The three reads are blanket true and
+  -- are judged in the disposition list below as permissive, for the same
+  -- reason `subject_resolver` and `term_kind` are: the contract says what
+  -- kinds of thing exist and what may be done, and never whose wine.
+  want := '93';
   if have <> want then
     raise exception
       'FAIL: there are % policies in public and this suite was written against %. If that is deliberate, update this number, and judge the new policy in the disposition list below if it reads or writes blanket true', have, want;
@@ -2508,6 +2513,12 @@ begin
      'The steps of the above, for the same reason.'),
     ('subject_resolver.subject_resolver_read', 'permissive',
      'The registry naming which relation backs which subject type, AR-E5. Structure, not content.'),
+    ('readable.readable_read', 'permissive',
+     'AR-Q8. What a periphery may read, by name. Saying that a list of presses exists discloses no press.'),
+    ('capability.capability_read', 'permissive',
+     'AR-Q8. What a periphery may write and what each write asks for. A client periphery cannot exist without reading this, and it is the same kind of thing as knowing the app has a Press screen.'),
+    ('capability_exemption.capability_exemption_read', 'permissive',
+     'AR-Q8. Which functions are deliberately outside the contract, with why. Readable so that the reason travels with the omission rather than only living in a migration.'),
     ('location.location_read', 'permissive',
      'Rooms and their ambient temperature. Facility infrastructure, and anybody standing in the barn can read a thermometer.'),
 
@@ -2738,7 +2749,14 @@ begin
   -- movement naming the addition that caused it. That link is the whole of
   -- S-64's answer: it is what makes the scoop off the shelf and the scoop
   -- into the wine provably one act.
-  want := 'c=32 f=63 p=34 u=20';
+  -- c=32 f=63 p=34 u=20 before 0057, which added the contract's three
+  -- registries. Three primary keys, and four checks: a readable and a
+  -- capability key must be qualified so `cellar.weigh_bins` cannot collide
+  -- with another module's, a capability's fields must be a list, and an
+  -- exemption must carry a reason. The one foreign key is a capability's
+  -- subject into `readable`, restricted, because a capability pointing at a
+  -- list that has gone is a periphery with nothing to offer.
+  want := 'c=36 f=64 p=37 u=20';
   if have <> want then
     raise exception
       E'FAIL: the constraint inventory changed.\nnow:  %\nwas:  %\nIf that is deliberate, update this line in the same commit that changed the schema.', have, want;
@@ -2931,7 +2949,10 @@ begin
   -- a=36 c=14 n=2 r=10 before 0050. The new restrict is that same link: a
   -- movement left pointing at an addition that is not there would be a use
   -- off the shelf with no reason attached, which is worse than no link.
-  want := 'a=36 c=14 n=2 r=11';
+  -- a=36 c=14 n=2 r=11 before 0057. The new restrict is a capability's
+  -- subject into `readable`: a capability that acts on a list which has been
+  -- deleted is a thing a periphery would offer and could not fill.
+  want := 'a=36 c=14 n=2 r=12';
   if have <> want then
     raise exception
       E'FAIL: foreign key delete behaviour changed.\nnow:  %\nwas:  %\na is no action, c is cascade, n is set null, r is restrict.', have, want;
@@ -2963,6 +2984,7 @@ begin
   -- evidence rather than structure.
   want := 'attachment.attachment_about_event_fkey, '
        || 'attachment.attachment_subject_type_fkey, '
+       || 'capability.capability_subject_fkey, '
        || 'event.event_subject_type_is_registered, '
        || 'lineage.lineage_child_id_fkey, lineage.lineage_parent_id_fkey, '
        || 'placement.placement_node_id_fkey, placement.placement_vessel_id_fkey, '
@@ -2973,7 +2995,7 @@ begin
   if have <> want then
     raise exception E'FAIL: the restrict keys changed.\nnow:  %\nwas:  %', have, want;
   end if;
-  perform test_ok('the eleven ON DELETE RESTRICT keys are the lineage and placement ones ledger A20 names, the five registry ones, and the one holding a photograph to the reading it is evidence of');
+  perform test_ok('the twelve ON DELETE RESTRICT keys are the lineage and placement ones ledger A20 names, the five registry ones, and the one holding a photograph to the reading it is evidence of');
 end $$;
 
 -- ---------------------------------------------------------------------------
@@ -7885,6 +7907,248 @@ begin
   delete from placement where node_id in (load_id, pick);
   delete from node where id in (load_id, pick);
   delete from vessel where id = press or name like 'ASRTEMPTYPRESS%';
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- the contract, and whether it can drift'; end $$;
+
+-- 0057. AR-Q8, built. A declaration of what a periphery may read and write is a
+-- comment unless something fails when it stops being true, so these are the
+-- assertions that make it a contract. They are the whole of the difference.
+
+-- Forwards: everything declared exists and is shaped as declared.
+do $$
+declare bad text; n int;
+begin
+  -- A readable naming a relation that is not there is the first way this rots,
+  -- and it happened within a minute of 0057 applying: `cellar.open_picks` named
+  -- `pick_open`, which did not exist, because what counts as an open pick was
+  -- three filters typed into a client. 0058 is that fix.
+  select string_agg(r.key || ' names ' || r.relation, ', ' order by r.key) into bad
+    from readable r
+   where to_regclass('public.' || r.relation) is null;
+  if bad is not null then
+    raise exception 'FAIL: these readables name relations that do not exist: %', bad;
+  end if;
+  perform test_ok('every readable in the contract names a relation that exists, so a periphery reading the contract can read the cellar');
+
+  -- And the columns it promises a periphery can find a row by.
+  select string_agg(r.key, ', ' order by r.key) into bad
+    from readable r
+   where r.id_column is not null
+     and not exists (
+       select 1 from information_schema.columns c
+        where c.table_schema = 'public' and c.table_name = r.relation
+          and c.column_name = r.id_column);
+  if bad is not null then
+    raise exception 'FAIL: these readables name an id column their relation does not have: %', bad;
+  end if;
+  select string_agg(r.key, ', ' order by r.key) into bad
+    from readable r
+   where r.label_column is not null
+     and not exists (
+       select 1 from information_schema.columns c
+        where c.table_schema = 'public' and c.table_name = r.relation
+          and c.column_name = r.label_column);
+  if bad is not null then
+    raise exception 'FAIL: these readables name a label column their relation does not have: %', bad;
+  end if;
+  perform test_ok('every readable names an id and a label column that exist, because a periphery needs both and can guess neither');
+
+  -- A capability naming a function that is not there, or is there twice.
+  select string_agg(c.key || ' calls ' || c.fn, ', ' order by c.key) into bad
+    from capability c
+   where (select count(*) from pg_proc p
+            join pg_namespace ns on ns.oid = p.pronamespace
+           where ns.nspname = 'public' and p.proname = c.fn) <> 1;
+  if bad is not null then
+    raise exception
+      'FAIL: these capabilities call a function that does not exist or exists more than once: %', bad;
+  end if;
+  perform test_ok('every capability calls exactly one function that exists, so nothing in the contract is a name somebody hoped was still right');
+
+  -- **The parameter check, which is the one that catches a rename.** Every
+  -- declared field must fill a real parameter of that function.
+  select string_agg(c.key || '.' || (f ->> 'key') || ' -> ' || (f ->> 'param'), ', ') into bad
+    from capability c, jsonb_array_elements(c.fields) f
+   where not exists (
+     select 1 from pg_proc p
+       join pg_namespace ns on ns.oid = p.pronamespace,
+       unnest(p.proargnames) as arg
+      where ns.nspname = 'public' and p.proname = c.fn and arg = (f ->> 'param'));
+  if bad is not null then
+    raise exception 'FAIL: these declared fields name parameters their function does not take: %', bad;
+  end if;
+  perform test_ok('every field in the contract fills a parameter its function actually takes, so renaming an argument breaks the build rather than a periphery');
+
+  -- And the reverse within one function: a parameter with no default is one the
+  -- kernel cannot do without, so a contract that omits it hands a periphery a
+  -- call that always fails.
+  select string_agg(c.key || ' omits ' || arg, ', ') into bad
+    from capability c
+    join pg_proc p on p.proname = c.fn
+    join pg_namespace ns on ns.oid = p.pronamespace and ns.nspname = 'public',
+    lateral unnest(p.proargnames) with ordinality as a(arg, ord)
+   where a.ord <= p.pronargs - p.pronargdefaults
+     and not exists (
+       select 1 from jsonb_array_elements(c.fields) f where f ->> 'param' = a.arg);
+  if bad is not null then
+    raise exception
+      'FAIL: these capabilities omit a parameter their function has no default for, so a periphery built from the contract cannot call them: %', bad;
+  end if;
+  perform test_ok('every parameter the kernel has no default for is declared, so a periphery built from the contract alone can make the call');
+
+  -- A required field for a parameter that has a default is a contract being
+  -- stricter than the kernel, which is allowed, and the opposite is not.
+  select string_agg(x.key || '.' || x.fkey, ', ') into bad
+    from (
+      select c.key, c.fn,
+             f ->> 'key'   as fkey,
+             f ->> 'param' as param,
+             coalesce((f ->> 'required')::boolean, false) as required
+        from capability c
+        cross join lateral jsonb_array_elements(c.fields) f
+    ) x
+    join pg_proc p on p.proname = x.fn
+    join pg_namespace ns on ns.oid = p.pronamespace and ns.nspname = 'public'
+   where not x.required
+     and exists (
+       select 1
+         from unnest(p.proargnames) with ordinality as a(arg, ord)
+        where a.ord <= p.pronargs - p.pronargdefaults
+          and a.arg = x.param);
+  if bad is not null then
+    raise exception
+      'FAIL: these fields are optional in the contract and required by the kernel: %', bad;
+  end if;
+  perform test_ok('nothing the kernel requires is optional in the contract, so a periphery is never told a thing is skippable when it is not');
+
+  -- A source pointing at a readable or a vocabulary that is not there.
+  select string_agg(c.key || '.' || (f ->> 'key'), ', ') into bad
+    from capability c, jsonb_array_elements(c.fields) f
+   where f -> 'source' ? 'readable'
+     and not exists (select 1 from readable r where r.key = f -> 'source' ->> 'readable');
+  if bad is not null then
+    raise exception 'FAIL: these fields draw from a readable that is not in the contract: %', bad;
+  end if;
+  select string_agg(c.key || '.' || (f ->> 'key'), ', ') into bad
+    from capability c, jsonb_array_elements(c.fields) f
+   where f -> 'source' ? 'terms'
+     and not exists (select 1 from term_kind k where k.kind = f -> 'source' ->> 'terms');
+  if bad is not null then
+    raise exception 'FAIL: these fields draw from a vocabulary that is not registered: %', bad;
+  end if;
+  select count(*) into n from capability c
+   where c.subject is not null
+     and not exists (select 1 from readable r where r.key = c.subject);
+  if n <> 0 then
+    raise exception 'FAIL: % capabilities act on a subject that is not a readable', n;
+  end if;
+  perform test_ok('every picker in the contract points at a readable or a vocabulary that exists, so nothing offers a periphery a list it cannot fetch');
+end $$;
+
+-- **Backwards, which is the direction that matters.** A contract does not fall
+-- behind by contradicting itself. It falls behind by omission: somebody adds a
+-- function, grants it, writes a screen for it, and the declaration says nothing.
+-- This is the same ratchet as the refusal-site enumeration, and it is why
+-- `capability_exemption` carries a reason rather than a list of names.
+do $$
+declare undeclared text;
+begin
+  select string_agg(p.proname, ', ' order by p.proname) into undeclared
+    from pg_proc p
+    join pg_namespace ns on ns.oid = p.pronamespace
+   where ns.nspname = 'public'
+     and p.prokind = 'f'
+     and has_function_privilege('authenticated', p.oid, 'EXECUTE')
+     -- Triggers are reached by writing a row, never called by a periphery.
+     and pg_get_function_result(p.oid) <> 'trigger'
+     -- This suite's own harness, created inside this transaction and gone when
+     -- it rolls back. Excluded here rather than exempted in a migration,
+     -- because a migration recording them would be recording things that do not
+     -- exist in the database it describes.
+     and p.proname not in ('test_ok', 'test_act_as', 'test_refusal', 'test_refuses',
+                           'snapshots_on', 'skip_snapshot')
+     and not exists (select 1 from capability c where c.fn = p.proname)
+     and not exists (select 1 from capability_exemption e where e.fn = p.proname);
+
+  if undeclared is not null then
+    raise exception
+      E'FAIL: these functions are callable by a signed-in account and the contract says nothing about them: %.\nEither declare a capability for it, or add it to capability_exemption with the reason it is not one. A contract falls behind by omission rather than by contradiction, which is why this direction is checked.',
+      undeclared;
+  end if;
+  perform test_ok('every function a signed-in account can call is either a declared capability or an exemption with a written reason, so the contract cannot fall behind in silence');
+end $$;
+
+-- What a periphery actually receives. If this is wrong the rest is theory.
+do $$
+declare c jsonb; n int;
+begin
+  c := contract();
+  if c -> 'viewer' is null then
+    raise exception 'FAIL: the contract does not say who is asking';
+  end if;
+  select jsonb_array_length(c -> 'capabilities') into n;
+  if n < 5 then
+    raise exception 'FAIL: the contract offers % capabilities', n;
+  end if;
+  select jsonb_array_length(c -> 'readables') into n;
+  if n < 5 then
+    raise exception 'FAIL: the contract offers % readables', n;
+  end if;
+  -- Every capability arrives with its fields, or a periphery has to ask again.
+  select count(*) into n
+    from jsonb_array_elements(c -> 'capabilities') cap
+   where jsonb_array_length(cap -> 'fields') = 0;
+  if n <> 0 then
+    raise exception 'FAIL: % capabilities arrive with no fields at all', n;
+  end if;
+  perform test_ok('one call returns who is asking, what may be read, what may be written and what each write needs, which is what a second periphery starts from');
+end $$;
+
+-- The contract is structure, and structure is readable by anyone signed in. It
+-- must never carry content: what may be done is not whose wine.
+do $$
+declare seen int; leaked text;
+begin
+  perform test_act_as('00000000-0000-0000-0000-00000000a003');   -- the client login
+  set local role authenticated;
+  select count(*) into seen from capability;
+  reset role;
+  if seen = 0 then
+    raise exception 'FAIL: a client cannot read the contract, so a client periphery cannot exist';
+  end if;
+
+  select string_agg(c.key, ', ') into leaked from capability c
+   where c.note ~* '(pinot|riesling|chardonnay|amica|pearlstaad|vitae)';
+  if leaked is not null then
+    raise exception 'FAIL: the contract names this winery''s wine in %, which is content rather than structure', leaked;
+  end if;
+  perform test_ok('the contract is readable by anybody signed in and names no lot, party or wine, because it says what may be done and never whose');
+
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+end $$;
+
+-- 0058. The R-4 the contract found on its first day.
+do $$
+declare n int; probe uuid := '00000000-0000-0000-0000-00000000ce01';
+begin
+  insert into node (id, stage, status, name, vintage, created_by)
+  values (probe, 'bin', 'open', 'Assert open pick', 2026,
+          '00000000-0000-0000-0000-00000000a001');
+  select count(*) into n from open_pick where id = probe;
+  if n <> 1 then
+    raise exception 'FAIL: a pick in bins and not closed is not an open pick';
+  end if;
+
+  update node set status = 'closed', closed_at = now() where id = probe;
+  select count(*) into n from open_pick where id = probe;
+  if n <> 0 then
+    raise exception 'FAIL: a closed pick is still open';
+  end if;
+  perform test_ok('what counts as an open pick is a view rather than three filters typed into a client, which is the R-4 that declaring the contract found');
+
+  delete from node where id = probe;
 end $$;
 
 -- ---------------------------------------------------------------------------

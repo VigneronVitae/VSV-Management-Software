@@ -4,7 +4,7 @@
 --           since last time, because the tank has a gauge on it and the press
 --           does not."
 -- Depends on: [supabase/migrations/0052_press_as_a_process.sql]
--- Depended on by: [tests/schema_assertions.sql]
+-- Depended on by: [tests/schema_assertions.sql, supabase/migrations/0057_the_contract.sql]
 -- Axioms enforced: T0-2 (the increment is derived from what is already placed
 --                  and is never a second stored number), AR-A3 (the arithmetic
 --                  that turns a level into a draw is a rule, so it is here and

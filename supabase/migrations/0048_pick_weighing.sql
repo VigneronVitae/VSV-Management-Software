@@ -5,7 +5,7 @@
 --           them is of."
 -- Depends on: [supabase/migrations/0042_weighing_photo.sql,
 --              supabase/migrations/0047_attachments.sql]
--- Depended on by: [tests/schema_assertions.sql]
+-- Depended on by: [tests/schema_assertions.sql, supabase/migrations/0059_a_weighing_says_its_pick.sql]
 -- Axioms enforced: T0-2 (which reading is live is derived from the events and
 --                  not stored anywhere)
 -- ---------------------------------------------------------------------------
