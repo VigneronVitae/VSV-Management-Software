@@ -7912,9 +7912,12 @@ end $$;
 -- ---------------------------------------------------------------------------
 do $$ begin raise notice '--- the contract, and whether it can drift'; end $$;
 
--- 0057. AR-Q8, built. A declaration of what a periphery may read and write is a
--- comment unless something fails when it stops being true, so these are the
--- assertions that make it a contract. They are the whole of the difference.
+-- AR-Q8. An interface is a periphery over a read and write contract, and 0057
+-- is that contract. A declaration of what a periphery may read and write is a
+-- comment unless something fails when it stops being true, so the assertions
+-- below are what make it a contract rather than documentation. They are the
+-- whole of the difference, and they are what the ruling's `built` claim rests
+-- on.
 
 -- Forwards: everything declared exists and is shaped as declared.
 do $$

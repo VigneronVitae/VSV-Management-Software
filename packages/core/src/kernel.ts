@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { readConfig } from "./env.ts";
+import { type Backend, currentBackend, readConfig, setBackend } from "./env.ts";
 import type {
   AdditionResult,
   AppUser,
@@ -51,13 +51,30 @@ import type {
 // function in a migration and called from here, per the hard rule in CLAUDE.md.
 
 let client: SupabaseClient | null = null;
+// Which stack the cached client is for. Without this, switching into practice
+// mode would keep talking to the cellar until a reload, which is the exact
+// failure practice mode exists to prevent: a person who believes they are
+// somewhere they are not.
+let clientFor: Backend | null = null;
 
 export function kernel(): SupabaseClient {
-  if (!client) {
+  const backend = currentBackend();
+  if (!client || clientFor !== backend) {
     const { url, anonKey } = readConfig();
     client = createClient(url, anonKey);
+    clientFor = backend;
   }
   return client;
+}
+
+/** Move between the cellar and practice. The session does not travel: logins
+ * are per stack, so staying signed in across a switch is not possible and
+ * pretending otherwise would leave somebody looking at an empty screen with no
+ * idea why. */
+export function switchBackend(to: Backend): void {
+  setBackend(to);
+  client = null;
+  clientFor = null;
 }
 
 // Ids are generated here so an offline write has identity before the server

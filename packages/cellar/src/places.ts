@@ -66,7 +66,9 @@ export type Place =
   // Lots that predate 0049 and say neither a year nor NV. Nothing new can join
   // the list, so this place empties and stops being offered.
   | { at: "vintages" }
-  | { at: "additions" };
+  | { at: "additions" }
+  // Practice mode, which is a shipped feature rather than a developer toggle.
+  | { at: "practice" };
 
 export const HOME: Place = { at: "home" };
 
@@ -99,6 +101,7 @@ const WITHOUT_ID = new Set([
   "stores",
   "vintages",
   "additions",
+  "practice",
 ]);
 
 // A calendar day, which is what the day log is addressed by.

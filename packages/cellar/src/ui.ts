@@ -1,3 +1,5 @@
+import { currentBackend } from "core";
+
 // Phone first. Single column, large targets, one action per view. There is no
 // component model here on purpose: these screens are one skin over the kernel
 // and a later session builds the shell.
@@ -32,8 +34,39 @@ export function on<E extends keyof HTMLElementEventMap>(
   node.addEventListener(event, handler as EventListener);
 }
 
+// Every screen, so there is no screen without it.
+//
+// Practice mode's entire safety rests on somebody always knowing which stack
+// they are in, and the way that fails is a screen somebody forgot to mark. So
+// the mark is not something a screen opts into: it is in the one function every
+// screen is built from, and a new screen gets it without its author knowing it
+// exists.
+//
+// A13 in its plainest form: a real cellar and a practice one must not look
+// alike. In practice mode the band is at the top of the page, it says what
+// practice mode means rather than just naming it, and the body carries a class
+// so a skin can make the whole page unmistakable.
 export function screen(title: string, ...body: Child[]): HTMLElement {
-  return el("section", { class: "screen" }, el("h1", { text: title }), ...body);
+  const practising = currentBackend() === "practice";
+  try {
+    document.body.classList.toggle("practising", practising);
+  } catch {
+    // No document is a test or a non-browser host. The band below is still
+    // built; only the page-level styling hook is unavailable.
+  }
+  return el(
+    "section",
+    { class: "screen" },
+    practising
+      ? el("p", {
+          class: "practice-band",
+          role: "status",
+          text: "PRACTICE. Nothing here is real and all of it can be thrown away.",
+        })
+      : null,
+    el("h1", { text: title }),
+    ...body,
+  );
 }
 
 export function lede(text: string): HTMLElement {

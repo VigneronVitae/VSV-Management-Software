@@ -3,7 +3,7 @@ Type: ruling
 Version: 2.1
 Purpose: "Records every architectural decision governing the decomposition of this system into installable modules, with the reasoning, the falsifier, and the condition under which each ruling would be wrong."
 Depends on: [packages/cellar/docs/spec.md, docs/methodology-lineage.md]
-Depended on by: [docs/findings-ledger.md, docs/status-ledger.md, docs/session-reports/modularization-progress.md, supabase/migrations/0023_subject_resolver.sql, supabase/migrations/0024_task_board_via_registry.sql, supabase/migrations/0026_subject_type_registry.sql, supabase/migrations/0027_term_kind_registry.sql, scripts/status.sh]
+Depended on by: [docs/findings-ledger.md, docs/status-ledger.md, docs/session-reports/modularization-progress.md, supabase/migrations/0023_subject_resolver.sql, supabase/migrations/0024_task_board_via_registry.sql, supabase/migrations/0026_subject_type_registry.sql, supabase/migrations/0027_term_kind_registry.sql, scripts/status.sh, docs/practice-mode.md]
 ---
 
 # Architecture Rulings
@@ -668,6 +668,58 @@ compost entry for. Not building it means every new modality is a rewrite of `wal
 `walk.ts` is five thousand lines and growing, which is the cost already being paid. The
 cheap move available today is neither: stop adding knowledge to the client that the kernel
 could answer, which is a rule this repository already has and does not yet check.
+
+**AR-Q9. Whether the split is practice against real, or private kernel against public.**
+*Status:* open question
+*Raised by the winemaker, 2026-09-15, while practice mode was being built.*
+
+He asked for somewhere to try things and delete them while still recording real work. That
+was being built as a second stack with a switch, and then: "or is the better split more like
+a private kernel (debug mode) vs a public kernel (submitting it to the server)?"
+
+**It is a better split, and it is not the same question.** Practice mode answers "I want a
+place where nothing counts". A private kernel answers "everything I do is mine until I say
+it counts", which is a different and stronger claim. It is also his own architecture again:
+Knowledge Game keeps personal data in a local vault, structurally isolated from public
+contributions, with the kernel running on the device and contributions crossing into the
+public graph through a gate.
+
+**What it would solve that practice mode does not.** Three things at once rather than one.
+Trying something and throwing it away becomes the default state of your own device rather
+than a mode to be in, which removes the entire failure practice mode is designed against:
+there is no wrong mode to be in, because everything starts private and submitting is a
+deliberate act. It answers S-47, the offline gap, as a consequence rather than as a second
+project. And it is the right shape for several people on several phones at one winery,
+which is where this is going.
+
+**What it costs, and this is the part to be honest about.** A private kernel is not a
+feature, it is a second implementation of the kernel: the schema running on the device, the
+migrations applied there, and a submit protocol between them. Two of the hardest problems in
+this repository are already sitting in that protocol and are already filed. S-32 says an
+imported event has no author who exists in the receiving database, and `has_an_author`
+refuses the row; the spec's §7 says the same thing at more length and calls provenance
+across the boundary the hard part. A submit path is that problem, every time somebody
+presses a button. Weeks, not hours, and during harvest neither.
+
+**They are not alternatives, which is the useful part.** Even with a private kernel there is
+a thing practice mode does that it cannot: rehearse a *submitted* workflow. Once something
+has crossed into the public kernel it is append-only there, so "let me see what happens when
+I finish this press" still wants a public kernel that does not matter. A private kernel
+makes practice mode smaller rather than unnecessary: one stack to rehearse against, instead
+of a mode the whole app has to be marked for.
+
+*Resolves when:* somebody wants two people recording at once, or wants to record with no
+signal. Either of those makes the private kernel the cheaper answer rather than the more
+elegant one, and until one of them is real, practice mode is the honest amount of machinery
+for the problem as stated. **The thing that would settle it early** is the submit protocol:
+if S-32's authorship question is answered for the import case anyway, the private kernel
+stops being weeks and starts being days.
+
+*Recorded while building the other one.* Practice mode shipped the same day because the
+winemaker needed somewhere to try things during a harvest, and because a second stack is
+twenty minutes where this is a fortnight. That is a cost decision rather than a design one,
+and it is written down here so that nobody later reads the second stack as a considered
+rejection of this.
 
 **AR-Q5. Solera truncation depth.**
 *Status:* open question

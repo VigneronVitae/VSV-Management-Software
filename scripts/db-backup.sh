@@ -3,7 +3,7 @@
 # Type: tool
 # Purpose: "Writes everything in the cellar to a file that can be restored after a reset, because supabase db reset destroys it and the winemaker asked whether the app always has to."
 # Depends on: [CLAUDE.md]
-# Depended on by: [docs/status-ledger.md, scripts/db-restore.sh]
+# Depended on by: [docs/status-ledger.md, scripts/db-restore.sh, scripts/practice.sh]
 # ---------------------------------------------------------------------------
 # Everything you have entered, saved to a file you can restore after a reset.
 #

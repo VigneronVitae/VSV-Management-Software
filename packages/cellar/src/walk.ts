@@ -27,6 +27,7 @@ import {
   countSupply,
   createVesselWithWine,
   currentAppUser,
+  currentBackend,
   currentSession,
   type DayNote,
   dayLog,
@@ -60,6 +61,7 @@ import {
   pickById,
   pickWeighings,
   plantings,
+  practiceAvailable,
   pressDraws,
   pressesInProgress,
   rackPlan,
@@ -87,6 +89,7 @@ import {
   suppliesBelowLevel,
   suppliesForAddition,
   suppliesOnHand,
+  switchBackend,
   type Term,
   type TermKind,
   type ThermalMode,
@@ -326,6 +329,8 @@ async function screenFor(place: Place): Promise<HTMLElement> {
       return vintagesScreen();
     case "additions":
       return additionsScreen();
+    case "practice":
+      return practiceScreen();
     case "day":
       return dayScreen(place.id);
     case "paper":
@@ -708,6 +713,7 @@ function menu(items: MenuItem[]): HTMLElement {
 }
 
 async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> {
+  const practising = currentBackend() === "practice";
   const [places, kit, unweighed, owedBins, owedPaper, buying, silent, pressing] =
     await Promise.all([
       locations(),
@@ -876,6 +882,21 @@ async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> 
           "on one machine, so a copy elsewhere is what makes it survivable.",
         go: () => go({ at: "export" }),
       },
+      // Only when a practice stack is actually configured. Offering it in a
+      // build with nothing behind it means somebody turns it on and every
+      // screen fails to load with no explanation.
+      ...(practiceAvailable()
+        ? [
+            {
+              name: practising ? "Leave practice" : "Practice mode",
+              note: practising
+                ? "Go back to the real cellar. What you did in practice stays in practice."
+                : "A second cellar with nothing real in it. Try anything, break anything, throw it away.",
+              ...(practising ? { badge: "on" } : {}),
+              go: () => go({ at: "practice" }),
+            },
+          ]
+        : []),
     ]),
     el("h2", { class: "section-head", text: "Not built yet" }),
     menu([
@@ -4423,6 +4444,77 @@ function additionsScreen(): HTMLElement {
   })();
 
   return view;
+}
+
+// --- practice mode ---------------------------------------------------------
+
+// A second cellar with nothing real in it.
+//
+// The winemaker asked for "a server or delete things or whatever so I can
+// actually play around and try out things and delete them later, but also use
+// the app to record", and then framed the switch as "maybe it's a debugging
+// mode that actually ships". So this is a feature, written for a winemaker, and
+// the words avoid every programmer's word for it: not sandbox, not staging, not
+// dev. Practice.
+//
+// **Switching signs you out, and that is deliberate rather than a limitation.**
+// The two stacks have separate logins, so the session genuinely cannot travel.
+// Making somebody sign in again is also the clearest possible signal that they
+// have moved, at the one moment it matters most.
+function practiceScreen(): HTMLElement {
+  const practising = currentBackend() === "practice";
+  const message = el("div", {});
+
+  function move(to: "cellar" | "practice"): void {
+    switchBackend(to);
+    // A full reload rather than a re-render. Every cached thing in this tab
+    // belongs to the stack being left, including the session, and a switch that
+    // left any of it behind would be the exact confusion this screen exists to
+    // prevent.
+    window.location.assign("#/home");
+    window.location.reload();
+  }
+
+  return screen(
+    practising ? "You are in practice" : "Practice mode",
+    lede(
+      practising
+        ? "This is not your cellar. Nothing recorded here is real, and all of it " +
+            "can be thrown away without touching anything that is."
+        : "A second cellar, a copy of the real one, where trying something and " +
+            "deleting it afterwards is allowed.",
+    ),
+    rows(
+      summaryRow("Right now", practising ? "Practice" : "The real cellar"),
+      el("p", {
+        class: "field-hint",
+        text:
+          "The two have separate logins, so switching signs you out and you " +
+          "sign in again on the other side. That is also how you can always " +
+          "tell which one you are in.",
+      }),
+      el("p", {
+        class: "field-hint",
+        text:
+          "Every screen in practice carries a band across the top. If you ever " +
+          "cannot see one, you are in the real cellar and what you record counts.",
+      }),
+      practising
+        ? button("Go back to the real cellar", () => move("cellar"))
+        : button("Switch to practice", () => {
+            message.replaceChildren(
+              banner(
+                "This signs you out and moves you to the practice cellar. " +
+                  "Tap again to confirm.",
+                "note",
+              ),
+              button("Yes, switch to practice", () => move("practice")),
+            );
+          }),
+      message,
+      button("Back", () => goBack(), "quiet"),
+    ),
+  );
 }
 
 // --- lots that never said their vintage ------------------------------------

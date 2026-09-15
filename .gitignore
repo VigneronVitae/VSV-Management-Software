@@ -20,6 +20,11 @@ out/
 supabase/.branches/
 supabase/.temp/
 supabase/.env
+# The practice stack, same artifacts. `.temp/start-secrets` carries the
+# stack's generated keys and must never be committed.
+sandbox/supabase/.branches/
+sandbox/supabase/.temp/
+sandbox/supabase/.env
 
 # Real winery data never lands in git. It lives in Supabase, and the only copy
 # that belongs in a repository is the nightly export in compost entry C-2,
