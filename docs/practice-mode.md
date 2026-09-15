@@ -38,6 +38,16 @@ bun run practice stop
 `seed` reads the cellar with `pg_dump` and never writes to it, the same as
 `scripts/green.sh`. It replaces whatever was in practice.
 
+`up` and `reset` apply the migration files directly rather than through the
+Supabase cli. That is not a preference: `seed` copies the cellar's whole
+database, which includes its recorded migration history, while the practice
+workdir holds a config file and no migrations directory. The cli then compares a
+history it can see against files it cannot find and refuses, correctly. Applying
+the files the way `scripts/green.sh` does removes the problem rather than
+working around it, and `reset` deliberately drops only `public`, so the logins
+survive and somebody who has just thrown practice away can sign straight back
+into it.
+
 The two stacks sit on port blocks a hundred apart, so the numbers read as a pair:
 
 | | cellar | practice |

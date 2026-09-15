@@ -50,15 +50,49 @@ stop)
   supabase stop --workdir "$WORKDIR"
   ;;
 
+# Applied directly rather than through the cli, and the reason is a bug this
+# script shipped with.
+#
+# `seed` copies the whole cellar database, which includes
+# `supabase_migrations.schema_migrations`. So practice's recorded history becomes
+# the cellar's, sixty one entries, while the sandbox workdir holds a config file
+# and no migrations directory. The cli then compares a remote history it can see
+# against local files it cannot find and refuses, correctly, with
+# LegacyMigrationMissingLocalError. **Both halves were mine**: seeding the
+# history and not giving the workdir the files.
+#
+# The fix is to stop using the cli's project model here. These are the same
+# files `scripts/green.sh` pipes into a scratch database, applied the same way,
+# against a database that is allowed to be wrong.
 up)
-  supabase migration up --workdir "$WORKDIR" || die "migrations did not apply"
+  docker exec "$PRACTICE_DB_CONTAINER" true 2>/dev/null     || die "the practice stack is not running. Run practice start first"
+  applied=0
+  for f in supabase/migrations/0*.sql; do
+    v="$(basename "$f" | cut -d_ -f1)"
+    known=$(docker exec "$PRACTICE_DB_CONTAINER" psql -U postgres -At -d postgres               -c "select count(*) from supabase_migrations.schema_migrations where version = '$v';" 2>/dev/null)
+    [ "${known:-0}" = "0" ] || continue
+    if docker exec -i "$PRACTICE_DB_CONTAINER" psql -U postgres -q -v ON_ERROR_STOP=1          -d postgres < "$f" > /tmp/practice-up.log 2>&1; then
+      docker exec "$PRACTICE_DB_CONTAINER" psql -U postgres -q -d postgres         -c "insert into supabase_migrations.schema_migrations (version, name) values ('$v', '$(basename "$f" .sql | cut -d_ -f2-)') on conflict do nothing;" >/dev/null 2>&1
+      applied=$((applied + 1))
+    else
+      say "$(basename "$f") did not apply:"
+      grep -E '^(ERROR|FATAL)' /tmp/practice-up.log | head -3 | sed 's/^/      /'
+      die "stopped at $(basename "$f")"
+    fi
+  done
+  say "$applied migration(s) applied. Practice is current."
   ;;
 
 # Everything this script exists for. Safe here and nowhere else.
 reset)
+  docker exec "$PRACTICE_DB_CONTAINER" true 2>/dev/null     || die "the practice stack is not running. Run practice start first"
   say "Resetting the practice stack. The cellar is not touched."
-  supabase db reset --workdir "$WORKDIR" || die "the reset failed"
-  say "Done. Practice is empty, with the seeded vocabulary and nothing else."
+  # `public` only. The `auth` schema is left alone on purpose, so the logins
+  # survive a reset and somebody who has just thrown practice away can sign
+  # straight back into it. Storage is left alone for the same reason.
+  docker exec "$PRACTICE_DB_CONTAINER" psql -U postgres -q -d postgres     -c "drop schema if exists public cascade; create schema public;"     -c "delete from supabase_migrations.schema_migrations;" >/dev/null 2>&1     || die "the reset failed"
+  bash "$0" up || die "practice is empty and the migrations did not reapply"
+  say "Done. Practice is the schema and the seeded vocabulary, and nothing else."
   ;;
 
 # A copy of the cellar to play with, which is what makes practice useful on the
@@ -101,6 +135,10 @@ seed)
            -c "select count(*) from pg_tables where schemaname = 'public';" 2>/dev/null)
   [ "${rows:-0}" -gt 0 ] || die "practice has ${rows:-0} tables, so the copy did not land"
   say "Practice now has $rows tables copied from the cellar."
+  say
+  say "Its recorded migration history is now the cellar's too, which is correct:"
+  say "the schema it has is the cellar's schema. practice up applies the files"
+  say "directly rather than through the cli, so the two stay reconcilable."
   say
   say "Note: logins are per stack, so rows copied in will read as recorded by"
   say "nobody until you sign up in practice and record something yourself."
