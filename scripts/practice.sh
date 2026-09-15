@@ -107,12 +107,24 @@ seed)
     || die "the practice stack is not running. Run practice start first"
 
   say "Copying the cellar into practice. This replaces whatever is in practice now."
+  # **With its grants, which is the whole of a bug this shipped with.**
+  # `--no-owner --no-privileges` strips every GRANT from the dump, and the
+  # `drop schema public` below destroys the ones the stack set up, so practice
+  # ended up holding every row and no permission to read one. PostgREST answered
+  # `permission denied for schema public` to everything and the app rendered
+  # that as "you are not signed in". The winemaker found it by switching into
+  # practice and being unable to do anything at all.
+  #
+  # The roles are identical on both stacks, so the dump's own grants restore
+  # correctly. Stripping them was a habit from moving dumps between machines
+  # that do not share roles, and it was never right here.
+  #
   # Through a file rather than a pipe between two containers. X-1-13: a pipe
   # reports the reader's status, psql exits zero on empty input, and a dump that
   # produced nothing then looks like a success.
   tmp="$(mktemp)"
   if ! docker exec "$CELLAR_DB_CONTAINER" \
-       pg_dump -U postgres -d postgres --no-owner --no-privileges > "$tmp"; then
+       pg_dump -U postgres -d postgres > "$tmp"; then
     rm -f "$tmp"; die "could not read the cellar"
   fi
   lines=$(wc -l < "$tmp")
@@ -134,7 +146,13 @@ seed)
   rows=$(docker exec "$PRACTICE_DB_CONTAINER" psql -U postgres -At -d postgres \
            -c "select count(*) from pg_tables where schemaname = 'public';" 2>/dev/null)
   [ "${rows:-0}" -gt 0 ] || die "practice has ${rows:-0} tables, so the copy did not land"
-  say "Practice now has $rows tables copied from the cellar."
+  # Counting tables was not enough: practice had 37 of them and no permission to
+  # read any. This asks the question the app asks.
+  if ! docker exec "$PRACTICE_DB_CONTAINER" psql -U postgres -q -d postgres        -c "set role authenticated; select 1 from term limit 1;" >/dev/null 2>&1; then
+    die "practice has the rows and the app cannot read them: the grants did not come across"
+  fi
+
+  say "Practice now has $rows tables copied from the cellar, readable by the app."
   say
   say "Its recorded migration history is now the cellar's too, which is correct:"
   say "the schema it has is the cellar's schema. practice up applies the files"

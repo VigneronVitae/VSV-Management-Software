@@ -495,9 +495,36 @@ async function route(): Promise<void> {
         "Something went wrong",
         fail(error),
         button("Try again", () => route()),
+        // Always offered while in practice, because practice is the one place
+        // where things are expected to break, and the first version of this
+        // screen left the winemaker looking at a refusal with no way back to
+        // his own cellar. A way out does not belong behind the thing that is
+        // broken.
+        ...leavePractice(),
       ),
     );
   }
+}
+
+/** The escape hatch, on every screen that can strand somebody. Empty when not
+ * in practice, so it costs nothing anywhere else. */
+function leavePractice(): HTMLElement[] {
+  if (currentBackend() !== "practice") return [];
+  return [
+    el("p", {
+      class: "field-hint",
+      text: "You are in practice. Nothing here is your real cellar.",
+    }),
+    button(
+      "Leave practice, back to the real cellar",
+      () => {
+        switchBackend("cellar");
+        window.location.assign("#/home");
+        window.location.reload();
+      },
+      "secondary",
+    ),
+  ];
 }
 
 // --- sign in --------------------------------------------------------------
@@ -544,6 +571,8 @@ function signInScreen(): HTMLElement {
         "secondary",
       ),
       message,
+      // Somebody who cannot sign in to practice still has a cellar to go back to.
+      ...leavePractice(),
     ),
   );
 }
