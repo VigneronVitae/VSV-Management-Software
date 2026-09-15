@@ -5,7 +5,9 @@
 --           it."
 -- Depends on: [supabase/migrations/0032_vessel_maker_and_room_temperature.sql,
 --              supabase/migrations/0036_bins_on_loan.sql]
--- Depended on by: [tests/schema_assertions.sql]
+-- Depended on by: [tests/schema_assertions.sql,
+--                  supabase/migrations/0083_what_you_can_sample.sql,
+--                  supabase/migrations/0085_a_stack_of_bins_is_inventory.sql]
 -- Axioms enforced: A13 (a negation indistinguishable from an affirmation: the
 --                  form said not ours and every screen said ours)
 -- Open sorries: S-82 (a client's own bins still cannot be recorded from the

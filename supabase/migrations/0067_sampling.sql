@@ -4,7 +4,8 @@
 --           of it are facts about that act."
 -- Depends on: [supabase/migrations/0039_vineyard.sql,
 --              supabase/migrations/0064_typing_a_note.sql]
--- Depended on by: [tests/schema_assertions.sql]
+-- Depended on by: [tests/schema_assertions.sql,
+--                  supabase/migrations/0082_three_kinds_of_sampling.sql]
 -- Axioms enforced: T0-2 (a sample stores no readings of its own; the readings
 --                  are typed notes about it), AR-E5 (a planting becomes a
 --                  subject by being registered, and nothing else changes)

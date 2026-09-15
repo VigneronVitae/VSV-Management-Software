@@ -6,6 +6,7 @@ import type {
   Attachment,
   BarrelColour,
   BarrelWarning,
+  BinInventory,
   BinToReturn,
   Block,
   CodePayload,
@@ -36,6 +37,8 @@ import type {
   PressStarted,
   RoomClimate,
   Sample,
+  SampleKind,
+  SampleTarget,
   ShoppingItem,
   SubjectNote,
   SupplyCount,
@@ -854,15 +857,35 @@ export async function contract(): Promise<Contract> {
 export async function samples(
   subjectType?: string,
   subjectId?: Uuid,
+  kinds?: SampleKind[],
 ): Promise<Sample[]> {
   let q = kernel()
     .from("sample")
-    .select("event_id,subject_type,subject_id,of_what,at,note,by_name,readings");
+    .select(
+      "event_id,subject_type,subject_id,of_what,at,note,by_name,readings,kind,node_id,lot_name,vintage,non_vintage,variety,lot_owner_id,lot_owner_name",
+    );
   if (subjectType) q = q.eq("subject_type", subjectType);
   if (subjectId) q = q.eq("subject_id", subjectId);
+  // Filtered in the database rather than after the fact. The winemaker's reason
+  // for the filter is that two vintages of barrel wine bury the ferments, and
+  // fetching them all to throw them away on the phone is the same problem with
+  // a longer wait in front of it.
+  if (kinds && kinds.length > 0) q = q.in("kind", kinds);
   const { data, error } = await q.order("at", { ascending: false });
   if (error) throw new KernelError(error);
   return (data ?? []) as Sample[];
+}
+
+// What can be sampled, with the same kind on it. One read where the client used
+// to make four and invent the groupings itself.
+export async function sampleTargets(): Promise<SampleTarget[]> {
+  const { data, error } = await kernel()
+    .from("sample_target")
+    .select("kind,subject_type,subject_id,label,detail,grouping,sort_order")
+    .order("sort_order")
+    .order("label");
+  if (error) throw new KernelError(error);
+  return (data ?? []) as SampleTarget[];
 }
 
 /** Records the act. The readings are typed onto the event afterwards, which is
@@ -1967,4 +1990,40 @@ export async function setRoomClimate(
   });
   if (error) throw new KernelError(error);
   return data as { id: Uuid; mode: string; ambient_c: number | null };
+}
+
+// --- picking bins, as a stack ----------------------------------------------
+
+export async function binInventory(): Promise<BinInventory[]> {
+  const { data, error } = await kernel()
+    .from("bin_inventory")
+    .select("type_id,bin_type,whose,borrowed,bins,in_use,empty,capacity_l")
+    .order("bin_type");
+  if (error) throw new KernelError(error);
+  return (data ?? []) as BinInventory[];
+}
+
+// "I'd rather just inventory and add as they don't really differ." A count and
+// a prefix: the type, the capacity and the numbering all come from the stack
+// that is already there.
+export async function registerBins(args: {
+  count: number;
+  prefix?: string | null;
+  onLoanFrom?: string | null;
+  typeId?: Uuid | null;
+}): Promise<{ registered: string[]; count: number; from: string; to: string }> {
+  const { data, error } = await kernel().rpc("register_bins", {
+    p_count: args.count,
+    p_type_id: args.typeId ?? null,
+    p_name_prefix: args.prefix ?? null,
+    p_owner_id: null,
+    p_on_loan_from: args.onLoanFrom ?? null,
+  });
+  if (error) throw new KernelError(error);
+  return data as {
+    registered: string[];
+    count: number;
+    from: string;
+    to: string;
+  };
 }

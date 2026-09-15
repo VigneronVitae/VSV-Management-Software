@@ -356,6 +356,28 @@ refuse_forking_a_pick:head:1	refuse_forking_a_pick	head	if (select stage from no
 refuse_forking_a_pick:raise:1	refuse_forking_a_pick	raise	raise exception	raise notice	1
 refuse_self_granted_standing:guard:1	refuse_self_granted_standing	guard	if new.provenance = 'confirmed' then	if false then	1
 refuse_self_granted_standing:raise:1	refuse_self_granted_standing	raise	raise exception	raise notice	1
+register_bins:guard:1	register_bins	guard	if not is_facility_user() then	if false then	1
+register_bins:raise:1	register_bins	raise	raise exception 'only somebody who works here registers bins'	raise notice 'only somebody who works here registers bins'	1
+register_bins:guard:2	register_bins	guard	if coalesce(p_count, 0) <= 0 then	if false then	1
+register_bins:raise:2	register_bins	raise	raise exception 'how many bins?';	raise notice 'how many bins?';	1
+register_bins:guard:3	register_bins	guard	if p_count > 40 then	if false then	1
+register_bins:raise:3	register_bins	raise	raise exception '% is not a number of bins to register at once', p_count;	raise notice '% is not a number of bins to register at once', p_count;	1
+register_bins:guard:4	register_bins	guard	if prefix = '' then	if false then	1
+register_bins:raise:4	register_bins	raise	raise exception 'new bins need something to be called';	raise notice 'new bins need something to be called';	1
+register_bins:guard:5	register_bins	guard	if want_type is null then	if false then	1
+register_bins:permissive:1	register_bins	permissive	and coalesce((t.attributes ->> 'intake_bin')::boolean, false)	and coalesce((t.attributes ->> 'intake_bin')::boolean, true)	1
+register_bins:guard:6	register_bins	guard	if want_type is null then	if false then	2
+register_bins:raise:5	register_bins	raise	raise exception 'no picking bin type is registered, so there is nothing to make these as';	raise notice 'no picking bin type is registered, so there is nothing to make these as';	1
+register_bins:head:1	register_bins	head	if (select count(*) from term t\n         where t.kind = 'vessel_type' and t.active\n           and coalesce((t.attributes ->> 'intake_bin')::boolean, false)) > 1 then	if false then	1
+register_bins:permissive:2	register_bins	permissive	and coalesce((t.attributes ->> 'intake_bin')::boolean, false)) > 1 then	and coalesce((t.attributes ->> 'intake_bin')::boolean, true)) > 1 then	1
+register_bins:raise:6	register_bins	raise	raise exception 'this winery has more than one kind of picking bin, so say which';	raise notice 'this winery has more than one kind of picking bin, so say which';	1
+register_bins:head:2	register_bins	head	if not exists (\n    select 1 from term\n     where id = want_type and kind = 'vessel_type'\n       and coalesce((attributes ->> 'intake_bin')::boolean, false)\n  ) then	if false then	1
+register_bins:permissive:3	register_bins	permissive	and coalesce((attributes ->> 'intake_bin')::boolean, false)	and coalesce((attributes ->> 'intake_bin')::boolean, true)	1
+register_bins:raise:7	register_bins	raise	raise exception 'that is not a picking bin type, so fruit is not weighed in it';	raise notice 'that is not a picking bin type, so fruit is not weighed in it';	1
+register_bins:guard:7	register_bins	guard	if lender is not null and p_owner_id is not null then	if false then	1
+register_bins:raise:8	register_bins	raise	raise exception	raise notice	8
+register_bins:guard:8	register_bins	guard	if lender is not null then	if false then	1
+register_bins:guard:9	register_bins	guard	elsif p_owner_id is not null and p_owner_id is distinct from facility_party_id() then	elsif false then	1
 register_subject_resolver:guard:1	register_subject_resolver	guard	if not is_admin() then	if false then	1
 register_subject_resolver:raise:1	register_subject_resolver	raise	raise exception 'only an administrator may register a resolver'	raise notice 'only an administrator may register a resolver'	1
 remove_pick:guard:1	remove_pick	guard	if n.id is null then	if false then	1

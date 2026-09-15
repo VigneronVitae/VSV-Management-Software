@@ -82,7 +82,9 @@ export type Place =
   // What colour each wine is, and what that has made of the barrels.
   | { at: "colours" }
   // The wine in a vessel, as opposed to the vessel. Addressed by the lot.
-  | { at: "wine"; id: string };
+  | { at: "wine"; id: string }
+  // Picking bins, counted rather than listed.
+  | { at: "bins" };
 
 export const HOME: Place = { at: "home" };
 
@@ -121,6 +123,7 @@ const WITHOUT_ID = new Set([
   "sampling",
   "go",
   "colours",
+  "bins",
 ]);
 
 // A calendar day, which is what the day log is addressed by.

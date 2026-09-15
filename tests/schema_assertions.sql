@@ -47,7 +47,12 @@
 --              supabase/migrations/0078_the_wine_in_a_vessel.sql,
 --              supabase/migrations/0079_a_room_says_which_way_it_is_held.sql,
 --              supabase/migrations/0080_whose_wine_it_is_can_be_corrected.sql,
---              supabase/migrations/0081_a_borrowed_bin_is_not_ours.sql]
+--              supabase/migrations/0081_a_borrowed_bin_is_not_ours.sql,
+--              supabase/migrations/0082_three_kinds_of_sampling.sql,
+--              supabase/migrations/0083_what_you_can_sample.sql,
+--              supabase/migrations/0084_a_bin_of_fruit_is_not_juice.sql,
+--              supabase/migrations/0085_a_stack_of_bins_is_inventory.sql,
+--              supabase/migrations/0086_a_variable_named_like_a_column.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -9372,6 +9377,197 @@ begin
     raise exception 'FAIL: a bin of ours is owed back to somebody';
   end if;
   perform test_ok('an empty borrowed bin is owed back by name and one of ours is not, because empty is not the same as available');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- vineyard, juice and wine are three kinds of sampling'; end $$;
+
+-- 0082 and 0083. The winemaker: "vineyard sampling and juice sampling and wine
+-- sampling should all be easily separated. Vineyard sampling is watching the
+-- fruit over time to see when to pick... I want to have filters to separate
+-- them so you don't have to navigate through previous vintages wine to find the
+-- only things we're really taking samples of often."
+--
+-- **Nobody says which kind.** The subject answers it: a vineyard, block or
+-- planting is fruit on the vine, and a vessel is juice or wine depending on
+-- what was in it. Asking for a category as well would be asking somebody to
+-- type an answer the database already has.
+do $$
+declare
+  a_block   uuid;
+  ferment   uuid := '00000000-0000-0000-0000-0000000f0001';
+  barrel    uuid := '00000000-0000-0000-0000-0000000f0002';
+  young     uuid := '00000000-0000-0000-0000-0000000f0101';
+  old       uuid := '00000000-0000-0000-0000-0000000f0102';
+  s_vine    uuid;
+  s_juice   uuid;
+  s_wine    uuid;
+  got       text;
+begin
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+  select id into a_block from block limit 1;
+
+  insert into vessel (id, type_id, name, capacity_l) values
+    (ferment, term_id('vessel_type','tank'),   'CA ferment', 1000),
+    (barrel,  term_id('vessel_type','barrel'), 'CA barrel',   228);
+
+  insert into node (id, stage, name, vintage) values
+    (young, 'ferment',    'CA this year', 2026),
+    (old,   'maturation', 'CA last year', 2024);
+
+  insert into placement (node_id, vessel_id, volume_l, from_at) values
+    (young, ferment, 900, now() - interval '2 days'),
+    (old,   barrel,  228, now() - interval '400 days');
+
+  s_vine  := (take_sample('block', a_block) ->> 'event')::uuid;
+  s_juice := (take_sample('vessel', ferment) ->> 'event')::uuid;
+  s_wine  := (take_sample('vessel', barrel) ->> 'event')::uuid;
+
+  select kind into got from sample where event_id = s_vine;
+  if got <> 'vineyard' then
+    raise exception 'FAIL: a sample of a block is %', got;
+  end if;
+  perform test_ok('a sample of a block is vineyard sampling, because what was sampled answers which kind it is and nobody has to say');
+
+  select kind into got from sample where event_id = s_juice;
+  if got <> 'juice' then
+    raise exception 'FAIL: a sample of a ferment is %', got;
+  end if;
+  select kind into got from sample where event_id = s_wine;
+  if got <> 'wine' then
+    raise exception 'FAIL: a sample of a barrel of last year''s wine is %', got;
+  end if;
+  perform test_ok('a ferment gives juice and a barrel of an older vintage gives wine, which is the separation the filter is built on');
+
+  -- **The lot as it was, not as it is.** A barrel sampled in March and refilled
+  -- in October has two answers and only one of them is about the sample.
+  if (select lot_name from sample where event_id = s_wine) <> 'CA last year' then
+    raise exception 'FAIL: a sample does not name the lot that was in the vessel';
+  end if;
+  if (select vintage from sample where event_id = s_wine) <> 2024 then
+    raise exception 'FAIL: a sample does not carry the vintage of what was sampled, which is the thing being filtered past';
+  end if;
+
+  update placement set to_at = now() where vessel_id = barrel and to_at is null;
+  insert into placement (node_id, vessel_id, volume_l) values (young, barrel, 200);
+  if (select lot_name from sample where event_id = s_wine) <> 'CA last year' then
+    raise exception 'FAIL: refilling a barrel rewrote what an old sample was of';
+  end if;
+  perform test_ok('a sample names the lot that was in the vessel when it was taken, so refilling a barrel does not rewrite what last spring''s sample was of');
+
+  -- The picker and the filter read one rule. Two derivations of the same rule
+  -- is how a list that hides last vintage's barrels keeps offering them.
+  if (select kind from sample_target where subject_id = ferment) <> 'juice' then
+    raise exception 'FAIL: the picker calls a ferment something other than juice';
+  end if;
+  if (select kind from sample_target where subject_id = a_block) <> 'vineyard' then
+    raise exception 'FAIL: the picker calls a block something other than vineyard';
+  end if;
+  perform test_ok('what can be sampled carries the same kind as what was sampled, so the picker and the filter cannot disagree about whether a thing is juice or wine');
+
+  -- An empty vessel is not in the picker at all, and a sample of one is not
+  -- quietly filed under a kind.
+  if exists (select 1 from sample_target t
+              join vessel v on v.id = t.subject_id
+             where t.subject_type = 'vessel'
+               and not exists (select 1 from placement pl
+                                where pl.vessel_id = v.id and pl.to_at is null)) then
+    raise exception 'FAIL: an empty vessel is offered as something to sample';
+  end if;
+  perform test_ok('an empty vessel is not offered as something to sample, because there is nothing in it to put in a jar');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- a stack of bins is inventory'; end $$;
+
+-- 0085. "Also batch add for picking bins. I'd rather just inventory and add as
+-- they don't really differ." The batch existed and only ever created bins onto
+-- a pick, so the fleet got registered in dribs during harvest, which is the
+-- worst possible time.
+do $$
+declare
+  out_js jsonb;
+  bin_t  uuid;
+  n      int;
+  before int;
+begin
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+  select id into bin_t from term
+   where kind = 'vessel_type'
+     and coalesce((attributes ->> 'intake_bin')::boolean, false)
+   limit 1;
+
+  select count(*) into before from vessel where name ~ '^CB\s*\d+$';
+
+  out_js := register_bins(4, bin_t, 'CB');
+  if (out_js ->> 'count')::int <> 4 then
+    raise exception 'FAIL: registering four bins made %', out_js ->> 'count';
+  end if;
+  select count(*) into n from vessel where name ~ '^CB\s*\d+$';
+  if n <> before + 4 then
+    raise exception 'FAIL: four bins were asked for and % exist', n - before;
+  end if;
+  -- And attached to nothing. That is the whole point: inventory, not a pick.
+  if exists (
+    select 1 from placement pl join vessel v on v.id = pl.vessel_id
+     where v.name ~ '^CB\s*\d+$'
+  ) then
+    raise exception 'FAIL: registering bins put fruit in them';
+  end if;
+  perform test_ok('a stack of bins can be registered without a pick to attach them to, which is what makes registering the fleet a thing you do before harvest rather than during it');
+
+  -- Numbering carries on rather than counting rows, so a retired bin leaves a
+  -- gap and nothing reuses its name.
+  out_js := register_bins(2, bin_t, 'CB');
+  if (out_js ->> 'from') <> 'CB' || (before + 5)::text then
+    raise exception 'FAIL: the second stack started at % rather than carrying on', out_js ->> 'from';
+  end if;
+  perform test_ok('a second stack carries on from the highest number already worn, because reusing a retired bin''s name puts two objects under one name');
+
+  -- Borrowed, which is the case that was wrong everywhere until 0081.
+  out_js := register_bins(3, bin_t, 'CL', null, 'Pearlstaad');
+  if not exists (
+    select 1 from vessel_state
+     where name ~ '^CL\s*\d+$' and owner_name = 'Pearlstaad' and not facility_owned
+  ) then
+    raise exception 'FAIL: a stack registered as on loan reads as ours';
+  end if;
+  perform test_ok('a stack registered as on loan from a grower reads as theirs, so the batch path and the pick path agree about whose a bin is');
+
+  -- The two ways of not being ours are still exclusive.
+  begin
+    perform register_bins(1, bin_t, 'CX',
+      (select id from party where kind = 'client' limit 1), 'Pearlstaad');
+    raise exception 'FAIL: a bin was registered as both on loan and party owned';
+  exception when others then
+    if position('says both' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a bin cannot be registered as both on loan from a grower and owned by a party here, which is the rule 0036 set and this path repeats rather than reinvents');
+  end;
+
+  begin
+    perform register_bins(0, bin_t, 'CZ');
+    raise exception 'FAIL: zero bins were registered';
+  exception when others then
+    if position('how many bins' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('registering no bins is refused rather than quietly doing nothing, because a form that reports success and writes nothing is the worst answer available');
+  end;
+
+  begin
+    perform register_bins(41, bin_t, 'CZ');
+    raise exception 'FAIL: forty one bins were registered at once';
+  exception when others then
+    if position('is not a number of bins' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a count past forty is refused, because it is a mistyped number rather than a delivery');
+  end;
+
+  -- The inventory: counted, not listed.
+  select bins into n from bin_inventory
+   where whose = 'Pearlstaad' and borrowed
+   limit 1;
+  if coalesce(n, 0) < 3 then
+    raise exception 'FAIL: the inventory does not count the borrowed stack';
+  end if;
+  perform test_ok('the bin inventory counts bins by whose they are, which is the question sixty interchangeable objects can actually answer');
 end $$;
 
 do $$ begin raise notice '--- all assertions passed'; end $$;

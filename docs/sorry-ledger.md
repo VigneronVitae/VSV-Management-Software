@@ -991,6 +991,23 @@ need to read as one question with two answers rather than two questions.
 *Load-bearing:* no. Both custom crush clients currently use this winery's bins, and the
 vessel edit screen can set an owner today.
 
+**S-83. A sample's kind follows the lot's stage now, not its stage on the day.**
+`sample.kind` reads juice or wine off `node.stage`, and a node has one stage: the one it is
+at today. A ferment sampled in September and racked to barrel in November is a lot at
+`maturation`, so every sample ever taken of it reads `wine`, including the ones taken while
+it was bubbling.
+The lot it was taken from is exact, because `placement` records the window and the view uses
+it. What is approximate is only juice against wine, and it is approximate in one direction:
+samples migrate from juice to wine as the lot matures, never back.
+**For the purpose it was built for this is right rather than wrong.** The filter exists so
+that during harvest the ferments being sampled weekly are not buried under two vintages of
+barrel wine, and a lot that has gone to barrel has stopped being a ferment. It goes wrong
+when somebody reads the history of a finished lot and finds its ferment samples filed under
+wine. *Resolves when:* somebody needs that history, at which point the answer is stage
+history on the node rather than a category on the sample, since nothing else in the schema
+can say what a lot was on a given day either. *Load-bearing:* no, and it is worth knowing
+before anybody builds a ripening curve off these rows.
+
 ## Discharged
 **S-78. Anybody who can sign up becomes staff.** *Discharged by `0068`.*
 `enable_signup = true`, and `claim_account` gave any authenticated identity that had not

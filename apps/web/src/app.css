@@ -300,6 +300,52 @@ h1 {
   color: var(--ink-faint);
 }
 
+/* Which of the three kinds of sampling a row is, 0082. Derived rather than
+   chosen, so the tag is a statement about the row and not a label somebody
+   applied. Quiet: the filter above is doing the separating and these are here
+   so a mixed list still reads. */
+.tag-kind-vineyard,
+.tag-kind-juice,
+.tag-kind-wine,
+.tag-kind-unknown {
+  background: transparent;
+  border: 1px solid var(--rule);
+  color: var(--ink-faint);
+  text-transform: capitalize;
+}
+
+.tag-kind-vineyard {
+  border-color: #7d9a6a;
+  color: #4f6a3e;
+}
+
+.tag-kind-juice {
+  border-color: #c9a227;
+  color: #8a6f14;
+}
+
+.tag-kind-wine {
+  border-color: #8d5b74;
+  color: #6d3d55;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .tag-kind-vineyard {
+    border-color: #6f8c5e;
+    color: #a9c497;
+  }
+
+  :root:not([data-theme="light"]) .tag-kind-juice {
+    border-color: #a8871f;
+    color: #dcc069;
+  }
+
+  :root:not([data-theme="light"]) .tag-kind-wine {
+    border-color: #a4728b;
+    color: #d5a6bd;
+  }
+}
+
 /* Fields a vessel type does not open by default. Still reachable, because a
    form that cannot record a true thing is worse than one with an extra tap. */
 .more {

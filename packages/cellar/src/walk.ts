@@ -24,6 +24,7 @@ import {
   barrelColours,
   barrelWarning,
   bindCode,
+  binInventory,
   binsToReturn,
   blocks,
   cancelPick,
@@ -84,6 +85,7 @@ import {
   rackPlan,
   rackTransfer,
   reconditionBarrel,
+  registerBins,
   removeDayNote,
   removePick,
   removePlanting,
@@ -91,10 +93,12 @@ import {
   resolveVesselTypeNote,
   retirePaperRecord,
   rooms,
+  type SampleKind,
   type SiteFields,
   type SubjectNote,
   type SupplyOnHand,
   samples,
+  sampleTargets,
   setColour,
   setMakerMakes,
   setPaperRecordOperations,
@@ -362,6 +366,8 @@ async function screenFor(place: Place): Promise<HTMLElement> {
       return vintagesScreen();
     case "colours":
       return coloursScreen();
+    case "bins":
+      return binsScreen();
     case "wine":
       return wineScreen(place.id);
     case "additions":
@@ -1141,6 +1147,11 @@ async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> 
       name: "Vineyards",
       note: "Where fruit comes from. Blocks, and what is planted in them.",
       go: () => go({ at: "vineyards" }),
+    },
+    {
+      name: "Picking bins",
+      note: "How many there are and whose they are. Register a stack at a time.",
+      go: () => go({ at: "bins" }),
     },
     {
       name: "Clients",
@@ -5450,6 +5461,12 @@ function paletteScreen(): HTMLElement {
           go: () => go({ at: "colours" }),
         },
         {
+          label: "Picking bins",
+          note: "How many there are and whose they are.",
+          hay: "bins picking inventory stack register borrowed",
+          go: () => go({ at: "bins" }),
+        },
+        {
           label: "Take a copy",
           note: "Everything you can read, as one file.",
           hay: "export backup copy",
@@ -5573,6 +5590,7 @@ function capabilityRoute(key: string): Place | null {
     "cellar.count_supply": { at: "stores" },
     "cellar.set_vintage": { at: "vintages" },
     "cellar.set_colour": { at: "colours" },
+    "cellar.register_bins": { at: "bins" },
     "cellar.recondition_barrel": { at: "colours" },
     "cellar.declare_barrel_colour": { at: "colours" },
     "cellar.cancel_pick": { at: "intake" },
@@ -5596,6 +5614,143 @@ function capabilityRoute(key: string): Place | null {
 // **A sample carries no readings.** It is the act; the numbers are typed notes
 // about it. So taking one lands you on the thing that holds them, and the same
 // control that turns any note into a fact turns "21.5" into a Brix.
+// --- picking bins, as a stack ----------------------------------------------
+
+// The winemaker: "Also batch add for picking bins. I'd rather just inventory
+// and add as they don't really differ."
+//
+// **They do not differ.** A barrel has a maker, a toast, a year and a history
+// worth arguing about. A picking bin has a number written on the side. Sixty of
+// them differ in one integer, so this screen asks how many and what to call
+// them and nothing else: the type, the capacity and the numbering all come from
+// the stack already in the shed.
+//
+// The inventory above the form is the other half of "just inventory". Counted
+// rather than listed, because the useful facts about sixty interchangeable
+// objects are how many there are, how many hold fruit, and how many go back to
+// somebody, and a list of sixty names answers none of those without arithmetic.
+function binsScreen(): HTMLElement {
+  const body = el("div", {}, empty("Loading."));
+  const message = el("div", {});
+  const view = screen(
+    "Picking bins",
+    lede(
+      "How many there are and whose they are. Register them in a stack: bins do " +
+        "not differ, so nothing is asked about them one at a time.",
+    ),
+    body,
+  );
+
+  async function load(): Promise<void> {
+    const [stock, owed] = await Promise.all([binInventory(), binsToReturn()]);
+
+    const howMany = field({
+      label: "How many",
+      type: "number",
+      placeholder: "12",
+      hint: "Up to forty at once.",
+    });
+    const prefix = field({
+      label: "Called",
+      placeholder: "PB",
+      hint: "Numbering carries on from the highest already used, so nothing is reused.",
+    });
+    const lender = field({
+      label: "On loan from",
+      placeholder: "Pearlstaad",
+      hint: "A grower who lent them. Leave blank if they are yours.",
+    });
+
+    const total = stock.reduce((n, r) => n + Number(r.bins), 0);
+    const working = stock.reduce((n, r) => n + Number(r.in_use), 0);
+
+    body.replaceChildren(
+      rows(
+        stock.length === 0
+          ? empty("No picking bins registered.")
+          : el(
+              "div",
+              { class: "summary" },
+              summaryRow("Bins", String(total)),
+              summaryRow("Holding fruit", `${working} of ${total}`),
+              ...stock.map((r) =>
+                summaryRow(
+                  r.whose ?? "Ours",
+                  `${r.bins} ${r.bin_type.toLowerCase()}${r.bins === 1 ? "" : "s"}, ` +
+                    `${r.in_use} holding fruit` +
+                    (r.borrowed ? ", goes back" : ""),
+                ),
+              ),
+            ),
+
+        // Only when there are any. A permanent empty heading is a job that
+        // always looks half done.
+        ...(owed.length === 0
+          ? []
+          : [
+              banner(
+                `${owed.length} borrowed bin${owed.length === 1 ? " is" : "s are"} empty and owed back.`,
+                "note",
+              ),
+              button("See which", () => go({ at: "bins-to-return" }), "secondary"),
+            ]),
+
+        el("h2", { class: "section-head", text: "Register a stack" }),
+        howMany.root,
+        prefix.root,
+        lender.root,
+        button("Register them", async () => {
+          const n = howMany.value() ? Number(howMany.value()) : 0;
+          if (!n) {
+            message.replaceChildren(banner("How many bins?", "error"));
+            return;
+          }
+          try {
+            const out = await registerBins({
+              count: n,
+              prefix: prefix.value() || null,
+              onLoanFrom: lender.value() || null,
+            });
+            message.replaceChildren(
+              banner(
+                out.count === 1
+                  ? `Registered ${out.from}.`
+                  : `Registered ${out.count} bins, ${out.from} to ${out.to}.`,
+                "good",
+              ),
+            );
+            howMany.input.value = "";
+            await load();
+          } catch (error) {
+            message.replaceChildren(fail(error));
+          }
+        }),
+        message,
+        el("p", {
+          class: "field-hint",
+          text:
+            "These are inventory. Adding them to a pick happens on the picking " +
+            "screen, where you choose which ones went out.",
+        }),
+        button("Back", () => goBack(), "quiet"),
+      ),
+    );
+  }
+
+  void (async () => {
+    try {
+      await load();
+    } catch (error) {
+      body.replaceChildren(
+        fail(error),
+        button("Back", () => goBack(), "quiet"),
+      );
+    }
+  })();
+
+  return view;
+}
+
 function samplingScreen(subjectType?: string, subjectId?: string): HTMLElement {
   const body = el("div", {}, empty("Loading."));
   const message = el("div", {});
@@ -5608,69 +5763,84 @@ function samplingScreen(subjectType?: string, subjectId?: string): HTMLElement {
     body,
   );
 
+  // The winemaker's three: "vineyard sampling and juice sampling and wine
+  // sampling should all be easily separated". Sticky per device, because which
+  // of the three you are doing changes about twice a season and not twice a
+  // screen. Nothing is hidden by default: the first time somebody opens this,
+  // a filter they did not set that is already hiding rows is indistinguishable
+  // from a list that has lost them.
+  const KINDS: Array<{ key: SampleKind; label: string; note: string }> = [
+    {
+      key: "vineyard",
+      label: "Vineyard",
+      note: "Watching fruit ripen, to decide when to pick.",
+    },
+    { key: "juice", label: "Juice", note: "Fruit in bins, and ferments." },
+    { key: "wine", label: "Wine", note: "What is in barrel and tank." },
+  ];
+  const off = prefSet("sample_kinds_off");
+  // Not `on`: that is the event binder every screen in this file uses, and
+  // shadowing it here made three listeners further down stop compiling.
+  function showing(k: SampleKind): boolean {
+    return !off.has(k);
+  }
+  function chosen(): SampleKind[] {
+    // An empty selection means every kind, rather than nothing. Turning the
+    // last one off and getting an empty screen is a worse answer than turning
+    // the filter off, and it is the one somebody reaches by tapping.
+    const picked = KINDS.map((k) => k.key).filter(showing);
+    return picked.length === 0 ? KINDS.map((k) => k.key) : picked;
+  }
+
   async function load(): Promise<void> {
-    const [vines, blockRows, plantingRows, taken, kit] = await Promise.all([
-      vineyards(),
-      blocks(),
-      plantings(),
-      samples(subjectType, subjectId),
-      vessels(),
+    const want = chosen();
+    const [targets, taken] = await Promise.all([
+      sampleTargets(),
+      samples(subjectType, subjectId, want),
     ]);
 
-    // Everything you can sample, as one list, because standing in a vineyard
-    // you do not care which table a thing is in.
-    type Target = { type: string; id: string; label: string; group: string };
-    const targets: Target[] = [
-      ...vines.map((v) => ({
-        type: "vineyard",
-        id: v.id,
-        label: v.name,
-        group: "Vineyards",
-      })),
-      ...blockRows.map((b) => ({
-        type: "block",
-        id: b.id,
-        label:
-          (vines.find((v) => v.id === b.vineyard_id)?.name ?? "") +
-          ` ${b.name}`.trimEnd(),
-        group: "Blocks",
-      })),
-      ...plantingRows.map((p) => ({
-        type: "planting",
-        id: p.planting_id,
-        label: `${p.block_name} ${p.variety ?? ""}`.trim(),
-        group: "Varieties in a block",
-      })),
-      ...kit
-        .filter((v) => !v.is_empty)
-        .map((v) => ({
-          type: "vessel",
-          id: v.id,
-          label: `${v.name} (${v.lot_name ?? "wine"})`,
-          group: "Vessels with wine",
-        })),
-    ];
+    // Both halves filter on the same thing. A list that hides last vintage's
+    // barrels while the picker still offers all of them has separated nothing.
+    const shown = targets.filter((t) => want.includes(t.kind));
 
     const pick = el("select", { class: "input" });
-    const groups = [...new Set(targets.map((t) => t.group))];
+    const groups = [...new Set(shown.map((t) => t.grouping))];
     pick.replaceChildren(
       ...groups.map((g) =>
         el(
           "optgroup",
           { label: g },
-          ...targets
-            .filter((t) => t.group === g)
+          ...shown
+            .filter((t) => t.grouping === g)
             .map((t) =>
               el("option", {
-                value: `${t.type}:${t.id}`,
-                text: t.label,
-                ...(subjectType === t.type && subjectId === t.id
+                value: `${t.subject_type}:${t.subject_id}`,
+                text: t.detail ? `${t.label} (${t.detail})` : t.label,
+                ...(subjectType === t.subject_type && subjectId === t.subject_id
                   ? { selected: "true" }
                   : {}),
               }),
             ),
         ),
       ),
+    );
+
+    const filters = el(
+      "div",
+      { class: "button-row" },
+      ...KINDS.map((k) => {
+        const b = button(
+          k.label,
+          async () => {
+            if (showing(k.key)) off.add(k.key);
+            else off.delete(k.key);
+            await load();
+          },
+          showing(k.key) ? "primary" : "quiet",
+        );
+        b.title = k.note;
+        return b;
+      }),
     );
 
     const when = field({
@@ -5686,6 +5856,14 @@ function samplingScreen(subjectType?: string, subjectId?: string): HTMLElement {
 
     body.replaceChildren(
       rows(
+        filters,
+        el("p", {
+          class: "field-hint",
+          text:
+            KINDS.filter((k) => !showing(k.key)).length === 0
+              ? "Showing all three. Tap one to put it away."
+              : `Showing ${want.join(" and ")}.`,
+        }),
         el(
           "div",
           { class: "field" },
@@ -5750,9 +5928,16 @@ function samplingScreen(subjectType?: string, subjectId?: string): HTMLElement {
                     class: "vessel-detail",
                     text:
                       `${new Date(sm.at).toLocaleString()}` +
+                      // The lot as it was when the sample was taken, and its
+                      // vintage, because the whole complaint was previous
+                      // vintages getting in the way of this one.
+                      (sm.lot_name
+                        ? `, ${sm.lot_name}${sm.vintage ? ` (${sm.vintage})` : ""}`
+                        : "") +
                       (sm.note ? `, ${sm.note}` : "") +
                       `, ${sm.readings} reading${sm.readings === 1 ? "" : "s"}`,
                   }),
+                  el("span", { class: `tag tag-kind-${sm.kind}`, text: sm.kind }),
                   // Zero readings on a sample is the state worth seeing: somebody
                   // took fruit and the numbers never got entered.
                   sm.readings === 0

@@ -500,6 +500,12 @@ export type TypedFact = {
 // readings of its own. The readings are typed notes whose `about_event` is this,
 // which is how one sample holds a Brix and a pH and a remark about the weather
 // without a column for any of them. See 0067.
+// The three kinds of sampling the winemaker named. Derived, never chosen:
+// watching fruit ripen toward a pick, watching a ferment, and watching wine
+// that will sit for a year. `unknown` is a vessel that held nothing when it was
+// sampled, which is rare, real, and not quietly filed under one of the three.
+export type SampleKind = "vineyard" | "juice" | "wine" | "unknown";
+
 export type Sample = {
   event_id: Uuid;
   subject_type: string;
@@ -509,6 +515,27 @@ export type Sample = {
   note: string | null;
   by_name: string | null;
   readings: number;
+  kind: SampleKind;
+  // The lot that was in the vessel at the time, not the one in it now.
+  node_id: Uuid | null;
+  lot_name: string | null;
+  vintage: number | null;
+  non_vintage: boolean | null;
+  variety: string | null;
+  lot_owner_id: Uuid | null;
+  lot_owner_name: string | null;
+};
+
+// Everything that can be sampled, carrying the same derivation the samples
+// themselves carry, so the picker and the filter cannot disagree.
+export type SampleTarget = {
+  kind: SampleKind;
+  subject_type: string;
+  subject_id: Uuid;
+  label: string;
+  detail: string | null;
+  grouping: string;
+  sort_order: number;
 };
 
 // What `contract()` returns: who is asking, what may be read, what may be
@@ -779,4 +806,18 @@ export type LotDetail = {
   vessel: string | null;
   volume_l: number | null;
   filled_at: string | null;
+};
+
+// Picking bins counted rather than listed, split by whose they are. Sixty
+// interchangeable objects have three useful facts between them and none of the
+// three is a name.
+export type BinInventory = {
+  type_id: Uuid;
+  bin_type: string;
+  whose: string | null;
+  borrowed: boolean;
+  bins: number;
+  in_use: number;
+  empty: number;
+  capacity_l: number | null;
 };
