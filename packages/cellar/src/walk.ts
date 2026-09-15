@@ -41,6 +41,7 @@ import {
   facilityParty,
   fillVessel,
   finishPress,
+  type Location,
   type LotWithoutVintage,
   locations,
   lotAdditions,
@@ -300,7 +301,7 @@ async function screenFor(place: Place): Promise<HTMLElement> {
     case "home":
       return homeScreen(user, facility);
     case "vessels":
-      return vesselListScreen(await vessels());
+      return vesselListScreen(await vessels(), await locations());
     case "vessel-new":
       return vesselScreen();
     case "vessel-wine":
@@ -1263,7 +1264,7 @@ function installBlock(): HTMLElement {
 // why there are three stores now and what each is for.
 type VesselOrder = "name" | "fullest" | "emptiest" | "type" | "recent";
 
-function vesselListScreen(kit: VesselState[]): HTMLElement {
+function vesselListScreen(kit: VesselState[], places: Location[]): HTMLElement {
   const body = el("div", {});
   const count = el("p", { class: "lede" });
 
@@ -1306,6 +1307,21 @@ function vesselListScreen(kit: VesselState[]): HTMLElement {
     return out.sort(by[order]);
   }
 
+  const views: Variant<void>[] = [
+    {
+      key: "list",
+      label: "List",
+      note: "Sortable, filterable, and it tells you the numbers exactly.",
+      render: () => vesselList(shown()),
+    },
+    {
+      key: "map",
+      label: "Map",
+      note: "The rooms, with what is standing in them. Sized by capacity, filled by how full.",
+      render: () => cellarMapLayout(shown(), places),
+    },
+  ];
+
   function draw(): void {
     const list = shown();
     count.textContent =
@@ -1313,10 +1329,16 @@ function vesselListScreen(kit: VesselState[]): HTMLElement {
         ? `${kit.filter((v) => !v.is_empty).length} of ${kit.length} have wine in them.`
         : `${list.length} of ${kit.length} shown, ` +
           `${list.filter((v) => !v.is_empty).length} with wine in them.`;
+    const chosen = pref("vessel_view", "list");
+    const view = views.find((v) => v.key === chosen) ?? views[0];
     body.replaceChildren(
       list.length === 0
         ? empty("Nothing matches. Widen the filters above.")
-        : vesselList(list),
+        : (view?.render() ?? vesselList(list)),
+      variantSwitch(views, view?.key ?? "list", (key) => {
+        setPref("vessel_view", key);
+        draw();
+      }),
     );
   }
 
@@ -1401,6 +1423,123 @@ function vesselListScreen(kit: VesselState[]): HTMLElement {
           body,
         ),
     button("Back", () => goBack(), "quiet"),
+  );
+}
+
+// --- the cellar as a place -------------------------------------------------
+
+// "Locations being an actual location with little barrels and vessels in it or
+// something."
+//
+// Both established winery systems have this and neither treats it as
+// decoration. vintrace calls it a bird's eye view for displaying and planning
+// the layout of the tanks; InnoVint renders a top-down and a 3D one and, more
+// to the point, overlays "lot code, date filled, current volume" onto the vessel
+// itself. **The map is the vessel list with position as the organising axis
+// instead of a sort order**, and what makes it worth having is what is written
+// on each shape.
+//
+// **Nothing is positioned by hand and that is on purpose for a first look.**
+// Asking somebody to place sixty vessels before they can see anything is how a
+// feature goes unused. So this lays them out by room, in rows, sized by
+// capacity, and if the arrangement is wrong the answer is to let him drag them,
+// which is half a day and wants his opinion on this first.
+//
+// What is drawn on each one is the whole argument: the name, how full it is as a
+// height rather than a number, and whose wine it is when it is not ours. A
+// vessel somebody else owns is the thing you most need to not make a mistake
+// with, and a list buries that in a column.
+function cellarMapLayout(kit: VesselState[], places: Location[]): Node {
+  // Grouped by the room it stands in. A vessel with no location is in its own
+  // group at the end rather than hidden: "nobody has said where this is" is a
+  // real state and the map is where it becomes obvious.
+  const byPlace = new Map<string, VesselState[]>();
+  for (const v of kit) {
+    const key = v.location_name ?? "";
+    const list = byPlace.get(key) ?? [];
+    list.push(v);
+    byPlace.set(key, list);
+  }
+
+  const roomOrder = [
+    ...places.map((p) => p.name).filter((n) => byPlace.has(n)),
+    ...[...byPlace.keys()].filter((k) => k !== "" && !places.some((p) => p.name === k)),
+    ...(byPlace.has("") ? [""] : []),
+  ];
+
+  function vesselShape(v: VesselState): HTMLElement {
+    const cap = v.capacity_l === null ? null : Number(v.capacity_l);
+    const held = v.current_volume_l === null ? 0 : Number(v.current_volume_l);
+    const fill = cap && cap > 0 ? Math.min(held / cap, 1) : 0;
+
+    // Sized by capacity, within limits, so a 2200 L tank reads as bigger than a
+    // 228 L barrel without a 500 L one being invisible. The scale is a cube
+    // root, because volume is a volume and a linear scale makes the small ones
+    // vanish.
+    const size = cap
+      ? Math.max(46, Math.min(104, Math.round(26 * Math.cbrt(cap / 10))))
+      : 52;
+
+    const shape = el(
+      "button",
+      {
+        type: "button",
+        class:
+          `map-vessel map-${v.type.toLowerCase().replace(/[^a-z]+/g, "-")}` +
+          (cap ? "" : " map-nosize") +
+          (v.is_empty ? " map-empty" : "") +
+          (v.lot_facility_owned === false ? " map-theirs" : ""),
+        style: `--size:${size}px; --fill:${fill.toFixed(3)}`,
+        title:
+          `${v.name}, ${v.type}` +
+          (cap ? `, ${cap.toLocaleString()} L` : "") +
+          (v.is_empty
+            ? ", empty"
+            : `, ${held.toLocaleString()} L of ${v.lot_name ?? "wine"}`),
+      },
+      el("span", { class: "map-fill" }),
+      el("span", { class: "map-name", text: v.name }),
+      // The number, because a height is a feeling and somebody deciding where
+      // 400 litres will fit needs the figure.
+      el("span", {
+        class: "map-litres",
+        text: v.is_empty ? "" : `${Math.round(held)}`,
+      }),
+    );
+
+    on(shape, "click", () => {
+      go(v.is_empty ? { at: "vessel", id: v.id } : { at: "vessel-edit", id: v.id });
+    });
+    return shape;
+  }
+
+  return el(
+    "div",
+    { class: "cellar-map" },
+    ...roomOrder.map((room) => {
+      const here = byPlace.get(room) ?? [];
+      const full = here.filter((v) => !v.is_empty).length;
+      const litres = here.reduce((sum, v) => sum + Number(v.current_volume_l ?? 0), 0);
+      return el(
+        "div",
+        { class: "map-room" },
+        el(
+          "div",
+          { class: "map-room-head" },
+          el("span", {
+            class: "map-room-name",
+            text: room === "" ? "Nobody has said where these are" : room,
+          }),
+          el("span", {
+            class: "map-room-note",
+            text:
+              `${full} of ${here.length} holding wine` +
+              (litres > 0 ? `, ${Math.round(litres).toLocaleString()} L` : ""),
+          }),
+        ),
+        el("div", { class: "map-floor" }, ...here.map(vesselShape)),
+      );
+    }),
   );
 }
 

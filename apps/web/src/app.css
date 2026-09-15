@@ -960,3 +960,149 @@ body.practising {
   flex: 1 1 auto;
   min-width: 0;
 }
+
+/* --- the cellar as a place ---------------------------------------------- */
+
+/* A room, with what is standing in it. The established winery systems both do
+   this and neither treats it as decoration: what earns its place is what is
+   written on each shape, not the shapes. */
+.cellar-map {
+  display: flex;
+  flex-direction: column;
+  gap: 1.4rem;
+}
+
+.map-room-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--rule);
+  margin-bottom: 0.6rem;
+}
+.map-room-name {
+  font-weight: 600;
+}
+.map-room-note {
+  font-size: 0.8rem;
+  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Wraps rather than scrolling sideways. Horizontal swipe is the one interaction
+   the field-work literature says to avoid outright, and a floor plan you have
+   to drag with wet hands is exactly that. */
+.map-floor {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: flex-end;
+}
+
+/* Sized by capacity, filled by how full. The fill is a height because a height
+   is readable across a room and a percentage is not. Minimum 46px, which is
+   about the 48px the glove research asks for. */
+.map-vessel {
+  position: relative;
+  width: var(--size);
+  height: var(--size);
+  min-width: 46px;
+  min-height: 46px;
+  padding: 0;
+  border: 2px solid var(--rule);
+  border-radius: 6px;
+  background: transparent;
+  overflow: hidden;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  /* Centred, not bottom-aligned. Bottom-aligned text sits exactly where a low
+     fill line lands, so a tank at 200 of 1000 read as nearly full: the label
+     was covering the only thing that said otherwise. */
+  justify-content: center;
+  align-items: center;
+  font: inherit;
+  color: inherit;
+}
+.map-vessel:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The fill is the point of the shape, so it has to be readable across a room
+   and not only up close. A top edge gives the eye a line to find: a wash alone
+   reads the same at 20% and at 95%, which the first version of this did. */
+.map-fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: calc(var(--fill) * 100%);
+  background: var(--accent);
+  opacity: 0.45;
+  border-top: 2px solid var(--accent);
+}
+/* An empty one has no line to draw, and a border on zero height is a stripe
+   along the bottom that reads as a little bit of wine. */
+.map-empty .map-fill {
+  border-top: 0;
+}
+
+/* Never broken mid-word. "1.2T Membrane Press" became "1.2T Membra ne Press"
+   in the first version, which is worse than truncating: a name you misread is
+   worse than a name you know is cut off. */
+.map-name {
+  position: relative;
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1.1;
+  text-align: center;
+  padding: 0 3px;
+  overflow-wrap: break-word;
+  hyphens: none;
+  max-height: 3.4em;
+  overflow: hidden;
+}
+.map-litres {
+  position: relative;
+  font-size: 0.62rem;
+  opacity: 0.9;
+  font-variant-numeric: tabular-nums;
+}
+/* So the label stays readable where it does cross the fill line. */
+.map-name,
+.map-litres {
+  text-shadow: 0 0 3px rgba(0, 0, 0, 0.75);
+}
+
+/* A vessel nobody gave a capacity is not a small vessel, it is a vessel whose
+   size nobody said. A press is the usual case and it is the biggest thing in
+   the room. So it gets a wide, shallow box with room for a name rather than the
+   minimum square, which is what made the press unreadable. */
+.map-nosize {
+  width: 106px;
+  height: 58px;
+}
+
+/* A barrel is round, which is most of what tells you it is a barrel. */
+.map-barrel {
+  border-radius: 50%;
+}
+/* A bin is square and squat. */
+.map-picking-bin,
+.map-fermentation-bin {
+  border-radius: 2px;
+}
+
+.map-empty {
+  border-style: dashed;
+  opacity: 0.7;
+}
+
+/* Somebody else's wine. The one thing you most need to not make a mistake with,
+   and a list buries it in a column. */
+.map-theirs {
+  border-color: var(--accent);
+  border-width: 3px;
+}
