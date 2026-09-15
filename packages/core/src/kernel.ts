@@ -35,6 +35,7 @@ import type {
   Term,
   TermKind,
   ToPropagate,
+  TypedFact,
   UnweighedBin,
   Uuid,
   VesselPayload,
@@ -797,6 +798,48 @@ export async function notesFor(
     .order("at", { ascending: false });
   if (error) throw new KernelError(error);
   return (data ?? []) as SubjectNote[];
+}
+
+export async function typedFacts(
+  subjectType?: string,
+  subjectId?: Uuid,
+): Promise<TypedFact[]> {
+  let q = kernel()
+    .from("typed_fact")
+    .select(
+      "note_id,subject_type,subject_id,about_event,kind,kind_label,unit,value_num,value_text,value,body,provenance,at,by_name",
+    );
+  if (subjectType) q = q.eq("subject_type", subjectType);
+  if (subjectId) q = q.eq("subject_id", subjectId);
+  const { data, error } = await q.order("at", { ascending: false });
+  if (error) throw new KernelError(error);
+  return (data ?? []) as TypedFact[];
+}
+
+/** Give a note a kind and a value. The words stay. */
+export async function typeNote(args: {
+  noteId: Uuid;
+  kind: string;
+  valueNum?: number | null;
+  valueText?: string | null;
+}): Promise<{ id: Uuid; kind: string; label: string; value: string }> {
+  const { data, error } = await kernel().rpc("type_note", {
+    p_note_id: args.noteId,
+    p_kind: args.kind,
+    p_value_num: args.valueNum ?? null,
+    p_value_text: args.valueText ?? null,
+  });
+  if (error) throw new KernelError(error);
+  return data as { id: Uuid; kind: string; label: string; value: string };
+}
+
+/** Somebody checked it. T0-4: only a person does this, and who is recorded. */
+export async function confirmNote(
+  noteId: Uuid,
+): Promise<{ id: Uuid; provenance: string; already: boolean }> {
+  const { data, error } = await kernel().rpc("confirm_note", { p_note_id: noteId });
+  if (error) throw new KernelError(error);
+  return data as { id: Uuid; provenance: string; already: boolean };
 }
 
 export async function addNote(args: {

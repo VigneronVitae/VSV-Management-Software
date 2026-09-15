@@ -12,6 +12,7 @@ import {
   addPlanting,
   addShoppingItem,
   addSupply,
+  addTerm,
   addToWine,
   addVessel,
   addVesselTypeNote,
@@ -25,6 +26,7 @@ import {
   cancelPick,
   captionPhoto,
   claimAccount,
+  confirmNote,
   countSupply,
   createVesselWithWine,
   currentAppUser,
@@ -75,6 +77,7 @@ import {
   resolveVesselTypeNote,
   retirePaperRecord,
   type SiteFields,
+  type SubjectNote,
   type SupplyOnHand,
   setMakerMakes,
   setPaperRecordOperations,
@@ -96,9 +99,12 @@ import {
   type TermKind,
   type ThermalMode,
   type ToPropagate,
+  type TypedFact,
   terms,
   termsForVesselField,
   toPropagate,
+  typedFacts,
+  typeNote,
   type UnweighedBin,
   unweighedBins,
   updateBlock,
@@ -333,6 +339,8 @@ async function screenFor(place: Place): Promise<HTMLElement> {
       return additionsScreen();
     case "practice":
       return practiceScreen();
+    case "fact-kinds":
+      return factKindsScreen();
     case "day":
       return dayScreen(place.id);
     case "paper":
@@ -710,37 +718,175 @@ type MenuItem = {
 // sorry ledger: a named gap is worth more than a blank space, and the order
 // they are in is spec.md section 7, which is ordered by how unrecoverable the
 // failure is rather than by what would be fun to build.
-function menu(items: MenuItem[]): HTMLElement {
-  return el(
-    "ul",
-    { class: "menu" },
-    ...items.map((item) => {
-      const row = el(
-        "li",
-        {
-          class: `menu-item${item.go ? "" : " menu-soon"}`,
-          ...(item.go ? { role: "button", tabindex: "0" } : {}),
-        },
-        el(
-          "span",
-          { class: "menu-head" },
-          el("span", { class: "menu-name", text: item.name }),
-          item.badge ? el("span", { class: "menu-badge", text: item.badge }) : null,
-        ),
-        el("span", { class: "menu-note", text: item.note }),
-      );
-      if (item.go) {
-        on(row, "click", item.go);
-        on(row, "keydown", (ev) => {
-          if (ev.key === "Enter" || ev.key === " ") {
-            ev.preventDefault();
-            item.go?.();
-          }
-        });
-      }
-      return row;
-    }),
+// How somebody has arranged their own home screen, on this phone.
+//
+// The winemaker, after a fortnight of using it: "I like the idea of being able
+// to edit your home screen. Collapse things, add things to subcategories...
+// long press an operation and then move it to within another operation."
+//
+// **The arrangement is per device and never in the URL**, the same as the vessel
+// filters and the press layout: a link somebody sends should open the app, not
+// somebody else's idea of where things go. Items are identified by their name,
+// which is stable enough for a menu and means an arrangement survives a screen
+// being rewritten around it.
+//
+// Nesting is one level deep on purpose. Two levels is a tree, a tree needs cycle
+// checks and a way to see where you are, and nobody asked for a tree: they asked
+// to tuck three things they rarely use underneath one they do.
+const HIDDEN = "home.hidden";
+const PARENT = "home.parent";
+const COLLAPSED = "home.collapsed";
+
+function hiddenItems(): Set<string> {
+  return prefSet(HIDDEN);
+}
+
+function parentOf(name: string): string {
+  return pref(`${PARENT}.${name}`);
+}
+
+function setParent(name: string, parent: string): void {
+  setPref(`${PARENT}.${name}`, parent);
+}
+
+/** Arrange mode is a screen-level state, so every menu on the screen shows its
+ * controls at once. Somebody moving one thing usually moves three. */
+let arranging = false;
+
+// An item with nowhere to go is not a dead button, it is a statement about
+// what this app does not do yet. Showing them is the same instinct as the
+// sorry ledger: a named gap is worth more than a blank space, and the order
+// they are in is spec.md section 7, which is ordered by how unrecoverable the
+// failure is rather than by what would be fun to build.
+function menu(items: MenuItem[], all: MenuItem[] = items): HTMLElement {
+  const hidden = hiddenItems();
+  const top = items.filter((i) => !parentOf(i.name));
+
+  function itemRow(item: MenuItem, depth = 0): HTMLElement[] {
+    if (hidden.has(item.name) && !arranging) return [];
+    const children = all.filter((c) => parentOf(c.name) === item.name);
+
+    const row = el(
+      "li",
+      {
+        class:
+          `menu-item${item.go ? "" : " menu-soon"}` +
+          (depth > 0 ? " menu-nested" : "") +
+          (hidden.has(item.name) ? " menu-hidden" : ""),
+        ...(item.go && !arranging ? { role: "button", tabindex: "0" } : {}),
+      },
+      el(
+        "span",
+        { class: "menu-head" },
+        el("span", { class: "menu-name", text: item.name }),
+        item.badge ? el("span", { class: "menu-badge", text: item.badge }) : null,
+      ),
+      el("span", { class: "menu-note", text: item.note }),
+      ...(arranging ? [arrangeControls(item, all)] : []),
+    );
+
+    if (item.go && !arranging) {
+      const open = () => item.go?.();
+      on(row, "click", open);
+      on(row, "keydown", (ev) => {
+        if (ev.key === "Enter" || ev.key === " ") {
+          ev.preventDefault();
+          open();
+        }
+      });
+      // The shortcut he asked for. A long press anywhere on the menu turns the
+      // controls on, which is faster once you know it and undiscoverable until
+      // somebody tells you, which is why the button exists as well.
+      let timer: number | undefined;
+      const start = (): void => {
+        timer = window.setTimeout(() => {
+          arranging = true;
+          void route();
+        }, 550);
+      };
+      const stop = (): void => {
+        if (timer) window.clearTimeout(timer);
+      };
+      on(row, "pointerdown", start);
+      on(row, "pointerup", stop);
+      on(row, "pointercancel", stop);
+      on(row, "pointerleave", stop);
+    }
+
+    return [row, ...children.flatMap((c) => itemRow(c, depth + 1))];
+  }
+
+  return el("ul", { class: "menu" }, ...top.flatMap((i) => itemRow(i)));
+}
+
+// Shown only while arranging. Explicit controls rather than dragging, because a
+// drag on a phone with one wet hand is a thing that goes wrong, and because
+// "put this inside that" is a choice from a list rather than a gesture.
+function arrangeControls(item: MenuItem, all: MenuItem[]): HTMLElement {
+  const hidden = hiddenItems();
+  const into = el("select", { class: "input menu-arrange-select" });
+  into.replaceChildren(
+    el("option", { value: "", text: "On its own" }),
+    ...all
+      // Never inside itself, and never inside something that is already inside
+      // something, which is the whole of the cycle check at one level deep.
+      .filter((other) => other.name !== item.name && !parentOf(other.name))
+      .map((other) =>
+        el("option", {
+          value: other.name,
+          text: `Inside ${other.name}`,
+          ...(parentOf(item.name) === other.name ? { selected: "true" } : {}),
+        }),
+      ),
   );
+  on(into, "change", () => {
+    setParent(item.name, into.value);
+    void route();
+  });
+
+  return el(
+    "span",
+    { class: "menu-arrange" },
+    into,
+    button(
+      hidden.has(item.name) ? "Show" : "Hide",
+      () => {
+        const next = hiddenItems();
+        if (next.has(item.name)) next.delete(item.name);
+        else next.add(item.name);
+        setPrefSet(HIDDEN, next);
+        void route();
+      },
+      "quiet",
+    ),
+  );
+}
+
+/** A section that remembers whether somebody folded it away. */
+function section(title: string, ...body: Node[]): HTMLElement {
+  const collapsed = prefSet(COLLAPSED);
+  const shut = collapsed.has(title);
+  const head = el("h2", {
+    class: `section-head section-toggle${shut ? " section-shut" : ""}`,
+    role: "button",
+    tabindex: "0",
+    text: shut ? `${title}  (folded)` : title,
+  });
+  const toggle = (): void => {
+    const next = prefSet(COLLAPSED);
+    if (next.has(title)) next.delete(title);
+    else next.add(title);
+    setPrefSet(COLLAPSED, next);
+    void route();
+  };
+  on(head, "click", toggle);
+  on(head, "keydown", (ev) => {
+    if (ev.key === "Enter" || ev.key === " ") {
+      ev.preventDefault();
+      toggle();
+    }
+  });
+  return el("div", { class: "section" }, head, ...(shut ? [] : body));
 }
 
 async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> {
@@ -767,185 +913,244 @@ async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> 
   const owedToPaper = owedPaper.length;
   const toBuy = buying.length;
 
+  const harvest: MenuItem[] = [
+    {
+      name: "The day",
+      note: "What happened today, and anything worth writing down about it.",
+      go: () => go({ at: "day" }),
+    },
+    {
+      name: "Stores",
+      note: "What is on the shelf, and what to buy.",
+      ...(toBuy > 0 ? { badge: String(toBuy) } : {}),
+      go: () => go({ at: "stores" }),
+    },
+    {
+      name: "On paper",
+      note: "Measurements that also have to go on a physical form, and have not yet.",
+      ...(owedToPaper > 0 ? { badge: String(owedToPaper) } : {}),
+      go: () => go({ at: "paper" }),
+    },
+    {
+      name: "Picking",
+      note:
+        "Record bins as they are filled. The weight comes later, and until it " +
+        "does the bin says so.",
+      ...(waiting > 0 ? { badge: `${waiting} to weigh` } : {}),
+      go: () => go({ at: "intake" }),
+    },
+    {
+      name: "Weigh bins",
+      note: "What the scale said, with the bins' own weight taken off.",
+      go: () => go({ at: "scale" }),
+    },
+    {
+      name: "Press",
+      note:
+        pressing.length > 0
+          ? "A press is running. Record the litres as they come off."
+          : "Fruit in, juice out. Where the lot gets the name it keeps.",
+      // The badge is the whole of "pop off to other vessels and pop back in":
+      // a press is deliberately unfinished for hours, and it is the one thing
+      // on this screen somebody has to be able to find without remembering
+      // where they left it.
+      ...(pressing.length > 0
+        ? {
+            badge:
+              pressing.length === 1
+                ? `${Number(pressing[0]?.litres_so_far ?? 0).toLocaleString()} L so far`
+                : `${pressing.length} running`,
+          }
+        : {}),
+      go: () => go({ at: "press" }),
+    },
+    {
+      name: "Bins to return",
+      note: "Borrowed bins that are empty. Owed back rather than available.",
+      ...(owed > 0 ? { badge: String(owed) } : {}),
+      go: () => go({ at: "bins-to-return" }),
+    },
+  ];
+
+  const cellar: MenuItem[] = [
+    {
+      name: "Vessel and wine",
+      note: "Add a vessel with wine already in it, in one action.",
+      go: () => go({ at: "vessel-wine" }),
+    },
+    {
+      name: "Empty vessel",
+      note: "Register a vessel now and put wine in it later.",
+      go: () => go({ at: "vessel-new" }),
+    },
+    {
+      name: "Rack",
+      note: "Move wine between vessels, or blend it. The database works out which.",
+      go: () => go({ at: "rack" }),
+    },
+    {
+      name: "Additions",
+      note: "What went into the wine, and off the shelf at the same time.",
+      go: () => go({ at: "additions" }),
+    },
+    {
+      name: "Vessels",
+      note: "What is in the cellar, and how full.",
+      badge: `${filled} of ${kit.length}`,
+      go: () => go({ at: "vessels" }),
+    },
+    {
+      name: "Scan a code",
+      note: "Find a barrel by the sticker on it.",
+      go: () => go({ at: "scan" }),
+    },
+    // Only while there is one. The list can only shrink, so this entry is
+    // temporary by construction and leaving it behind empty would be a
+    // permanent reminder of a job that is finished.
+    ...(silent.length > 0
+      ? [
+          {
+            name: "Lots without a vintage",
+            note:
+              "Recorded before the app asked. Say which year, or that it is " +
+              "non-vintage.",
+            badge: String(silent.length),
+            go: () => go({ at: "vintages" }),
+          },
+        ]
+      : []),
+  ];
+
+  const setup: MenuItem[] = [
+    {
+      name: "Locations",
+      note: "Where vessels live, and what temperature the room is.",
+      badge: String(places.length),
+      go: () => go({ at: "locations" }),
+    },
+    {
+      name: "Vessel types",
+      note: "What each sort of vessel gets asked when you create one.",
+      go: () => go({ at: "vessel-types" }),
+    },
+    {
+      name: "Vessel makers",
+      note: "One list, flagged for what each of them builds. Somebody who makes both is entered once.",
+      go: () => go({ at: "makers" }),
+    },
+    {
+      name: "Kinds of fact",
+      note: "What a note can be turned into. Brix, pH, fruit condition, whatever else you measure.",
+      go: () => go({ at: "fact-kinds" }),
+    },
+    {
+      name: "Vineyards",
+      note: "Where fruit comes from. Blocks, and what is planted in them.",
+      go: () => go({ at: "vineyards" }),
+    },
+    {
+      name: "Clients",
+      note: "Custom crush clients, and which login sees their wine.",
+      go: () => go({ at: "clients" }),
+    },
+    {
+      name: "Take a copy",
+      note:
+        "Everything you can read, as one file on your phone. The cellar lives " +
+        "on one machine, so a copy elsewhere is what makes it survivable.",
+      go: () => go({ at: "export" }),
+    },
+    // Only when a practice stack is actually configured. Offering it in a
+    // build with nothing behind it means somebody turns it on and every
+    // screen fails to load with no explanation.
+    ...(practiceAvailable()
+      ? [
+          {
+            name: practising ? "Leave practice" : "Practice mode",
+            note: practising
+              ? "Go back to the real cellar. What you did in practice stays in practice."
+              : "A second cellar with nothing real in it. Try anything, break anything, throw it away.",
+            ...(practising ? { badge: "on" } : {}),
+            go: () => go({ at: "practice" }),
+          },
+        ]
+      : []),
+  ];
+
+  const soon: MenuItem[] = [
+    {
+      name: "Samples and readings",
+      note: "Transcribing the Wine Meister by hand. Build order 4.",
+    },
+    {
+      name: "Tasks",
+      note: "The board, and who claimed what. Build order 5.",
+    },
+    {
+      name: "Topping",
+      note:
+        "The kernel already refuses a top from the wrong vintage. The screen " +
+        "over it is build order 6, and it needs the codes on the barrels.",
+    },
+  ];
+
+  // Every item on the screen, handed to each menu so that somebody can tuck
+  // a thing from one section underneath a thing in another. Which section an
+  // item was written in is the app's opinion; where it ends up is theirs.
+  const everything: MenuItem[] = [...harvest, ...cellar, ...setup, ...soon];
+
+  // The way in, because a long press is undiscoverable until somebody tells you.
+  const arrangeBar = el(
+    "div",
+    { class: "arrange-bar" },
+    arranging
+      ? button("Done arranging", () => {
+          arranging = false;
+          void route();
+        })
+      : button(
+          "Arrange this screen",
+          () => {
+            arranging = true;
+            void route();
+          },
+          "quiet",
+        ),
+    arranging
+      ? el("span", {
+          class: "field-hint",
+          text:
+            "Hide what you never use, or put something inside something else. " +
+            "Tap a heading to fold a whole section away. This phone only.",
+        })
+      : el("span", {
+          class: "field-hint",
+          text: "Or press and hold anything below.",
+        }),
+    ...(arranging
+      ? [
+          button(
+            "Put everything back",
+            () => {
+              for (const item of everything) setParent(item.name, "");
+              setPrefSet("home.hidden", []);
+              setPrefSet("home.collapsed", []);
+              void route();
+            },
+            "quiet",
+          ),
+        ]
+      : []),
+  );
+
   return screen(
     facility.name,
     lede(`${user.name}, ${user.role}. What would you like to do?`),
-    el("h2", { class: "section-head", text: "Harvest" }),
-    menu([
-      {
-        name: "The day",
-        note: "What happened today, and anything worth writing down about it.",
-        go: () => go({ at: "day" }),
-      },
-      {
-        name: "Stores",
-        note: "What is on the shelf, and what to buy.",
-        ...(toBuy > 0 ? { badge: String(toBuy) } : {}),
-        go: () => go({ at: "stores" }),
-      },
-      {
-        name: "On paper",
-        note: "Measurements that also have to go on a physical form, and have not yet.",
-        ...(owedToPaper > 0 ? { badge: String(owedToPaper) } : {}),
-        go: () => go({ at: "paper" }),
-      },
-      {
-        name: "Picking",
-        note:
-          "Record bins as they are filled. The weight comes later, and until it " +
-          "does the bin says so.",
-        ...(waiting > 0 ? { badge: `${waiting} to weigh` } : {}),
-        go: () => go({ at: "intake" }),
-      },
-      {
-        name: "Weigh bins",
-        note: "What the scale said, with the bins' own weight taken off.",
-        go: () => go({ at: "scale" }),
-      },
-      {
-        name: "Press",
-        note:
-          pressing.length > 0
-            ? "A press is running. Record the litres as they come off."
-            : "Fruit in, juice out. Where the lot gets the name it keeps.",
-        // The badge is the whole of "pop off to other vessels and pop back in":
-        // a press is deliberately unfinished for hours, and it is the one thing
-        // on this screen somebody has to be able to find without remembering
-        // where they left it.
-        ...(pressing.length > 0
-          ? {
-              badge:
-                pressing.length === 1
-                  ? `${Number(pressing[0]?.litres_so_far ?? 0).toLocaleString()} L so far`
-                  : `${pressing.length} running`,
-            }
-          : {}),
-        go: () => go({ at: "press" }),
-      },
-      {
-        name: "Bins to return",
-        note: "Borrowed bins that are empty. Owed back rather than available.",
-        ...(owed > 0 ? { badge: String(owed) } : {}),
-        go: () => go({ at: "bins-to-return" }),
-      },
-    ]),
-    el("h2", { class: "section-head", text: "In the cellar" }),
-    menu([
-      {
-        name: "Vessel and wine",
-        note: "Add a vessel with wine already in it, in one action.",
-        go: () => go({ at: "vessel-wine" }),
-      },
-      {
-        name: "Empty vessel",
-        note: "Register a vessel now and put wine in it later.",
-        go: () => go({ at: "vessel-new" }),
-      },
-      {
-        name: "Rack",
-        note: "Move wine between vessels, or blend it. The database works out which.",
-        go: () => go({ at: "rack" }),
-      },
-      {
-        name: "Additions",
-        note: "What went into the wine, and off the shelf at the same time.",
-        go: () => go({ at: "additions" }),
-      },
-      {
-        name: "Vessels",
-        note: "What is in the cellar, and how full.",
-        badge: `${filled} of ${kit.length}`,
-        go: () => go({ at: "vessels" }),
-      },
-      {
-        name: "Scan a code",
-        note: "Find a barrel by the sticker on it.",
-        go: () => go({ at: "scan" }),
-      },
-      // Only while there is one. The list can only shrink, so this entry is
-      // temporary by construction and leaving it behind empty would be a
-      // permanent reminder of a job that is finished.
-      ...(silent.length > 0
-        ? [
-            {
-              name: "Lots without a vintage",
-              note:
-                "Recorded before the app asked. Say which year, or that it is " +
-                "non-vintage.",
-              badge: String(silent.length),
-              go: () => go({ at: "vintages" }),
-            },
-          ]
-        : []),
-    ]),
-    el("h2", { class: "section-head", text: "Set up" }),
-    menu([
-      {
-        name: "Locations",
-        note: "Where vessels live, and what temperature the room is.",
-        badge: String(places.length),
-        go: () => go({ at: "locations" }),
-      },
-      {
-        name: "Vessel types",
-        note: "What each sort of vessel gets asked when you create one.",
-        go: () => go({ at: "vessel-types" }),
-      },
-      {
-        name: "Vessel makers",
-        note: "One list, flagged for what each of them builds. Somebody who makes both is entered once.",
-        go: () => go({ at: "makers" }),
-      },
-      {
-        name: "Vineyards",
-        note: "Where fruit comes from. Blocks, and what is planted in them.",
-        go: () => go({ at: "vineyards" }),
-      },
-      {
-        name: "Clients",
-        note: "Custom crush clients, and which login sees their wine.",
-        go: () => go({ at: "clients" }),
-      },
-      {
-        name: "Take a copy",
-        note:
-          "Everything you can read, as one file on your phone. The cellar lives " +
-          "on one machine, so a copy elsewhere is what makes it survivable.",
-        go: () => go({ at: "export" }),
-      },
-      // Only when a practice stack is actually configured. Offering it in a
-      // build with nothing behind it means somebody turns it on and every
-      // screen fails to load with no explanation.
-      ...(practiceAvailable()
-        ? [
-            {
-              name: practising ? "Leave practice" : "Practice mode",
-              note: practising
-                ? "Go back to the real cellar. What you did in practice stays in practice."
-                : "A second cellar with nothing real in it. Try anything, break anything, throw it away.",
-              ...(practising ? { badge: "on" } : {}),
-              go: () => go({ at: "practice" }),
-            },
-          ]
-        : []),
-    ]),
-    el("h2", { class: "section-head", text: "Not built yet" }),
-    menu([
-      {
-        name: "Samples and readings",
-        note: "Transcribing the Wine Meister by hand. Build order 4.",
-      },
-      {
-        name: "Tasks",
-        note: "The board, and who claimed what. Build order 5.",
-      },
-      {
-        name: "Topping",
-        note:
-          "The kernel already refuses a top from the wrong vintage. The screen " +
-          "over it is build order 6, and it needs the codes on the barrels.",
-      },
-    ]),
+    arrangeBar,
+    section("Harvest", menu(harvest, everything)),
+    section("In the cellar", menu(cellar, everything)),
+    section("Set up", menu(setup, everything)),
+    section("Not built yet", menu(soon, everything)),
     installBlock(),
     skinPicker(),
     button(
@@ -4477,6 +4682,113 @@ function additionsScreen(): HTMLElement {
   return view;
 }
 
+// --- kinds of fact ---------------------------------------------------------
+
+// The list that makes `0064` worth having.
+//
+// A note becomes a fact by being given a kind, and the kinds are registry rows,
+// which is what lets an unsettled chemistry specification be data rather than a
+// reason to defer. That is only true if somebody can actually add one, so this
+// is the screen that makes the claim true rather than theoretical.
+//
+// Deliberately plain. It is a vocabulary editor and it is used about once a
+// season.
+function factKindsScreen(): HTMLElement {
+  const body = el("div", {}, empty("Loading."));
+  const message = el("div", {});
+  const view = screen(
+    "Kinds of fact",
+    lede(
+      "What a note can be turned into. Brix, pH, fruit condition, anything else " +
+        "worth asking about later. Adding one is a row, not a change to the app.",
+    ),
+    body,
+  );
+
+  async function load(): Promise<void> {
+    const kinds = await terms("fact_kind");
+
+    const label = field({ label: "Name", placeholder: "Brix" });
+    const shape = el("select", { class: "input" });
+    shape.replaceChildren(
+      el("option", { value: "number", text: "A number" }),
+      el("option", { value: "text", text: "Written out" }),
+    );
+    const unit = field({
+      label: "Unit",
+      placeholder: "Brix",
+      hint: "Optional, and recorded rather than checked. That is sorry S-75.",
+    });
+
+    body.replaceChildren(
+      rows(
+        kinds.length === 0
+          ? empty("None yet.")
+          : el(
+              "ul",
+              { class: "vessel-list" },
+              ...kinds.map((k) =>
+                el(
+                  "li",
+                  { class: "vessel-row" },
+                  el("span", { class: "vessel-name", text: k.label }),
+                  el("span", {
+                    class: "vessel-detail",
+                    text:
+                      (String(k.attributes?.value_type ?? "text") === "number"
+                        ? "a number"
+                        : "written out") +
+                      (k.attributes?.unit ? `, in ${String(k.attributes.unit)}` : ""),
+                  }),
+                ),
+              ),
+            ),
+        el("h2", { class: "section-head", text: "Add one" }),
+        label.root,
+        el(
+          "div",
+          { class: "field" },
+          el("span", { class: "field-label", text: "Its value is" }),
+          shape,
+        ),
+        unit.root,
+        button("Add it", async () => {
+          if (!label.value().trim()) {
+            message.replaceChildren(banner("Give it a name.", "error"));
+            return;
+          }
+          try {
+            await addTerm("fact_kind", label.value().trim(), {
+              value_type: shape.value,
+              ...(unit.value().trim() ? { unit: unit.value().trim() } : {}),
+            });
+            label.input.value = "";
+            unit.input.value = "";
+            await load();
+          } catch (error) {
+            message.replaceChildren(fail(error));
+          }
+        }),
+        message,
+        button("Back", () => goBack(), "quiet"),
+      ),
+    );
+  }
+
+  void (async () => {
+    try {
+      await load();
+    } catch (error) {
+      body.replaceChildren(
+        fail(error),
+        button("Back", () => goBack(), "quiet"),
+      );
+    }
+  })();
+
+  return view;
+}
+
 // --- practice mode ---------------------------------------------------------
 
 // A second cellar with nothing real in it.
@@ -4743,11 +5055,14 @@ function photosScreen(subject: "node" | "vessel", subjectId: string): HTMLElemen
   );
 
   async function load(): Promise<void> {
-    const [already, weighings, said] = await Promise.all([
+    const [already, weighings, said, facts, kinds] = await Promise.all([
       attachmentsFor(subject, subjectId),
       subject === "node" ? pickWeighings(subjectId) : Promise.resolve([]),
       notesFor(subject, subjectId),
+      typedFacts(subject, subjectId),
+      terms("fact_kind"),
     ]);
+    const typedIds = new Set(facts.map((f) => f.note_id));
 
     // One picker per reading. A single picker plus a dropdown would be fewer
     // controls and would put the choosing after the taking, which is the wrong
@@ -4863,6 +5178,116 @@ function photosScreen(subject: "node" | "vessel", subjectId: string): HTMLElemen
       already.map((a) => photoCard(a, () => void load(), message)),
     );
 
+    // An untyped note, with the one control that turns it into a fact. The kind
+    // decides whether the value is a number or words, which is read off the
+    // registry rather than guessed here: adding a kind is a row and this screen
+    // must not need changing when somebody adds one.
+    function untypedRow(n: SubjectNote, allKinds: Term[]): HTMLElement {
+      const rowSaid = el("div", {});
+      const kind = el("select", { class: "input" });
+      kind.replaceChildren(
+        el("option", { value: "", text: "Just a note" }),
+        ...allKinds.map((k) => el("option", { value: k.value, text: k.label })),
+      );
+      const value = field({ label: "Value", placeholder: "mostly good" });
+
+      function shapeOf(): string {
+        const picked = allKinds.find((k) => k.value === kind.value);
+        return String(picked?.attributes?.value_type ?? "text");
+      }
+      on(kind, "change", () => {
+        value.input.type = shapeOf() === "number" ? "number" : "text";
+      });
+
+      return el(
+        "details",
+        { class: "more" },
+        el("summary", {
+          text:
+            `${n.body}  ${new Date(n.at).toLocaleDateString()}` +
+            (n.edited_at ? " (reworded)" : ""),
+        }),
+        rows(
+          summaryRow("Said by", n.by_name ?? "somebody"),
+          el(
+            "div",
+            { class: "field" },
+            el("span", { class: "field-label", text: "Make it a fact" }),
+            kind,
+            el("span", {
+              class: "field-hint",
+              text: "Leave it as just a note if it is talking rather than a measurement.",
+            }),
+          ),
+          value.root,
+          button(
+            "Type it",
+            async () => {
+              if (!kind.value) {
+                rowSaid.replaceChildren(
+                  banner("Pick what kind of fact it is.", "error"),
+                );
+                return;
+              }
+              if (!value.value()) {
+                rowSaid.replaceChildren(banner("Give it a value.", "error"));
+                return;
+              }
+              try {
+                await typeNote({
+                  noteId: n.id,
+                  kind: kind.value,
+                  valueNum: shapeOf() === "number" ? Number(value.value()) : null,
+                  valueText: shapeOf() === "number" ? null : value.value(),
+                });
+                await load();
+              } catch (error) {
+                rowSaid.replaceChildren(fail(error));
+              }
+            },
+            "secondary",
+          ),
+          rowSaid,
+        ),
+      );
+    }
+
+    // A fact, with how much anybody has checked it. `observed` and `confirmed`
+    // are different states and must not read the same: T0-4 is only worth
+    // anything if the difference is visible.
+    function factRow(f: TypedFact): HTMLElement {
+      const rowSaid = el("div", {});
+      return el(
+        "li",
+        { class: "vessel-row" },
+        el("span", {
+          class: "vessel-name",
+          text: `${f.kind_label}: ${f.value}${f.unit ? ` ${f.unit}` : ""}`,
+        }),
+        el("span", {
+          class: "vessel-detail",
+          text:
+            `${f.body}, said by ${f.by_name ?? "somebody"}, ` +
+            `${new Date(f.at).toLocaleDateString()}`,
+        }),
+        f.provenance === "confirmed"
+          ? el("span", { class: "tag", text: "confirmed" })
+          : button(
+              "Confirm",
+              async () => {
+                try {
+                  await confirmNote(f.note_id);
+                  await load();
+                } catch (error) {
+                  rowSaid.replaceChildren(fail(error));
+                }
+              },
+              "quiet",
+            ),
+        rowSaid,
+      );
+    }
+
     // First on the screen, because it is the cheapest thing to do and it is what
     // somebody standing over a bin actually came here for. "The fruit was mostly
     // good" is a sentence, not a form.
@@ -4905,25 +5330,31 @@ function photosScreen(subject: "node" | "vessel", subjectId: string): HTMLElemen
           }
         }),
         noteSaid,
-        said.length === 0
-          ? empty("Nothing said about this yet.")
+        said.filter((n) => !typedIds.has(n.id)).length === 0
+          ? empty("Nothing said about this that is not already a fact.")
           : el(
-              "ul",
-              { class: "vessel-list" },
-              ...said.map((n) =>
-                el(
-                  "li",
-                  { class: "vessel-row" },
-                  el("span", { class: "vessel-name", text: n.body }),
-                  el("span", {
-                    class: "vessel-detail",
-                    text:
-                      `${n.by_name ?? "somebody"}, ${new Date(n.at).toLocaleString()}` +
-                      (n.edited_at ? " (reworded)" : ""),
-                  }),
-                ),
-              ),
+              "div",
+              {},
+              ...said
+                .filter((n) => !typedIds.has(n.id))
+                .map((n) => untypedRow(n, kinds)),
             ),
+
+        // S-74. The migration was the hard half and this is the half that makes
+        // it usable: what has been typed about this thing, with the sentence it
+        // came from, and whether anybody has checked it.
+        ...(facts.length === 0
+          ? []
+          : [
+              el("h2", { class: "section-head", text: "Facts" }),
+              el("p", {
+                class: "lede",
+                text:
+                  "Notes somebody turned into something you can ask about. The " +
+                  "words are still there, which is the point of not making it a field.",
+              }),
+              el("div", {}, ...facts.map(factRow)),
+            ]),
 
         ...(subject === "node"
           ? [

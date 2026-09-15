@@ -68,7 +68,10 @@ export type Place =
   | { at: "vintages" }
   | { at: "additions" }
   // Practice mode, which is a shipped feature rather than a developer toggle.
-  | { at: "practice" };
+  | { at: "practice" }
+  // The kinds of fact a note can be typed as. A list that is data rather than
+  // schema is only useful if somebody can add to it.
+  | { at: "fact-kinds" };
 
 export const HOME: Place = { at: "home" };
 
@@ -102,6 +105,7 @@ const WITHOUT_ID = new Set([
   "vintages",
   "additions",
   "practice",
+  "fact-kinds",
 ]);
 
 // A calendar day, which is what the day log is addressed by.

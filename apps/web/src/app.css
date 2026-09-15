@@ -917,3 +917,46 @@ body.practising {
     background: #ffc94d;
   }
 }
+
+/* --- arranging the home screen ------------------------------------------ */
+
+.arrange-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 1rem;
+}
+
+/* A section somebody folded away. The heading stays, because a fold you cannot
+   find again is a delete. */
+.section-toggle {
+  cursor: pointer;
+}
+.section-shut {
+  opacity: 0.6;
+}
+
+/* Nested one level. Indent and a rule, so "inside" reads as inside without
+   needing a disclosure triangle on every row. */
+.menu-nested {
+  margin-left: 1.1rem;
+  border-left: 2px solid var(--rule);
+  padding-left: 0.7rem;
+}
+
+/* Hidden items are invisible normally and ghosted while arranging, because you
+   cannot unhide what you cannot see. */
+.menu-hidden {
+  opacity: 0.45;
+}
+
+.menu-arrange {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  margin-top: 0.5rem;
+}
+.menu-arrange-select {
+  flex: 1 1 auto;
+  min-width: 0;
+}

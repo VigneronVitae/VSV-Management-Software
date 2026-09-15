@@ -20,7 +20,11 @@ export type TermKind =
   | "product_type"
   | "material_kind"
   | "operation"
-  | "location_kind";
+  | "location_kind"
+  // 0064. S-61 again, for the third time: this union is hand-maintained
+  // against `term_kind` and nothing checks it, so a vocabulary added by a
+  // migration is invisible here until somebody remembers.
+  | "fact_kind";
 
 export type Effect = "measurement" | "treatment" | "movement" | "transformation";
 
@@ -435,6 +439,26 @@ export type SubjectNote = {
   edited_at: string | null;
   by_name: string | null;
   by_user: Uuid | null;
+};
+
+// A note somebody has typed: a registered kind, a value, and the sentence it
+// came from. This is what "becoming a field" means here, and the prose beside
+// the value is why it is better than a column. See 0064.
+export type TypedFact = {
+  note_id: Uuid;
+  subject_type: string;
+  subject_id: Uuid;
+  about_event: Uuid | null;
+  kind: string;
+  kind_label: string;
+  unit: string | null;
+  value_num: number | null;
+  value_text: string | null;
+  value: string;
+  body: string;
+  provenance: "observed" | "inferred" | "confirmed";
+  at: string;
+  by_name: string | null;
 };
 
 // --- photographs -----------------------------------------------------------
