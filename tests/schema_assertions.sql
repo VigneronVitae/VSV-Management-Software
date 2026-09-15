@@ -34,7 +34,7 @@
 --              supabase/migrations/0029_viewer_scope.sql,
 --              supabase/migrations/0030_writable_columns.sql,
 --              supabase/migrations/0031_scheduling_to_core.sql,
---              supabase/migrations/0032_vessel_maker_and_room_temperature.sql, supabase/migrations/0033_intake.sql, supabase/migrations/0034_press.sql, supabase/migrations/0035_bins_in_bulk.sql, supabase/migrations/0036_bins_on_loan.sql, supabase/migrations/0037_export.sql, supabase/migrations/0038_cancel_a_pick.sql, supabase/migrations/0039_vineyard.sql, supabase/migrations/0040_block_variety_is_history.sql, supabase/migrations/0041_daily_log.sql, supabase/migrations/0042_weighing_photo.sql, supabase/migrations/0043_record_propagation.sql, supabase/migrations/0044_finishing_a_pick.sql, supabase/migrations/0045_press_detail.sql, supabase/migrations/0046_supply_inventory.sql, supabase/migrations/0047_attachments.sql, supabase/migrations/0048_pick_weighing.sql, supabase/migrations/0049_every_lot_says_its_vintage.sql, supabase/migrations/0050_additions.sql, supabase/migrations/0051_supplies_for_addition.sql, supabase/migrations/0052_press_as_a_process.sql, supabase/migrations/0053_a_press_is_a_vessel.sql, supabase/migrations/0054_a_spent_pick_is_spent.sql, supabase/migrations/0055_press_draws.sql, supabase/migrations/0056_draw_to_a_level.sql, supabase/migrations/0057_the_contract.sql, supabase/migrations/0058_an_open_pick_is_a_view.sql, supabase/migrations/0061_two_declarations_were_wrong.sql, supabase/migrations/0063_a_note_is_a_thing_too.sql, supabase/migrations/0062_a_note_on_anything.sql, supabase/migrations/0060_the_contract_catches_up.sql, supabase/migrations/0059_a_weighing_says_its_pick.sql]
+--              supabase/migrations/0032_vessel_maker_and_room_temperature.sql, supabase/migrations/0033_intake.sql, supabase/migrations/0034_press.sql, supabase/migrations/0035_bins_in_bulk.sql, supabase/migrations/0036_bins_on_loan.sql, supabase/migrations/0037_export.sql, supabase/migrations/0038_cancel_a_pick.sql, supabase/migrations/0039_vineyard.sql, supabase/migrations/0040_block_variety_is_history.sql, supabase/migrations/0041_daily_log.sql, supabase/migrations/0042_weighing_photo.sql, supabase/migrations/0043_record_propagation.sql, supabase/migrations/0044_finishing_a_pick.sql, supabase/migrations/0045_press_detail.sql, supabase/migrations/0046_supply_inventory.sql, supabase/migrations/0047_attachments.sql, supabase/migrations/0048_pick_weighing.sql, supabase/migrations/0049_every_lot_says_its_vintage.sql, supabase/migrations/0050_additions.sql, supabase/migrations/0051_supplies_for_addition.sql, supabase/migrations/0052_press_as_a_process.sql, supabase/migrations/0053_a_press_is_a_vessel.sql, supabase/migrations/0054_a_spent_pick_is_spent.sql, supabase/migrations/0055_press_draws.sql, supabase/migrations/0056_draw_to_a_level.sql, supabase/migrations/0057_the_contract.sql, supabase/migrations/0058_an_open_pick_is_a_view.sql, supabase/migrations/0061_two_declarations_were_wrong.sql, supabase/migrations/0063_a_note_is_a_thing_too.sql, supabase/migrations/0065_confirming_without_owning.sql, supabase/migrations/0066_a_guard_that_can_be_weakened.sql, supabase/migrations/0064_typing_a_note.sql, supabase/migrations/0062_a_note_on_anything.sql, supabase/migrations/0060_the_contract_catches_up.sql, supabase/migrations/0059_a_weighing_says_its_pick.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -2773,7 +2773,10 @@ begin
   -- c=36 f=64 p=37 u=20 before 0062, which added `note`: its primary key,
   -- the check that it says something, and three foreign keys, being the
   -- subject type into the resolver, the event it is about, and who wrote it.
-  want := 'c=37 f=67 p=38 u=20';
+  -- c=37 f=67 p=38 u=20 before 0064, which types a note: the check that a
+  -- value without a kind is refused, and the composite pinning the kind to
+  -- the fact_kind vocabulary the way every other pointer into it is pinned.
+  want := 'c=38 f=69 p=38 u=20';
   if have <> want then
     raise exception
       E'FAIL: the constraint inventory changed.\nnow:  %\nwas:  %\nIf that is deliberate, update this line in the same commit that changed the schema.', have, want;
@@ -2806,6 +2809,7 @@ begin
        || 'location.location_kind_is_a_location_kind, '
        || 'node.node_product_type_is_a_product_type, '
        || 'node.node_variety_is_a_variety, '
+       || 'note.note_kind_is_a_fact_kind, '
        -- 0043. A physical form says which kinds of measurement belong on it.
        || 'paper_record_operation.paper_record_operation_is_an_operation, '
        -- 0039. A block is planted to a variety, pinned the same way every other
@@ -2848,6 +2852,7 @@ begin
        || 'location.kind_kind=''location_kind''::text '
        || 'node.product_kind=''product_type''::text '
        || 'node.variety_kind=''variety''::text '
+       || 'note.kind_kind=''fact_kind''::text '
        -- 0043, pinning a form's operation list to the operation vocabulary.
        || 'paper_record_operation.operation_kind=''operation''::text '
        -- 0039, pinning a planting's term to the variety vocabulary.
@@ -2973,7 +2978,10 @@ begin
   -- pair `attachment` carries: the subject type into the resolver, and the
   -- event it is about. The new no-action is whoever wrote it, which outlives
   -- their account the way a day note does.
-  want := 'a=37 c=14 n=2 r=14';
+  -- a=37 c=14 n=2 r=14 before 0064. The two new no-actions are a note's fact
+  -- kind and the composite pinning it to that vocabulary: a kind is deleted
+  -- by deactivating it, not by removing the row, so nothing needs to cascade.
+  want := 'a=39 c=14 n=2 r=14';
   if have <> want then
     raise exception
       E'FAIL: foreign key delete behaviour changed.\nnow:  %\nwas:  %\na is no action, c is cascade, n is set null, r is restrict.', have, want;
@@ -3823,6 +3831,21 @@ declare
     -- note block below, in both directions.
     'note_event_matches_subject',
     'note_is_not_refiled',
+    -- 0064's two, and the first is A25's shape used deliberately a third time.
+    -- `note_value_matches_its_kind` returns early when `kind_id` is null, which
+    -- is the untyped floor: nothing is required of an untyped note and that is
+    -- the point of it. Everything after that branch reads the kind's declared
+    -- shape and refuses on a mismatch, so a null there cannot permit. Exercised
+    -- in the typing block below in both directions: an untyped note is allowed
+    -- to stay untyped, and a typed one with no value is refused.
+    'note_value_matches_its_kind',
+    -- `note_provenance_is_not_self_granted` guards a not-null enum, so there is
+    -- no null to permit. `current_setting(..., true)` is coalesced rather than
+    -- compared, because an unset setting returns null and a null comparison
+    -- would let every update through, which is precisely the failure. Exercised
+    -- below by a fact refused at birth, an update refused, and confirm_note
+    -- succeeding.
+    'note_provenance_is_not_self_granted',
     -- `attachment_is_not_rewritten` is the case where the null was designed
     -- against. `about_event` and `by_user` are the two nullable columns it
     -- guards, and both are compared with `is distinct from` rather than `<>`
@@ -8354,6 +8377,161 @@ begin
   delete from vessel where name like 'ASRTNOTE%';
   update term set attributes = attributes - 'tare_lbs'
    where kind = 'vessel_type' and value = 'picking_bin';
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- the untyped floor, and typing something on it'; end $$;
+
+-- 0064. The winemaker: "we might think of the untyped type here a la epistack."
+--
+-- This system already had that idea one level down. spec.md's untyped floor says
+-- an unknown thing should "land, be addressable, and drive nothing until
+-- somebody here types it", and the suite has proved it for operations since
+-- early on. 0062 built the same floor for facts without noticing, and 0064 is
+-- the other half: typing one.
+--
+-- **Everything below runs as a signed-in user rather than as the owner**, which
+-- is not decoration. `confirm_note` shipped in 0064 using `alter table disable
+-- trigger`, worked perfectly as `postgres`, and failed for every real caller
+-- with "must be owner of table note". An assertion that runs as the owner would
+-- have passed.
+do $$
+declare
+  v      uuid;
+  plain  uuid;
+  typed  uuid;
+  out_js jsonb;
+  n      int;
+begin
+  perform test_act_as('00000000-0000-0000-0000-00000000a002');   -- a cellar user
+  select id into v from vessel limit 1;
+
+  -- The floor. A note lands and drives nothing, which 0062 already asserts; what
+  -- matters here is that it is also allowed to stay that way forever.
+  plain := (add_note('vessel', v, 'gasket looked tired') ->> 'id')::uuid;
+  select count(*) into n from untyped_note where id = plain;
+  if n <> 1 then
+    raise exception 'FAIL: an untyped note is not on the untyped floor';
+  end if;
+  select count(*) into n from typed_fact where note_id = plain;
+  if n <> 0 then
+    raise exception 'FAIL: an untyped note is being reported as a fact';
+  end if;
+  perform test_ok('a note with no kind is addressable and is not a fact, which is the untyped floor spec.md already describes for an arriving lot');
+
+  -- Typing it keeps the words. That is the whole reason this is not a column.
+  typed := (add_note('vessel', v, 'fruit was mostly good, a bit of shrivel on the north end') ->> 'id')::uuid;
+  out_js := type_note(typed, 'fruit_condition', null, 'mostly good');
+  if out_js ->> 'value' <> 'mostly good' then
+    raise exception 'FAIL: typing gave back %', out_js ->> 'value';
+  end if;
+  select count(*) into n from typed_fact
+   where note_id = typed and kind = 'fruit_condition'
+     and value = 'mostly good'
+     and body like '%north end%';
+  if n <> 1 then
+    raise exception 'FAIL: a typed fact lost either its value or the sentence it came from';
+  end if;
+  perform test_ok('typing a note gives it a kind and a value and keeps the prose, so what can be reported on and what somebody said are one object');
+
+  select count(*) into n from untyped_note where id = typed;
+  if n <> 0 then
+    raise exception 'FAIL: a typed note is still on the untyped floor';
+  end if;
+  perform test_ok('a note leaves the untyped floor when somebody types it, which is the only way off it');
+
+  -- The gate. A kind declares a shape and a typed note must carry it.
+  begin
+    perform type_note(plain, 'fruit_condition', 22.4, null);
+    raise exception 'FAIL: a text kind accepted a number';
+  exception when others then
+    if position('is written out' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a kind that is written out refuses a number, so typing means something rather than pointing at a vocabulary row');
+  end;
+
+  begin
+    perform type_note(plain, 'fruit_condition', null, null);
+    raise exception 'FAIL: a note was typed with no value at all';
+  exception when others then
+    if position('has no value' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a note typed with no value is refused, because a kind without a value says less than the sentence did');
+  end;
+
+  begin
+    perform type_note(plain, 'nothing_of_the_sort', null, 'x');
+    raise exception 'FAIL: a note was typed with a kind that does not exist';
+  exception when others then
+    if position('nothing here is a kind of fact' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a kind nobody registered is refused, and adding one is a row rather than a change to this system');
+  end;
+
+  -- A value with no kind is a number nobody can interpret.
+  begin
+    insert into note (subject_type, subject_id, body, value_num, by_user)
+    values ('vessel', v, 'twenty two point four', 22.4,
+            '00000000-0000-0000-0000-00000000a002');
+    raise exception 'FAIL: a value was stored with no kind to interpret it';
+  exception when check_violation then
+    perform test_ok('a value without a kind is refused, because a number nobody can interpret is worse than the sentence it came from');
+  end;
+
+  -- T0-4, which is the axiom this whole layer rests on.
+  begin
+    insert into note (subject_type, subject_id, body, provenance, by_user)
+    values ('vessel', v, 'born confirmed', 'confirmed',
+            '00000000-0000-0000-0000-00000000a002');
+    raise exception 'FAIL: a fact was born confirmed';
+  exception when others then
+    if position('cannot be born confirmed' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a fact cannot be born confirmed, which is T0-4 in the place it now matters most');
+  end;
+
+  begin
+    update note set provenance = 'confirmed' where id = typed;
+    raise exception 'FAIL: confirmed was written by an ordinary update';
+  exception when others then
+    if position('confirming is its own act' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('confirmed cannot be written by an update, so who checked a fact is always recorded');
+  end;
+
+  -- **And the one that 0064 shipped broken.** As the owner this passed; as a
+  -- signed-in user it failed with "must be owner of table note", because
+  -- confirm_note got past its own guard by disabling the trigger.
+  out_js := confirm_note(typed);
+  if out_js ->> 'provenance' <> 'confirmed' then
+    raise exception 'FAIL: confirming did not confirm';
+  end if;
+  select count(*) into n from typed_fact where note_id = typed and provenance = 'confirmed';
+  if n <> 1 then
+    raise exception 'FAIL: a confirmed fact does not read as confirmed';
+  end if;
+  perform test_ok('a signed-in user can confirm a fact, which the first version could not because it disabled a trigger it did not own');
+
+  -- The confirming is itself a note on the fact, which 0063 is what allows.
+  select count(*) into n from note where subject_type = 'note' and subject_id = typed;
+  if n <> 1 then
+    raise exception 'FAIL: confirming left no record of who did it';
+  end if;
+  perform test_ok('confirming writes a note on the fact, so who checked it is in the record rather than in a column nobody displays');
+
+  -- Confirming twice is not a failure and must not read like one.
+  out_js := confirm_note(typed);
+  if (out_js ->> 'already')::boolean is not true then
+    raise exception 'FAIL: confirming an already confirmed fact did not say so';
+  end if;
+  perform test_ok('confirming something already confirmed says so and changes nothing, rather than failing or recording it twice');
+
+  begin
+    perform confirm_note(plain);
+    raise exception 'FAIL: an untyped note was confirmed';
+  exception when others then
+    if position('no fact in it to confirm' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('an untyped note cannot be confirmed, because there is no claim in it to check');
+  end;
+
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+  delete from note where subject_type = 'note';
+  delete from note where id in (plain, typed);
 end $$;
 
 -- ---------------------------------------------------------------------------

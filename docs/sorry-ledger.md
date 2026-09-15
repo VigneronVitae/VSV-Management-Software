@@ -879,6 +879,25 @@ does not have. Both are migrations plus a screen each. *Load-bearing:* no, while
 knows which of the three to read. Yes for anybody writing a fourth client, who will find
 three shapes of the same idea and no statement of which is current.
 
+**S-74. A typed fact has a kind and nothing yet reads one.**
+`0064` lets a note carry a registered kind and a value, which is what turns prose into
+something reportable. **What it does not do is report.** `typed_fact` exists and one screen
+writes into it; no screen reads it, nothing on Alexis's four forms is filled from it, and the
+only seeded kind is fruit condition. So the mechanism that was built to cover four forms at
+once currently covers one field on one of them. *Resolves when:* a screen lists what has been
+typed about a lot, and the paper forms in `0043` are satisfied from typed facts rather than
+from their own machinery. *Load-bearing:* no, and this is the entry most at risk of reading
+as done: the migration is the hard half and the visible half is missing, which is exactly the
+shape that gets a green tick in a status ledger and disappoints somebody in March.
+
+**S-75. Nothing checks a typed value against the unit its kind declares.**
+A fact kind may declare a unit, and `0064` stores it on the term and checks nothing with it.
+A Brix of 220 and a Brix of 22 are both numbers. This is S-63's family, one table over: the
+same missing answer about what a unit is and what may be compared to what. *Resolves when:*
+S-63 is answered for weight, volume, area and count, and a fact kind's unit joins that
+answer rather than getting its own. *Load-bearing:* no, while a person types every value and
+would notice. Yes the first time a value arrives from anywhere but a person's hands.
+
 ## Discharged
 **S-52. A press recorded no cuts.** *Discharged by `0045`.*
 The entry said that pressing free run and hard press separately recorded shares proportional to

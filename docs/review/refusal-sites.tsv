@@ -117,6 +117,11 @@ confirm_event:raise:1	confirm_event	raise	raise exception 'only a verifier may c
 confirm_event:silent:1	confirm_event	silent	where id = p_event_id and provenance = 'inferred'	where id = p_event_id and true	1
 confirm_event:guard:2	confirm_event	guard	if e.id is null then	if false then	1
 confirm_event:raise:2	confirm_event	raise	raise exception 'event % is not an inferred event awaiting confirmation', p_event_id;	raise notice 'event % is not an inferred event awaiting confirmation', p_event_id;	1
+confirm_note:guard:1	confirm_note	guard	if n.id is null then	if false then	1
+confirm_note:raise:1	confirm_note	raise	raise exception 'there is no note with id %', p_note_id;	raise notice 'there is no note with id %', p_note_id;	1
+confirm_note:guard:2	confirm_note	guard	if n.kind_id is null then	if false then	1
+confirm_note:raise:2	confirm_note	raise	raise exception 'that note has not been typed, so there is no fact in it to confirm';	raise notice 'that note has not been typed, so there is no fact in it to confirm';	1
+confirm_note:guard:3	confirm_note	guard	if n.provenance = 'confirmed' then	if false then	1
 count_supply:guard:1	count_supply	guard	if s.id is null then	if false then	1
 count_supply:raise:1	count_supply	raise	raise exception 'no supply with id %', p_supply_id;	raise notice 'no supply with id %', p_supply_id;	1
 count_supply:guard:2	count_supply	guard	if p_counted is null or p_counted < 0 then	if false then	1
@@ -218,6 +223,20 @@ note_event_matches_subject:raise:2	note_event_matches_subject	raise	raise except
 note_is_not_refiled:head:1	note_is_not_refiled	head	if new.subject_type <> old.subject_type\n     or new.subject_id <> old.subject_id\n     or new.about_event is distinct from old.about_event\n     or new.by_user is distinct from old.by_user then	if false then	1
 note_is_not_refiled:raise:1	note_is_not_refiled	raise	raise exception	raise notice	1
 note_is_not_refiled:guard:1	note_is_not_refiled	guard	if new.body <> old.body then	if false then	1
+note_provenance_is_not_self_granted:guard:1	note_provenance_is_not_self_granted	guard	if tg_op = 'INSERT' and new.provenance = 'confirmed' then	if false then	1
+note_provenance_is_not_self_granted:raise:1	note_provenance_is_not_self_granted	raise	raise exception	raise notice	1
+note_provenance_is_not_self_granted:head:1	note_provenance_is_not_self_granted	head	if tg_op = 'UPDATE' and new.provenance <> old.provenance\n     and new.provenance = 'confirmed'\n     -- Set by `confirm_note` and by nothing else, for one transaction. Unset\n     -- reads as null, and null is distinct from 'yes', so the guard fires.\n     and current_setting('vsv.confirming_note', true) is distinct from 'yes' then	if false then	1
+note_provenance_is_not_self_granted:raise:2	note_provenance_is_not_self_granted	raise	raise exception	raise notice	2
+note_value_matches_its_kind:guard:1	note_value_matches_its_kind	guard	if new.kind_id is null then	if false then	1
+note_value_matches_its_kind:earlyreturn:1	note_value_matches_its_kind	earlyreturn	return new;	null;	1
+note_value_matches_its_kind:guard:2	note_value_matches_its_kind	guard	if new.value_num is null and new.value_text is null then	if false then	1
+note_value_matches_its_kind:raise:1	note_value_matches_its_kind	raise	raise exception	raise notice	1
+note_value_matches_its_kind:guard:3	note_value_matches_its_kind	guard	if want = 'number' and new.value_num is null then	if false then	1
+note_value_matches_its_kind:raise:2	note_value_matches_its_kind	raise	raise exception '% is a number, and this one was given words', coalesce(label, 'that kind');	raise notice '% is a number, and this one was given words', coalesce(label, 'that kind');	1
+note_value_matches_its_kind:guard:4	note_value_matches_its_kind	guard	if want = 'text' and new.value_text is null then	if false then	1
+note_value_matches_its_kind:raise:3	note_value_matches_its_kind	raise	raise exception '% is written out, and this one was given a number',	raise notice '% is written out, and this one was given a number',	1
+note_value_matches_its_kind:guard:5	note_value_matches_its_kind	guard	if want = 'number' and new.value_text is not null then	if false then	1
+note_value_matches_its_kind:raise:4	note_value_matches_its_kind	raise	raise exception '% is a number; put the rest in the note itself', coalesce(label, 'that kind');	raise notice '% is a number; put the rest in the note itself', coalesce(label, 'that kind');	1
 plan_processing:guard:1	plan_processing	guard	if coalesce(array_length(p_vessel_ids, 1), 0) = 0 then	if false then	1
 plan_processing:raise:1	plan_processing	raise	raise exception 'no bins were named, so there is nothing to plan';	raise notice 'no bins were named, so there is nothing to plan';	1
 plan_processing:guard:2	plan_processing	guard	if p_on is null then	if false then	1
@@ -379,6 +398,10 @@ topping_check:guard:1	topping_check	guard	if tgt is null then	if false then	1
 topping_check:earlyreturn:1	topping_check	earlyreturn	return;	null;	1
 topping_check:guard:2	topping_check	guard	if (src -> f) is distinct from (tgt -> f) then	if false then	1
 topping_check:earlyreturn:2	topping_check	earlyreturn	return;	null;	2
+type_note:guard:1	type_note	guard	if n.id is null then	if false then	1
+type_note:raise:1	type_note	raise	raise exception 'there is no note with id %', p_note_id;	raise notice 'there is no note with id %', p_note_id;	1
+type_note:guard:2	type_note	guard	if k.id is null then	if false then	1
+type_note:raise:2	type_note	raise	raise exception	raise notice	2
 update_vessel:notfound:1	update_vessel	notfound	if not found then	if false then	1
 update_vessel:raise:1	update_vessel	raise	raise exception 'no vessel with id %', p_vessel_id;	raise notice 'no vessel with id %', p_vessel_id;	1
 update_vessel:head:1	update_vessel	head	if (was.has_glycol, was.setpoint_c, was.mode)\n     is distinct from\n     (now_.has_glycol, now_.setpoint_c, now_.mode)\n  then	if false then	1
