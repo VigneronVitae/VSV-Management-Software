@@ -832,6 +832,22 @@ suite should then check that the constraint is valid rather than merely present.
 no, in the sense that nothing breaks. Yes, in the sense that a vintage report is wrong by exactly
 the lots on that list and says nothing about it.
 
+**S-71. There are two ways to record a press and only one of them is the real one.**
+`0052` makes a press what it is, a process that starts, is drawn off repeatedly over some hours,
+and finishes. The winemaker's words: "I wanted to start a press but I can't know how many liters
+until after I've pressed", and "you might update the liters multiple times, or after different
+pressures". The one-shot `press` from `0034` and `0045` is still there and still works, because
+replacing it on the morning of a real press is not a thing to do to somebody. **So the same event
+can be recorded two ways and they produce different lineage depth**: the one-shot makes each cut a
+direct child of the picks, and the process makes a load between them, which is truer and is one
+more generation for anything that walks the graph. Nothing reconciles them, and a season with both
+in it is a season where "what is this made of" has two shapes of answer. *Resolves when:* `press`
+is reimplemented as `start_press` plus its cuts plus `finish_press` in one transaction, so that the
+one-shot is literally the process done all at once and there is one code path under both. The
+assertions for `0045` should then pass unchanged except for the extra generation, and that
+difference is the thing to look at carefully. *Load-bearing:* yes, quietly, from the first press
+recorded the old way after this ships. The longer both exist the more the reconciliation costs.
+
 ## Discharged
 **S-52. A press recorded no cuts.** *Discharged by `0045`.*
 The entry said that pressing free run and hard press separately recorded shares proportional to

@@ -7,10 +7,12 @@ import type {
   BinToReturn,
   Block,
   CodePayload,
+  CutDrawn,
   DayEntry,
   DayNote,
   EventRow,
   HistoryRow,
+  LevelDrawn,
   Location,
   LotAddition,
   LotWithoutVintage,
@@ -20,7 +22,11 @@ import type {
   PastWeighing,
   Pick,
   PlantingDetail,
+  PressDraw,
+  PressFinished,
+  PressInProgress,
   PressResult,
+  PressStarted,
   ShoppingItem,
   SupplyCount,
   SupplyForAddition,
@@ -913,6 +919,112 @@ export async function openPicks(): Promise<Pick[]> {
     .order("created_at", { ascending: false });
   if (error) throw new KernelError(error);
   return (data ?? []) as Pick[];
+}
+
+// --- a press as a process ---------------------------------------------------
+
+// Three calls where there used to be one, because a press takes hours and
+// nobody knows the litres before they have pressed. See migration 0052.
+
+export async function pressesInProgress(): Promise<PressInProgress[]> {
+  const { data, error } = await kernel()
+    .from("press_in_progress")
+    .select(
+      "node_id,name,started_at,press_vessel_id,press_name,lbs_in,cuts,litres_so_far",
+    )
+    .order("started_at");
+  if (error) throw new KernelError(error);
+  return (data ?? []) as PressInProgress[];
+}
+
+// Every draw, or every draw off one press. Newest is not assumed: the caller
+// orders it, because the log layout wants newest first and a report wants the
+// morning in the order it happened.
+export async function pressDraws(loadId?: Uuid): Promise<PressDraw[]> {
+  let q = kernel()
+    .from("press_draw")
+    .select(
+      "event_id,load_id,cut_id,cut_name,cut_label,at,volume_l,vessel_id,vessel_name,note,by_name,superseded",
+    );
+  if (loadId) q = q.eq("load_id", loadId);
+  const { data, error } = await q.order("at");
+  if (error) throw new KernelError(error);
+  return (data ?? []) as PressDraw[];
+}
+
+export async function startPress(args: {
+  sourceIds: Uuid[];
+  pressVesselId: Uuid;
+  node?: Record<string, unknown>;
+  detail?: Record<string, unknown>;
+}): Promise<PressStarted> {
+  const { data, error } = await kernel().rpc("start_press", {
+    p_source_ids: args.sourceIds,
+    p_press_vessel_id: args.pressVesselId,
+    p_node: args.node ?? {},
+    p_detail: args.detail ?? {},
+  });
+  if (error) throw new KernelError(error);
+  return data as PressStarted;
+}
+
+// Repeatable, deliberately. Drawing the same cut into the same vessel again is
+// that cut getting bigger, which is what "update the liters multiple times"
+// means.
+export async function drawCut(args: {
+  loadId: Uuid;
+  vesselId: Uuid;
+  volumeL: number;
+  cutId?: Uuid | null;
+  name?: string | null;
+  note?: string | null;
+}): Promise<CutDrawn> {
+  const { data, error } = await kernel().rpc("draw_cut", {
+    p_load_id: args.loadId,
+    p_vessel_id: args.vesselId,
+    p_volume_l: args.volumeL,
+    p_cut_id: args.cutId ?? null,
+    p_name: args.name ?? null,
+    p_note: args.note ?? null,
+  });
+  if (error) throw new KernelError(error);
+  return data as CutDrawn;
+}
+
+// The other way of working. `drawCut` asks what came off since last time, which
+// is subtraction in somebody's head against a number they last saw an hour ago.
+// This asks what the receiving tank reads now, which is one number read off a
+// gauge in front of them. The subtraction happens in the kernel, because two
+// clients doing it slightly differently would disagree about how much wine
+// exists.
+export async function drawToLevel(args: {
+  loadId: Uuid;
+  vesselId: Uuid;
+  levelL: number;
+  cutId?: Uuid | null;
+  note?: string | null;
+}): Promise<LevelDrawn> {
+  const { data, error } = await kernel().rpc("draw_to_level", {
+    p_load_id: args.loadId,
+    p_vessel_id: args.vesselId,
+    p_level_l: args.levelL,
+    p_cut_id: args.cutId ?? null,
+    p_note: args.note ?? null,
+  });
+  if (error) throw new KernelError(error);
+  return data as LevelDrawn;
+}
+
+export async function finishPress(
+  loadId: Uuid,
+  detail?: Record<string, unknown>,
+): Promise<PressFinished> {
+  const { data, error } = await kernel().rpc("finish_press", {
+    p_load_id: loadId,
+    p_detail: detail ?? {},
+  });
+  if (error) throw new KernelError(error);
+  return data as PressFinished;
 }
 
 // --- additions -------------------------------------------------------------

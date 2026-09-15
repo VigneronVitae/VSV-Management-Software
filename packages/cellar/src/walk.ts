@@ -31,10 +31,12 @@ import {
   type DayNote,
   dayLog,
   dayNotes,
+  drawCut,
+  drawToLevel,
   exportCellar,
   facilityParty,
   fillVessel,
-  type LotAddition,
+  finishPress,
   type LotWithoutVintage,
   locations,
   lotAdditions,
@@ -50,6 +52,7 @@ import {
   type Party,
   type PastWeighing,
   type PlantingDetail,
+  type PressInProgress,
   paperRecordOperations,
   paperRecords,
   parties,
@@ -57,7 +60,8 @@ import {
   pickById,
   pickWeighings,
   plantings,
-  press,
+  pressDraws,
+  pressesInProgress,
   rackPlan,
   rackTransfer,
   removeDayNote,
@@ -79,6 +83,7 @@ import {
   signOut,
   signUp,
   slug,
+  startPress,
   suppliesBelowLevel,
   suppliesForAddition,
   suppliesOnHand,
@@ -129,6 +134,7 @@ import {
   samePlace,
   saveDraft,
 } from "./places.ts";
+import { pref, prefSet, setPref, setPrefSet } from "./prefs.ts";
 import { describeEmpty, describeRefusal, mayEnter } from "./refusal.ts";
 import { codeCapture } from "./scan.ts";
 import { activeSkin, applySkin, skins } from "./skins.ts";
@@ -145,6 +151,8 @@ import {
   rows,
   screen,
   summaryRow,
+  type Variant,
+  variantSwitch,
 } from "./ui.ts";
 
 // The inventory walk. Its acceptance test is a stranger's first run: empty
@@ -700,7 +708,7 @@ function menu(items: MenuItem[]): HTMLElement {
 }
 
 async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> {
-  const [places, kit, unweighed, owedBins, owedPaper, buying, silent] =
+  const [places, kit, unweighed, owedBins, owedPaper, buying, silent, pressing] =
     await Promise.all([
       locations(),
       vessels(),
@@ -709,6 +717,7 @@ async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> 
       toPropagate(),
       shoppingList(),
       lotsWithoutVintage(),
+      pressesInProgress(),
     ]);
   const filled = kit.filter((v) => !v.is_empty).length;
   // On the home screen on purpose. T1-4 allows a bin to exist with no weight,
@@ -758,7 +767,22 @@ async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> 
       },
       {
         name: "Press",
-        note: "Fruit in, juice out. Where the lot gets the name it keeps.",
+        note:
+          pressing.length > 0
+            ? "A press is running. Record the litres as they come off."
+            : "Fruit in, juice out. Where the lot gets the name it keeps.",
+        // The badge is the whole of "pop off to other vessels and pop back in":
+        // a press is deliberately unfinished for hours, and it is the one thing
+        // on this screen somebody has to be able to find without remembering
+        // where they left it.
+        ...(pressing.length > 0
+          ? {
+              badge:
+                pressing.length === 1
+                  ? `${Number(pressing[0]?.litres_so_far ?? 0).toLocaleString()} L so far`
+                  : `${pressing.length} running`,
+            }
+          : {}),
         go: () => go({ at: "press" }),
       },
       {
@@ -961,9 +985,12 @@ function installBlock(): HTMLElement {
 //
 // All of it client side and none of it in the URL. A sort order is a way of
 // looking at a list rather than a place, so it does not belong in a Place: a
-// link somebody sends should open the vessels, not somebody else's filter. The
-// choices do survive the screen, in the same sticky store the forms use, because
-// somebody who works in barrels wants barrels every time.
+// link somebody sends should open the vessels, not somebody else's filter.
+//
+// The choices persist per device in `prefs.ts`. They shipped against `sticky.ts`
+// first, which is in memory and pin-gated, so every control worked and every
+// choice was thrown away on reload with nothing to show for it. See prefs.ts for
+// why there are three stores now and what each is for.
 type VesselOrder = "name" | "fullest" | "emptiest" | "type" | "recent";
 
 function vesselListScreen(kit: VesselState[]): HTMLElement {
@@ -974,12 +1001,10 @@ function vesselListScreen(kit: VesselState[]): HTMLElement {
   // so a type nobody owns one of does not appear as a filter that empties the
   // list.
   const types = [...new Set(kit.map((v) => v.type))].sort();
-  const excluded = new Set<string>(
-    (stickyValue("vessel_filter_out") || "").split("|").filter(Boolean),
-  );
-  let order: VesselOrder = (stickyValue("vessel_order") as VesselOrder) || "name";
-  let onlyFull = stickyValue("vessel_only") === "full";
-  let onlyEmpty = stickyValue("vessel_only") === "empty";
+  const excluded = prefSet("vessel_filter_out");
+  let order: VesselOrder = (pref("vessel_order") as VesselOrder) || "name";
+  let onlyFull = pref("vessel_only") === "full";
+  let onlyEmpty = pref("vessel_only") === "empty";
 
   function shown(): VesselState[] {
     let out = kit.filter((v) => !excluded.has(v.type));
@@ -1036,7 +1061,7 @@ function vesselListScreen(kit: VesselState[]): HTMLElement {
   sort.value = order;
   on(sort, "change", () => {
     order = sort.value as VesselOrder;
-    remember("vessel_order", order);
+    setPref("vessel_order", order);
     draw();
   });
 
@@ -1050,7 +1075,7 @@ function vesselListScreen(kit: VesselState[]): HTMLElement {
   on(status, "change", () => {
     onlyFull = status.value === "full";
     onlyEmpty = status.value === "empty";
-    remember("vessel_only", status.value);
+    setPref("vessel_only", status.value);
     draw();
   });
 
@@ -1061,7 +1086,7 @@ function vesselListScreen(kit: VesselState[]): HTMLElement {
     on(box.input, "change", () => {
       if (box.input.checked) excluded.delete(t);
       else excluded.add(t);
-      remember("vessel_filter_out", [...excluded].join("|"));
+      setPrefSet("vessel_filter_out", excluded);
       draw();
     });
     return box.root;
@@ -4805,289 +4830,797 @@ function localStamp(iso: string): string {
 
 // --- press -----------------------------------------------------------------
 
-// Build order 3, and the screen where a lot gets the identity it keeps. The
-// kernel decides what stage the juice lands at, which is why nothing here asks:
-// fruit in bins presses to a ferment, a ferment presses off skins to maturation,
-// and that is winery practice rather than a preference.
+// --- a press, from starting it to finishing it -----------------------------
+
+// --- a press, from starting it to finishing it -----------------------------
+
+// Build order 3, and the screen the winemaker rewrote twice from the crush pad.
+// First: "pressing needs to be a process instead of an entry at the end. Like I
+// wanted to start a press but I can't know how many liters until after I've
+// pressed." Then, having used it: "I want a different pressing UI. Maybe try a
+// few different ones I can test out."
+//
+// So there are three moments, hours apart. Start, which empties the bins and
+// puts the fruit in the press. Draw, as many times as it takes, because "you
+// might update the liters multiple times, or after different pressures". Finish,
+// which is when the yield exists.
+//
+// **And there are three layouts, because nobody here can tell which one is
+// right.** A screen used with wet hands and a hose in the other hand is not a
+// screen anybody designs correctly at a desk. The kernel calls, the refusals and
+// the messages are shared: what varies is the arrangement, which is the only
+// part in question. Whichever he keeps is the finding, and the other two go.
 function pressScreen(): HTMLElement {
   const body = el("div", {}, empty("Loading."));
-  const message = el("div", {});
   const view = screen(
     "Press",
     lede(
-      "Which fruit went in and where the juice went. The weight comes off the " +
-        "pick, so what is left in the bins is what is left.",
+      "Start a press when the fruit goes in. Come back and record the litres as " +
+        "they come off, as many times as you like. Finish it when it is done.",
     ),
     body,
   );
 
-  void (async () => {
-    try {
-      const [picks, kit, waiting] = await Promise.all([
-        openPicks(),
-        vessels(),
-        unweighedBins(),
-      ]);
-      const ready = picks.filter((p) => p.quantity !== null);
-      const unweighedBy = new Map<string, number>();
-      for (const b of waiting) {
-        unweighedBy.set(b.node_id, (unweighedBy.get(b.node_id) ?? 0) + 1);
-      }
+  async function load(): Promise<void> {
+    const [running, picks, kit, cuts, vesselTypes, draws] = await Promise.all([
+      pressesInProgress(),
+      openPicks(),
+      vessels(),
+      terms("press_cut"),
+      terms("vessel_type"),
+      pressDraws(),
+    ]);
+    const pressTerm = vesselTypes.find((t) => t.value === "press");
 
-      if (ready.length === 0) {
-        body.replaceChildren(
-          picks.length === 0
-            ? empty("There is no fruit in bins to press.")
-            : banner(
-                "Every open pick is still waiting for a weight. Pressing is the " +
-                  "last moment anybody can weigh the fruit, so weigh it first.",
-                "note",
-              ),
-          ...(picks.length === 0
-            ? []
-            : [button("Weigh bins", () => go({ at: "scale" }), "secondary")]),
-          button("Back", () => goBack(), "quiet"),
+    // --- the one copy of everything that writes --------------------------
+    //
+    // Shared across the layouts on purpose. Three arrangements of the same
+    // actions is a comparison; three arrangements that each refuse differently
+    // is three bugs.
+
+    async function recordDraw(
+      p: PressInProgress,
+      vesselId: string,
+      litres: string,
+      cutId: string,
+      note: string,
+      said: HTMLElement,
+    ): Promise<boolean> {
+      if (!litres) {
+        said.replaceChildren(banner("Say how many litres.", "error"));
+        return false;
+      }
+      try {
+        const out = await drawCut({
+          loadId: p.node_id,
+          vesselId,
+          volumeL: Number(litres),
+          cutId: cutId || null,
+          note: note || null,
+        });
+        said.replaceChildren(
+          banner(
+            `${out.volume_l} L of ${out.cut}. That cut is now ${out.cut_total} L, ` +
+              `and this press has given ${out.load_total} L.`,
+            "good",
+          ),
+          // Said, not refused. Somebody who has just filled a tank past its
+          // capacity has a real problem, and refusing the number loses it.
+          ...(out.over_capacity
+            ? [
+                banner(
+                  `That vessel now holds ${out.in_vessel} L, which is more than its capacity. ` +
+                    "Recorded anyway, because the wine is really in there.",
+                  "note",
+                ),
+              ]
+            : []),
         );
-        return;
+        await load();
+        return true;
+      } catch (error) {
+        said.replaceChildren(fail(error));
+        return false;
       }
+    }
 
-      const source = el("select", { class: "input" });
-      source.replaceChildren(
-        ...ready.map((p) =>
-          el("option", {
-            value: p.id,
-            text: `${p.name} (${Number(p.quantity).toLocaleString()} lbs)`,
+    async function recordFinish(
+      p: PressInProgress,
+      detail: Record<string, unknown>,
+      said: HTMLElement,
+    ): Promise<void> {
+      try {
+        const out = await finishPress(p.node_id, detail);
+        said.replaceChildren(
+          banner(
+            `${Number(out.litres_out).toLocaleString()} L off ` +
+              `${Number(out.lbs_in).toLocaleString()} lbs in ${out.cuts} cut` +
+              `${out.cuts === 1 ? "" : "s"}` +
+              (out.yield_l_per_ton === null
+                ? ". Nothing was weighed, so there is no yield."
+                : `, which is ${out.yield_l_per_ton} L per ton.`),
+            "good",
+          ),
+        );
+        await load();
+      } catch (error) {
+        said.replaceChildren(fail(error));
+      }
+    }
+
+    // --- starting one, the same in every layout ---------------------------
+
+    function startBlock(): HTMLElement {
+      const presses = kit.filter((v) => v.type === "Press" && v.is_empty);
+      const sourceBoxes = picks.map((p) => ({
+        pick: p,
+        box: checkbox(
+          p.quantity === null
+            ? `${p.name} (not weighed yet)`
+            : `${p.name} (${Number(p.quantity).toLocaleString()} lbs)`,
+          false,
+        ),
+      }));
+
+      const whichPress = el("select", { class: "input" });
+      whichPress.replaceChildren(
+        ...presses.map((v) => el("option", { value: v.id, text: v.name })),
+      );
+      const said = el("div", {});
+
+      // A picker with nothing in it and a note telling somebody to go and set
+      // something up first is a dead end, and this one is on the path to the
+      // press itself. "I don't know how to make a press and so the selection is
+      // blank." So the press gets made here, in one field.
+      const pressName = field({
+        label: "Name this press",
+        value: presses.length === 0 ? "The press" : "",
+        placeholder: "The press",
+        hint: "Whatever you call it. It can be renamed later like any vessel.",
+      });
+
+      return el(
+        "div",
+        { class: "rows" },
+        el("h2", { class: "section-head", text: "Start a press" }),
+        presses.length === 0
+          ? banner(
+              "No empty press is registered yet. Add one below: it is how the " +
+                "fruit has somewhere to be for the hours between the bins and the tank.",
+              "note",
+            )
+          : el("span", {}),
+        picks.length === 0
+          ? empty("No open pick to press.")
+          : el("div", {}, ...sourceBoxes.map((b) => b.box.root)),
+        el(
+          "div",
+          { class: "field" },
+          el("span", { class: "field-label", text: "Into which press" }),
+          whichPress,
+          el("span", {
+            class: "field-hint",
+            text: "The bins empty as soon as you start, so they are free for the next pick.",
           }),
         ),
+        button("Start pressing", async () => {
+          const chosen = sourceBoxes
+            .filter((b) => b.box.input.checked)
+            .map((b) => b.pick.id);
+          if (chosen.length === 0) {
+            said.replaceChildren(banner("Tick what is going in.", "error"));
+            return;
+          }
+          if (!whichPress.value) {
+            said.replaceChildren(banner("Say which press it is going into.", "error"));
+            return;
+          }
+          try {
+            const out = await startPress({
+              sourceIds: chosen,
+              pressVesselId: whichPress.value,
+            });
+            said.replaceChildren(
+              banner(
+                `Pressing ${Number(out.lbs_in).toLocaleString()} lbs. ` +
+                  `${out.bins_emptied} bin${out.bins_emptied === 1 ? "" : "s"} are free again. ` +
+                  "Come back and record the litres as they come off.",
+                "good",
+              ),
+              // T1-4's cost, said out loud rather than refused.
+              ...(out.unweighed_left > 0
+                ? [
+                    banner(
+                      `${out.unweighed_left} bin${out.unweighed_left === 1 ? " that" : "s that"} never reached a scale went in, ` +
+                        "so the yield will be wrong by whatever they held.",
+                      "note",
+                    ),
+                  ]
+                : []),
+            );
+            await load();
+          } catch (error) {
+            said.replaceChildren(fail(error));
+          }
+        }),
+        el(
+          "details",
+          { class: "more" },
+          el("summary", {
+            text: presses.length === 0 ? "Add a press" : "Add another press",
+          }),
+          rows(
+            pressName.root,
+            button(
+              "Add it",
+              async () => {
+                if (!pressTerm) {
+                  said.replaceChildren(
+                    banner(
+                      "There is no Press vessel type in this cellar's vocabulary. " +
+                        "An administrator can add one under Vessel types.",
+                      "error",
+                    ),
+                  );
+                  return;
+                }
+                if (!pressName.value().trim()) {
+                  said.replaceChildren(banner("Give it a name.", "error"));
+                  return;
+                }
+                try {
+                  await addVessel({
+                    id: newId(),
+                    type_id: pressTerm.id,
+                    name: pressName.value().trim(),
+                  });
+                  await load();
+                } catch (error) {
+                  said.replaceChildren(fail(error));
+                }
+              },
+              "secondary",
+            ),
+          ),
+        ),
+        said,
       );
+    }
 
-      const weight = field({
-        label: "Fruit pressed, lbs",
-        type: "number",
-        hint: "Blank presses all of it. A smaller number leaves the rest in the bins.",
-      });
-      const warning = el("div", {});
+    // --- the pieces each layout arranges differently ----------------------
 
-      function syncWarning(): void {
-        const left = unweighedBy.get(source.value) ?? 0;
-        warning.replaceChildren(
-          left > 0
-            ? banner(
-                `${left} bin${left === 1 ? "" : "s"} on this pick were never weighed. ` +
-                  "Pressing goes ahead and those weights are gone afterwards.",
-                "note",
-              )
-            : el("span", {}),
-        );
-      }
-      syncWarning();
-      on(source, "change", syncWarning);
-
-      const empties = kit.filter((v) => v.is_empty);
-      const cutKinds = await terms("press_cut");
-
-      // One row per cut, added as you pull them. The first row is the whole
-      // press when nobody is separating fractions, which is what this screen
-      // did before 0045 and is still the common case.
-      type CutRow = {
-        root: HTMLElement;
-        cut: () => string;
-        vessel: () => string;
-        litres: () => string;
-      };
-      const cutRows: CutRow[] = [];
-      const cutHolder = el("div", { class: "rows" });
-
-      function addCutRow(): void {
-        const which = el("select", { class: "input" });
-        which.replaceChildren(
-          el("option", { value: "", text: "The whole press" }),
-          ...cutKinds.map((t) => el("option", { value: t.id, text: t.label })),
-        );
-        const vessel = el("select", { class: "input" });
-        vessel.replaceChildren(
-          ...empties.map((v) =>
+    function destinationSelect(p: PressInProgress): HTMLSelectElement {
+      const sel = el("select", { class: "input" });
+      sel.replaceChildren(
+        ...kit
+          .filter((v) => v.id !== p.press_vessel_id)
+          .map((v) =>
             el("option", {
               value: v.id,
-              text: v.capacity_l
-                ? `${v.name} (${v.type}, ${v.capacity_l} L)`
-                : `${v.name} (${v.type})`,
+              text: v.is_empty
+                ? `${v.name} (${v.type}, empty)`
+                : `${v.name} (${v.type}, holding ${v.lot_name ?? "wine"})`,
             }),
           ),
+      );
+      return sel;
+    }
+
+    function finishFields(): {
+      nodes: HTMLElement[];
+      detail: () => Record<string, unknown>;
+    } {
+      const program = field({
+        label: "Program",
+        placeholder: "W2",
+        hint: "Which program the press was run on.",
+      });
+      const minutes = field({
+        label: "Minutes",
+        type: "number",
+        placeholder: "95",
+        hint: "How long it ran, start to finish.",
+      });
+      const note = field({ label: "Anything else", placeholder: "" });
+      return {
+        nodes: [program.root, minutes.root, note.root],
+        detail: () => ({
+          ...(program.value() ? { program: program.value() } : {}),
+          ...(minutes.value() ? { minutes: Number(minutes.value()) } : {}),
+          ...(note.value() ? { note: note.value() } : {}),
+        }),
+      };
+    }
+
+    // --- way 1: say what came off ----------------------------------------
+    //
+    // Everything on one screen in reading order, and every entry names its own
+    // cut and its own destination. What it is good at is being complete and
+    // never assuming; what it is bad at is asking three questions when the
+    // answer to two of them has not changed since the last time.
+
+    function formLayout(): Node {
+      function runningBlock(p: PressInProgress): HTMLElement {
+        const destination = destinationSelect(p);
+        const cut = el("select", { class: "input" });
+        cut.replaceChildren(
+          el("option", { value: "", text: "No particular cut" }),
+          ...cuts.map((c) => el("option", { value: c.id, text: c.label })),
         );
         const litres = field({
-          label: "Litres",
+          label: "Litres off",
           type: "number",
-          placeholder: "1200",
-          hint: "What actually went into the vessel.",
+          placeholder: "400",
+          hint: "What has come off since you last recorded. It adds up.",
         });
-        const root = el(
+        const note = field({ label: "Note", placeholder: "end of free run" });
+        const said = el("div", {});
+        const fin = finishFields();
+
+        return el(
           "div",
           { class: "rows" },
-          el(
-            "div",
-            { class: "field" },
-            el("span", { class: "field-label", text: "Cut" }),
-            which,
-          ),
-          el(
-            "div",
-            { class: "field" },
-            el("span", { class: "field-label", text: "Into" }),
-            vessel,
-          ),
-          litres.root,
-        );
-        cutRows.push({
-          root,
-          cut: () => which.value,
-          vessel: () => vessel.value,
-          litres: () => litres.value(),
-        });
-        cutHolder.append(root);
-      }
-      addCutRow();
-
-      // What the processing log asks for beyond the numbers. All optional: a
-      // press nobody timed is still a press, and a form that refused one would
-      // be asking for a lie.
-      // Picked rather than typed, so one run can be compared against another and
-      // "Champagne 1.2 bar" typed three ways is not three programs. Open,
-      // because the programs belong to this press and nobody else's.
-      const program = termPicker("press_program", {
-        label: "Press program",
-        stickyKey: "press_program",
-        allowEmpty: true,
-      });
-      const wholeCluster = field({
-        label: "Whole cluster, percent",
-        type: "number",
-        hint: "Blank if nobody counted. 100 is whole cluster, 0 is fully destemmed.",
-      });
-      const skinStart = field({
-        label: "Skin contact started",
-        type: "datetime-local",
-      });
-      const skinEnd = field({ label: "Skin contact ended", type: "datetime-local" });
-      // The other duration. How long the skins were on and how long the press
-      // ran are two different facts, and the form asks for both.
-      const ranFrom = field({ label: "Press started", type: "datetime-local" });
-      const ranTo = field({ label: "Press finished", type: "datetime-local" });
-      const name = field({
-        label: "Name the lot",
-        hint: "Blank names it after the pick.",
-      });
-
-      // A picker loads its own rows, and an unloaded one is an empty select
-      // that looks like a winery with no programs rather than one nobody asked.
-      await program.reload();
-
-      body.replaceChildren(
-        rows(
-          el("h2", { class: "section-head", text: "The fruit" }),
-          el(
-            "div",
-            { class: "field" },
-            el("span", { class: "field-label", text: "Pick" }),
-            source,
-          ),
-          warning,
-          weight.root,
-          el("h2", { class: "section-head", text: "The juice" }),
-          empties.length === 0
-            ? banner(
-                "Every vessel is full. Rack one out before pressing into it.",
-                "note",
-              )
-            : cutHolder,
-          empties.length === 0
-            ? el("span", {})
-            : button(
-                "Another cut",
-                () => {
-                  addCutRow();
-                },
-                "quiet",
+          el("h2", { class: "section-head", text: p.name }),
+          rows(
+            summaryRow("In", p.press_name ?? "a press that is no longer there"),
+            summaryRow("Started", new Date(p.started_at).toLocaleTimeString()),
+            summaryRow(
+              "Fruit in",
+              p.lbs_in > 0
+                ? `${Number(p.lbs_in).toLocaleString()} lbs`
+                : "nothing weighed, so there will be no yield",
+            ),
+            summaryRow(
+              "Off so far",
+              p.cuts === 0
+                ? "nothing yet"
+                : `${Number(p.litres_so_far).toLocaleString()} L in ${p.cuts} cut${p.cuts === 1 ? "" : "s"}`,
+            ),
+            el("h3", { class: "section-head", text: "Record some litres" }),
+            el(
+              "div",
+              { class: "field" },
+              el("span", { class: "field-label", text: "Into" }),
+              destination,
+            ),
+            el(
+              "div",
+              { class: "field" },
+              el("span", { class: "field-label", text: "Cut" }),
+              cut,
+              el("span", {
+                class: "field-hint",
+                text:
+                  "The same cut into the same vessel again adds to it rather than " +
+                  "starting a second lot.",
+              }),
+            ),
+            litres.root,
+            note.root,
+            button("Record it", async () => {
+              const ok = await recordDraw(
+                p,
+                destination.value,
+                litres.value(),
+                cut.value,
+                note.value(),
+                said,
+              );
+              if (ok) {
+                litres.input.value = "";
+                note.input.value = "";
+              }
+            }),
+            said,
+            el(
+              "details",
+              { class: "more" },
+              el("summary", { text: "Finish this press" }),
+              rows(
+                el("p", {
+                  class: "field-hint",
+                  text:
+                    "Finishing sets the yield and closes the load. Record the last " +
+                    "of the litres first.",
+                }),
+                ...fin.nodes,
+                button("Finish the press", () => recordFinish(p, fin.detail(), said)),
               ),
-          name.root,
+            ),
+          ),
+        );
+      }
+
+      return el("div", {}, ...running.map(runningBlock), startBlock());
+    }
+
+    // --- way 2: read the tank, not the press ------------------------------
+    //
+    // "Maybe UX, even." The first three were arrangements of one interaction.
+    // This is a different interaction: you say what the receiving tank reads
+    // now, and the kernel works out what came off. One number, read off a gauge
+    // in front of you, no arithmetic and nothing to remember from an hour ago.
+    //
+    // The cut is not asked for a vessel that already holds one, because a tank
+    // holding free run receiving more juice is receiving more free run. That is
+    // one fewer decision per entry with exactly one right answer.
+
+    function levelLayout(): Node {
+      function runningBlock(p: PressInProgress): HTMLElement {
+        const said = el("div", {});
+        const rows_: HTMLElement[] = [];
+
+        for (const v of kit.filter((x) => x.id !== p.press_vessel_id)) {
+          const holdsThisPress = draws.some(
+            (d) => d.load_id === p.node_id && d.vessel_id === v.id,
+          );
+          // Everything is offered, but what is already taking juice from this
+          // press comes first and is open. A press fills two or three vessels,
+          // not thirty, and scrolling past twenty-seven empty barrels to find
+          // the one you are standing at is the thing this layout exists to stop.
+          const level = el("input", {
+            class: "input big-number",
+            type: "number",
+            inputmode: "decimal",
+            placeholder: String(Math.round(Number(v.current_volume_l ?? 0))),
+          });
+          const cut = el("select", { class: "input" });
+          cut.replaceChildren(
+            el("option", { value: "", text: "Cut, if it is a new one" }),
+            ...cuts.map((c) => el("option", { value: c.id, text: c.label })),
+          );
+
+          const row = el(
+            "details",
+            { class: "more", ...(holdsThisPress ? { open: "true" } : {}) },
+            el("summary", {
+              text: `${v.name}: ${Number(v.current_volume_l ?? 0).toLocaleString()} L`,
+            }),
+            rows(
+              el("p", {
+                class: "field-hint",
+                text: holdsThisPress
+                  ? "Already taking juice from this press. Read the gauge and type what it says now."
+                  : "Empty of this press so far. Type what it reads once juice is going in.",
+              }),
+              level,
+              ...(holdsThisPress ? [] : [cut]),
+              button(
+                `Set ${v.name} to this`,
+                async () => {
+                  if (!level.value) {
+                    said.replaceChildren(banner("Type what the gauge reads.", "error"));
+                    return;
+                  }
+                  try {
+                    const out = await drawToLevel({
+                      loadId: p.node_id,
+                      vesselId: v.id,
+                      levelL: Number(level.value),
+                      cutId: cut.value || null,
+                    });
+                    said.replaceChildren(
+                      banner(
+                        `${v.name} was at ${out.was_at} L and is now at ${out.now_at} L, ` +
+                          `so ${out.volume_l} L of ${out.cut} came off. ` +
+                          `This press has given ${out.load_total} L.`,
+                        "good",
+                      ),
+                    );
+                    level.value = "";
+                    await load();
+                  } catch (error) {
+                    said.replaceChildren(fail(error));
+                  }
+                },
+                holdsThisPress ? "primary" : "secondary",
+              ),
+            ),
+          );
+          if (holdsThisPress) rows_.unshift(row);
+          else rows_.push(row);
+        }
+
+        const fin = finishFields();
+        return el(
+          "div",
+          { class: "rows" },
+          el("h2", { class: "section-head", text: p.name }),
+          el("p", {
+            class: "lede",
+            text:
+              `${Number(p.litres_so_far).toLocaleString()} L off so far. ` +
+              "Say what a tank reads and the difference is worked out for you.",
+          }),
+          ...rows_,
+          said,
           el(
             "details",
             { class: "more" },
-            el("summary", { text: "How it was pressed" }),
+            el("summary", { text: "Finish this press" }),
             rows(
-              program.root,
-              wholeCluster.root,
-              skinStart.root,
-              skinEnd.root,
-              ranFrom.root,
-              ranTo.root,
+              ...fin.nodes,
+              button("Finish the press", () => recordFinish(p, fin.detail(), said)),
             ),
           ),
-          button("Record the press", async () => {
-            if (cutRows.some((row) => !row.litres())) {
-              message.replaceChildren(banner("How many litres came out?", "error"));
-              return;
-            }
-            if (cutRows.some((row) => !row.vessel())) {
-              message.replaceChildren(banner("Pick a vessel for the juice.", "error"));
-              return;
-            }
-            try {
-              // A datetime-local field gives a local wall clock with no zone.
-              // Handing that to Postgres as text would have it read as UTC,
-              // which puts a four hour skin contact seven hours out in Oregon.
-              const asInstant = (raw: string) =>
-                raw ? new Date(raw).toISOString() : null;
+        );
+      }
 
-              const out = await press({
-                sources: [
-                  {
-                    node_id: source.value,
-                    weight_lbs: weight.value() ? Number(weight.value()) : null,
-                  },
-                ],
-                cuts: cutRows.map((row) => ({
-                  ...(row.cut() ? { cut_id: row.cut() } : {}),
-                  destinations: [
-                    { vessel_id: row.vessel(), volume_l: Number(row.litres()) },
-                  ],
-                })),
-                ...(name.value() ? { node: { name: name.value() } } : {}),
-                detail: Object.fromEntries(
-                  Object.entries({
-                    program_id: program.value() || null,
-                    whole_cluster_pct: wholeCluster.value()
-                      ? Number(wholeCluster.value())
-                      : null,
-                    skin_contact_start: asInstant(skinStart.value()),
-                    skin_contact_end: asInstant(skinEnd.value()),
-                    pressed_from: asInstant(ranFrom.value()),
-                    pressed_to: asInstant(ranTo.value()),
-                  }).filter(([, v]) => v !== null),
-                ),
-              });
-              const first = cutRows[0]?.vessel() ?? "";
-              showResult(
-                await resultScreen(
-                  first,
-                  out.node_id,
-                  0,
-                  `Pressed. ${out.lbs_in.toLocaleString()} lbs in, ` +
-                    `${out.litres_out.toLocaleString()} L out, ` +
-                    `${out.yield_l_per_ton === null ? "yield unknown" : `${out.yield_l_per_ton} L per ton`}` +
-                    `${out.cuts.length > 1 ? ` across ${out.cuts.length} cuts` : ""}. ` +
-                    `${out.bins_emptied} bin${out.bins_emptied === 1 ? "" : "s"} emptied.`,
-                ),
-                first,
-              );
-            } catch (error) {
-              message.replaceChildren(fail(error));
-            }
+      return el("div", {}, ...running.map(runningBlock), startBlock());
+    }
+
+    // --- way 3: stay in a cut ----------------------------------------------
+    //
+    // The third interaction, and the one closest to how a press actually runs.
+    // You are on free run for an hour, then you change pressure and you are on
+    // something else. So the cut is a mode you are in rather than a field you
+    // fill in: set it once, and every entry after that is one number and one
+    // tap. The destination is remembered the same way.
+    //
+    // What it costs is that the mode is invisible when you come back to the
+    // phone, which is why the current one is written across the top in the
+    // largest type on the screen.
+
+    function cutModeLayout(): Node {
+      if (running.length === 0) {
+        return el(
+          "div",
+          {},
+          empty("Nothing is pressing. Start one below."),
+          startBlock(),
+        );
+      }
+
+      function runningBlock(p: PressInProgress): HTMLElement {
+        const said = el("div", {});
+        const modeKey = `press_mode_cut_${p.node_id}`;
+        const whereKey = `press_mode_vessel_${p.node_id}`;
+        const currentCut = pref(modeKey);
+        let currentVessel = pref(whereKey);
+
+        const options = kit.filter((v) => v.id !== p.press_vessel_id);
+        if (!currentVessel && options[0]) currentVessel = options[0].id;
+
+        const cutName =
+          cuts.find((c) => c.id === currentCut)?.label ?? "no particular cut";
+        const vesselName =
+          options.find((v) => v.id === currentVessel)?.name ?? "nowhere";
+
+        const litres = el("input", {
+          class: "input big-number",
+          type: "number",
+          inputmode: "decimal",
+          placeholder: "0",
+        });
+
+        const cutButtons = cuts.map((c) =>
+          button(
+            c.label,
+            () => {
+              setPref(modeKey, currentCut === c.id ? "" : c.id);
+              void load();
+            },
+            c.id === currentCut ? "primary" : "quiet",
+          ),
+        );
+        for (const b of cutButtons) b.classList.add("big-toggle");
+
+        const where = el("select", { class: "input" });
+        where.replaceChildren(
+          ...options.map((v) =>
+            el("option", {
+              value: v.id,
+              text: `${v.name} (${Number(v.current_volume_l ?? 0).toLocaleString()} L)`,
+              ...(v.id === currentVessel ? { selected: "true" } : {}),
+            }),
+          ),
+        );
+        on(where, "change", () => {
+          setPref(whereKey, where.value);
+          currentVessel = where.value;
+        });
+
+        const fin = finishFields();
+        return el(
+          "div",
+          { class: "rows big-press" },
+          // The mode, in the largest type on the screen, because a mode you
+          // cannot see is a mode you record the wrong thing into.
+          el("p", { class: "big-mode", text: cutName }),
+          el("p", {
+            class: "lede",
+            text: `into ${vesselName}. ${Number(p.litres_so_far).toLocaleString()} L off so far.`,
           }),
-          button("Back", () => goBack(), "quiet"),
-          message,
-        ),
-      );
+          el("div", { class: "big-toggles" }, ...cutButtons),
+          litres,
+          button("Add these litres", async () => {
+            const ok = await recordDraw(
+              p,
+              currentVessel,
+              litres.value,
+              currentCut,
+              "",
+              said,
+            );
+            if (ok) litres.value = "";
+          }),
+          said,
+          el(
+            "details",
+            { class: "more" },
+            el("summary", { text: "Change where it is going, or finish" }),
+            rows(
+              el(
+                "div",
+                { class: "field" },
+                el("span", { class: "field-label", text: "Into" }),
+                where,
+              ),
+              ...fin.nodes,
+              button("Finish the press", () => recordFinish(p, fin.detail(), said)),
+            ),
+          ),
+        );
+      }
+
+      return el("div", {}, ...running.map(runningBlock));
+    }
+
+    // --- way 4: keep the log ----------------------------------------------
+    //
+    // The press as the record of a morning rather than as a form to fill in.
+    // Add at the top, then every draw in the order it came off. What it is good
+    // at is noticing that the second pressure gave half what the first did,
+    // which no total can ever show; what it is bad at is being short.
+
+    function logLayout(): Node {
+      function runningBlock(p: PressInProgress): HTMLElement {
+        const mine = draws
+          .filter((d) => d.load_id === p.node_id)
+          .sort((a, b) => b.at.localeCompare(a.at));
+        const destination = destinationSelect(p);
+        const cut = el("select", { class: "input" });
+        cut.replaceChildren(
+          el("option", { value: "", text: "No cut" }),
+          ...cuts.map((c) => el("option", { value: c.id, text: c.label })),
+        );
+        const litres = field({ label: "Litres", type: "number", placeholder: "400" });
+        const note = field({ label: "Note", placeholder: "" });
+        const said = el("div", {});
+        const fin = finishFields();
+
+        return el(
+          "div",
+          { class: "rows" },
+          el("h2", { class: "section-head", text: p.name }),
+          el("p", {
+            class: "lede",
+            text:
+              `${Number(p.litres_so_far).toLocaleString()} L off ` +
+              (p.lbs_in > 0
+                ? `${Number(p.lbs_in).toLocaleString()} lbs`
+                : "an unweighed load") +
+              `, started ${new Date(p.started_at).toLocaleTimeString()}.`,
+          }),
+          el(
+            "div",
+            { class: "log-add" },
+            litres.root,
+            el(
+              "div",
+              { class: "field" },
+              el("span", { class: "field-label", text: "Cut" }),
+              cut,
+            ),
+            el(
+              "div",
+              { class: "field" },
+              el("span", { class: "field-label", text: "Into" }),
+              destination,
+            ),
+            note.root,
+            button("Add to the log", async () => {
+              const ok = await recordDraw(
+                p,
+                destination.value,
+                litres.value(),
+                cut.value,
+                note.value(),
+                said,
+              );
+              if (ok) {
+                litres.input.value = "";
+                note.input.value = "";
+              }
+            }),
+          ),
+          said,
+          mine.length === 0
+            ? empty("Nothing has come off yet.")
+            : el(
+                "ul",
+                { class: "vessel-list" },
+                ...mine.map((d) =>
+                  el(
+                    "li",
+                    { class: `vessel-row${d.superseded ? " weighed" : ""}` },
+                    el("span", {
+                      class: "vessel-name",
+                      text: `${Number(d.volume_l).toLocaleString()} L ${d.cut_label ?? ""}`.trim(),
+                    }),
+                    el("span", {
+                      class: "vessel-detail",
+                      text:
+                        `${new Date(d.at).toLocaleTimeString()} into ${d.vessel_name ?? "somewhere"}` +
+                        (d.note ? `, ${d.note}` : "") +
+                        (d.superseded ? " (corrected later)" : ""),
+                    }),
+                  ),
+                ),
+              ),
+          el(
+            "details",
+            { class: "more" },
+            el("summary", { text: "Finish this press" }),
+            rows(
+              ...fin.nodes,
+              button("Finish the press", () => recordFinish(p, fin.detail(), said)),
+            ),
+          ),
+        );
+      }
+
+      return el("div", {}, ...running.map(runningBlock), startBlock());
+    }
+
+    // Four ways of working, not four arrangements of one. The winemaker asked
+    // for layouts and then corrected it to "maybe UX, even", which is the harder
+    // and better version: what differs below is what you are asked and what is
+    // worked out for you, and the one he keeps is the answer.
+    const layouts: Variant<void>[] = [
+      {
+        key: "form",
+        label: "Say what came off",
+        note: "Type the litres that have come off, and name the cut and the tank each time. Complete, and three questions per entry.",
+        render: formLayout,
+      },
+      {
+        key: "level",
+        label: "Read the tank",
+        note: "Type what the receiving tank's gauge says now. The difference is worked out for you, and the cut is inferred.",
+        render: levelLayout,
+      },
+      {
+        key: "cut",
+        label: "Stay in a cut",
+        note: "Set the cut once, like a mode, then every entry is one number and one tap. Fewest taps, and the mode is a thing to forget.",
+        render: cutModeLayout,
+      },
+      {
+        key: "log",
+        label: "Keep a log",
+        note: "Every draw in the order it came off, so a weak pressure is visible at a glance.",
+        render: logLayout,
+      },
+    ];
+    const chosen = pref("press_layout", "form");
+    const layout = layouts.find((l) => l.key === chosen) ?? layouts[0];
+
+    body.replaceChildren(
+      rows(
+        layout?.render() ?? empty("No layout."),
+        variantSwitch(layouts, layout?.key ?? "form", (key) => {
+          setPref("press_layout", key);
+          void load();
+        }),
+        button("Back", () => goBack(), "quiet"),
+      ),
+    );
+  }
+
+  void (async () => {
+    try {
+      await load();
     } catch (error) {
       body.replaceChildren(
         fail(error),

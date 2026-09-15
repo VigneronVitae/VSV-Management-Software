@@ -587,6 +587,72 @@ rule is sufficient or whether admission needs a per-round cap is unresolved, and
 answer is that it should be instrumented before it is decided: contract count against module
 count, checked on every module landing.
 
+**AR-Q8. Whether an interface is a periphery over a read and write contract.**
+*Status:* open question
+*Raised by the winemaker, 2026-09-15, from a crush pad, mid press.*
+
+Four ways of recording a press shipped that day: say what came off, read the receiving
+tank and let the kernel subtract, stay in a cut as a mode, or keep a log. His question on
+seeing them: "should the UI/UX thing just be different contracts? So that might be a thing,
+for like everything." Then, sharpening it: "some people might like text based UI/UXs, some
+people might want interactive/visual, some people audio, etc. But UI/UX can just be a
+contract for writing and reading", citing his own EpiStack and Knowledge Game.
+
+**The sharpened version is a different and much better question, and it dissolves the
+objection this entry first recorded.** The first draft of AR-Q8 argued that two of the four
+ways would not fit a contract, because staying in a cut holds mode state between entries
+and keeping a log renders history inline, and neither is a field list. That objection only
+works if a contract is a description of a form. If a contract is what may be read, what may
+be written, and what is refused, then mode state and history rendering are periphery
+concerns and the contract is untouched by either. The objection was to a weaker idea than
+the one being proposed.
+
+**The borrowed shape is specific.** Knowledge Game holds the client unprivileged: reading
+and writing cross a strict `periphery -> api -> kernel` boundary, and its falsifier is that
+a minimal independent client, built in CI from the vendored public api alone, reproduces
+every capability. EpiStack separates functions any installation must fill from contracts
+chosen by whoever holds the context. Applied here: recording a press is a function every
+winery must fill; asking for an increment or asking for a tank level is a contract this
+winery chose, and a text, visual, audio or conversational periphery is another.
+
+**It relocates a boundary this repository has already drawn, in the wrong place.**
+`skins.ts` says a skin may change presentation and nothing else, because "the screens in
+walk.ts decide what a person is asked and in what order, because that order is the
+schema's, not a matter of taste". The four ways of pressing falsify that sentence. Read the
+tank and say what came off ask different questions, in a different order, and both are
+correct records of the same event. The line is not between styling and structure. It is
+between the contract and the periphery, and `skins.ts` drew it one level too low.
+
+**Half of it is built and unnamed.** `viewer_scope` answers what the caller is rather than
+letting the client infer it. `writable_columns` answers which columns this caller may
+write, because hardcoding them was ruled R-4. `terms_for_vessel_field` answers which
+vocabulary a field may offer. `subject_resolver` answers what kinds of thing exist.
+`hideable_fields` answers what may be redacted. That habit, which CLAUDE.md enforces as
+"a client may not encode a business rule", **is** the contract. What is missing is that it
+is discovered by reading `kernel.ts` rather than declared anywhere a second periphery could
+read.
+
+**One piece of evidence that the framing fits.** Every refusal in this kernel is a sentence
+written for a person: "that bin already holds other fruit; empty it before filling it
+again", "a reading below what the vessel holds is not more wine arriving". Those were
+written for banners and they are exactly what a conversational or audio periphery needs as
+its output surface. A kernel whose refusals are sentences is a kernel that was already
+being written for more than one modality without anybody saying so.
+
+*Resolves when:* somebody attempts a second periphery and the attempt is instrumented
+rather than argued. **The falsifier is the Knowledge Game's own**: can a text-only
+periphery record a press, weigh a bin and make an addition, built from a declared contract
+alone, without its author reading `walk.ts`? If yes, the contract is real and should be
+declared and versioned. If the author has to read the screens to find out what to ask, the
+declaration is documentation and the knowledge is still in the client.
+
+*What it would cost to be wrong in each direction.* Building it now, on one module's worth
+of evidence, is the guess-dressed-as-foresight that CLAUDE.md forbids and that C-4 is the
+compost entry for. Not building it means every new modality is a rewrite of `walk.ts`, and
+`walk.ts` is five thousand lines and growing, which is the cost already being paid. The
+cheap move available today is neither: stop adding knowledge to the client that the kernel
+could answer, which is a rule this repository already has and does not yet check.
+
 **AR-Q5. Solera truncation depth.**
 *Status:* open question
 Perpetual fractional draw has no terminating lineage walk. Composition converges as a

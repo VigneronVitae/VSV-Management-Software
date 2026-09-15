@@ -139,3 +139,54 @@ export function summaryRow(label: string, value: string): HTMLElement {
 export function empty(text: string): HTMLElement {
   return el("p", { class: "empty", text });
 }
+
+// --- trying a screen more than one way -------------------------------------
+
+// The winemaker, after using the first press screen on a crush pad: "I want a
+// different pressing UI. Maybe try a few different ones I can test out or
+// something? That's probably a good idea for a lot of the modules."
+//
+// He is right, and the reason he is right is that nobody in this project can
+// tell which layout is better from here. A screen used with wet hands, a phone
+// in one pocket and a hose in the other hand is not a screen anybody designs
+// correctly at a desk. So the way to find out is to ship more than one and let
+// the person using it choose, and the choice itself is then the finding.
+//
+// Deliberately not in the URL. A layout is how one person likes to look at a
+// screen on one phone, not a place: a link somebody sends should open the press,
+// not somebody else's opinion about it. It persists in `prefs.ts`, which is the
+// store whose whole job is surviving a reload and costing nothing when it does
+// not.
+export type Variant<T> = {
+  key: string;
+  label: string;
+  // What this arrangement is for, in a few words. Shown under the switcher,
+  // because "Wide" and "Compact" tell somebody nothing about which to pick.
+  note: string;
+  render: (context: T) => Node;
+};
+
+export function variantSwitch<T>(
+  variants: Variant<T>[],
+  current: string,
+  onPick: (key: string) => void,
+): HTMLElement {
+  const chosen = variants.find((v) => v.key === current) ?? variants[0];
+  return el(
+    "div",
+    { class: "variant-switch" },
+    el("span", { class: "field-label", text: "Layout" }),
+    el(
+      "div",
+      { class: "variant-options" },
+      ...variants.map((v) =>
+        button(
+          v.label,
+          () => onPick(v.key),
+          v.key === chosen?.key ? "primary" : "quiet",
+        ),
+      ),
+    ),
+    el("span", { class: "field-hint", text: chosen?.note ?? "" }),
+  );
+}

@@ -808,3 +808,74 @@ h1 {
   content: "\2190";
   margin-right: 0.4rem;
 }
+
+/* --- trying a screen more than one way ---------------------------------- */
+
+/* The switcher sits at the foot of the screen, quiet, because it is a thing
+   somebody uses once and then forgets about. */
+.variant-switch {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--rule);
+}
+.variant-options {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.variant-options .btn {
+  flex: 1 1 6rem;
+}
+
+/* The big-button press layout. One number, three cut buttons, one action, for
+   a hand that is holding a hose. */
+.big-total {
+  font-size: 3rem;
+  line-height: 1.1;
+  font-weight: 600;
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+.big-number {
+  font-size: 2rem;
+  padding: 0.6rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.big-toggles {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.big-toggle {
+  flex: 1 1 6rem;
+  min-height: 3.2rem;
+}
+.big-press .btn-primary {
+  min-height: 3.4rem;
+  font-size: 1.1rem;
+}
+
+/* The log layout's add row, kept together so it reads as one control rather
+   than four fields that happen to be adjacent. */
+.log-add {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.8rem;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  margin-bottom: 1rem;
+}
+
+/* The mode, in the largest type on the screen, because a mode you cannot see
+   is a mode you record the wrong thing into. */
+.big-mode {
+  font-size: 2.4rem;
+  line-height: 1.1;
+  font-weight: 600;
+  margin: 0 0 0.2rem;
+}

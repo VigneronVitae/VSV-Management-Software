@@ -304,6 +304,78 @@ export type LotWithoutVintage = {
   suggested_year: string | null;
 };
 
+// --- a press in progress ---------------------------------------------------
+
+// A press somebody started and has not finished. The one thing in this system
+// that is deliberately unfinished for hours, which is why it has a list of its
+// own: "you can pop off to other vessels and stuff and pop back in".
+export type PressInProgress = {
+  node_id: Uuid;
+  name: string;
+  started_at: string;
+  press_vessel_id: Uuid | null;
+  press_name: string | null;
+  lbs_in: number;
+  cuts: number;
+  litres_so_far: number;
+};
+
+// One draw off a press, as it reads back. A press recorded in four goes over
+// three hours has a shape that its total does not show.
+export type PressDraw = {
+  event_id: Uuid;
+  load_id: Uuid;
+  cut_id: Uuid;
+  cut_name: string;
+  cut_label: string | null;
+  at: string;
+  volume_l: number;
+  vessel_id: Uuid | null;
+  vessel_name: string | null;
+  note: string | null;
+  by_name: string | null;
+  // Marked rather than dropped: a corrected number is part of what happened.
+  superseded: boolean;
+};
+
+export type PressStarted = {
+  node_id: Uuid;
+  event_id: Uuid;
+  stage: string;
+  cut_stage: string;
+  lbs_in: number;
+  bins_emptied: number;
+  unweighed_left: number;
+};
+
+export type CutDrawn = {
+  cut_id: Uuid;
+  event_id: Uuid;
+  cut: string;
+  volume_l: number;
+  cut_total: number;
+  in_vessel: number;
+  over_capacity: boolean;
+  load_total: number;
+};
+
+// What `draw_to_level` gives back: everything a draw does, plus where the
+// vessel was and where it is now, so the screen can say what it worked out
+// rather than just that it worked.
+export type LevelDrawn = CutDrawn & {
+  was_at: number;
+  now_at: number;
+};
+
+export type PressFinished = {
+  node_id: Uuid;
+  event_id: Uuid;
+  lbs_in: number;
+  litres_out: number;
+  cuts: number;
+  yield_l_per_ton: number | null;
+};
+
 // --- additions -------------------------------------------------------------
 
 // A supply flagged as going into wine. Matched on the registry value in the

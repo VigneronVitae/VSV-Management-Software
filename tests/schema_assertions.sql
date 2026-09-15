@@ -34,7 +34,7 @@
 --              supabase/migrations/0029_viewer_scope.sql,
 --              supabase/migrations/0030_writable_columns.sql,
 --              supabase/migrations/0031_scheduling_to_core.sql,
---              supabase/migrations/0032_vessel_maker_and_room_temperature.sql, supabase/migrations/0033_intake.sql, supabase/migrations/0034_press.sql, supabase/migrations/0035_bins_in_bulk.sql, supabase/migrations/0036_bins_on_loan.sql, supabase/migrations/0037_export.sql, supabase/migrations/0038_cancel_a_pick.sql, supabase/migrations/0039_vineyard.sql, supabase/migrations/0040_block_variety_is_history.sql, supabase/migrations/0041_daily_log.sql, supabase/migrations/0042_weighing_photo.sql, supabase/migrations/0043_record_propagation.sql, supabase/migrations/0044_finishing_a_pick.sql, supabase/migrations/0045_press_detail.sql, supabase/migrations/0046_supply_inventory.sql, supabase/migrations/0047_attachments.sql, supabase/migrations/0048_pick_weighing.sql, supabase/migrations/0049_every_lot_says_its_vintage.sql, supabase/migrations/0050_additions.sql, supabase/migrations/0051_supplies_for_addition.sql]
+--              supabase/migrations/0032_vessel_maker_and_room_temperature.sql, supabase/migrations/0033_intake.sql, supabase/migrations/0034_press.sql, supabase/migrations/0035_bins_in_bulk.sql, supabase/migrations/0036_bins_on_loan.sql, supabase/migrations/0037_export.sql, supabase/migrations/0038_cancel_a_pick.sql, supabase/migrations/0039_vineyard.sql, supabase/migrations/0040_block_variety_is_history.sql, supabase/migrations/0041_daily_log.sql, supabase/migrations/0042_weighing_photo.sql, supabase/migrations/0043_record_propagation.sql, supabase/migrations/0044_finishing_a_pick.sql, supabase/migrations/0045_press_detail.sql, supabase/migrations/0046_supply_inventory.sql, supabase/migrations/0047_attachments.sql, supabase/migrations/0048_pick_weighing.sql, supabase/migrations/0049_every_lot_says_its_vintage.sql, supabase/migrations/0050_additions.sql, supabase/migrations/0051_supplies_for_addition.sql, supabase/migrations/0052_press_as_a_process.sql, supabase/migrations/0053_a_press_is_a_vessel.sql, supabase/migrations/0054_a_spent_pick_is_spent.sql, supabase/migrations/0055_press_draws.sql, supabase/migrations/0056_draw_to_a_level.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -274,7 +274,18 @@ insert into event (operation_id, subject_type, subject_id, by_user, data)
 do $$
 declare lineage_rows int; st node_status;
 begin
-  select count(*) into lineage_rows from lineage;
+  -- Scoped to the node this block is about, not the whole table.
+  --
+  -- This counted every row in `lineage` and passed for eleven sessions because
+  -- the cellar had never had one. The winemaker started his first real press,
+  -- which wrote the first lineage row this winery has ever had, and the suite
+  -- went red on an assertion that has nothing to do with pressing. It is the
+  -- same defect as the tare assertion that read whatever tare the facility
+  -- happened to have set: **an assertion that reads production data is testing
+  -- the cellar rather than the schema**, and the cellar is allowed to change.
+  select count(*) into lineage_rows from lineage
+   where parent_id = '00000000-0000-0000-0000-00000000b001'
+      or child_id = '00000000-0000-0000-0000-00000000b001';
   select status into st from node where id = '00000000-0000-0000-0000-00000000b001';
   if lineage_rows <> 0 or st <> 'open' then
     raise exception 'FAIL: an unseen treatment touched lineage or closed the node';
@@ -7622,6 +7633,258 @@ begin
   delete from placement where vessel_id in (v_a, v_b);
   delete from node where id in (n_a, n_b) or name like 'ASRTADD%';
   delete from vessel where id in (v_a, v_b);
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- a press is a process, not an entry at the end'; end $$;
+
+-- 0052. The winemaker, from the crush pad: "pressing needs to be a process
+-- instead of an entry at the end. Like I wanted to start a press but I can't
+-- know how many liters until after I've pressed." And: "you might update the
+-- liters multiple times, or after different pressures."
+do $$
+declare
+  pick   uuid := '00000000-0000-0000-0000-00000000cd01';
+  press  uuid := '00000000-0000-0000-0000-00000000cd02';
+  tank   uuid := '00000000-0000-0000-0000-00000000cd03';
+  tank2  uuid := '00000000-0000-0000-0000-00000000cd04';
+  load_id uuid;
+  out_js jsonb;
+  n      int;
+  q      numeric;
+  st     node_stage;
+  st_text text;
+begin
+  update term set attributes = attributes || '{"tare_lbs": 60}'::jsonb
+   where kind = 'vessel_type' and value = 'picking_bin';
+
+  insert into vessel (id, name, type_id, capacity_l) values
+    (press, 'Assert press', term_id('vessel_type', 'press'), null),
+    (tank,  'Assert press tank', term_id('vessel_type', 'tank'), 1000),
+    (tank2, 'Assert press tank 2', term_id('vessel_type', 'tank'), 1000);
+
+  perform add_bins_to_pick(
+    jsonb_build_object('id', pick, 'variety_id', term_id('variety', 'riesling'),
+                       'vintage', 2026),
+    null, 2, term_id('vessel_type', 'picking_bin'), 'ASRTPRESS', 100);
+  perform weigh_bins(pick,
+    array(select vessel_id from unweighed_bin where node_id = pick), 2120);
+
+  -- **Starting.** The fruit leaves the bins and is in the press, and how much it
+  -- will give is not known yet. That is T1-4's shape a second time: the thing
+  -- exists before its quantity does, exactly as a bin does before a scale.
+  out_js := start_press(array[pick]::uuid[], press);
+  load_id := (out_js ->> 'node_id')::uuid;
+
+  select stage, quantity into st, q from node where id = load_id;
+  if st <> 'load' then
+    raise exception 'FAIL: fruit in a press is at stage % rather than load', st;
+  end if;
+  if q is not null then
+    raise exception
+      'FAIL: a press that has given nothing yet says it has given %, and nobody has measured anything', q;
+  end if;
+  perform test_ok('fruit in a press is a lot at the load stage with no volume yet, because nobody knows the litres before they have pressed');
+
+  select count(*) into n from placement where node_id = pick and to_at is null;
+  if n <> 0 then
+    raise exception 'FAIL: % bins still hold fruit that is in the press', n;
+  end if;
+  perform test_ok('the bins empty when the press starts rather than when it finishes, so they are free for the next pick while it runs');
+
+  select count(*) into n from press_in_progress where node_id = load_id;
+  if n <> 1 then
+    raise exception 'FAIL: a press that was started is not listed as running';
+  end if;
+  perform test_ok('a press that was started and not finished is findable without remembering where it was, which is what popping back in needs');
+
+  -- **Drawing, more than once.** Free run, then more free run into the same
+  -- tank an hour later, is one cut that got bigger.
+  out_js := draw_cut(load_id, tank, 400, term_id('press_cut', 'free_run'));
+  if (out_js ->> 'cut_total')::numeric <> 400 then
+    raise exception 'FAIL: the first 400 L came out as %', out_js ->> 'cut_total';
+  end if;
+
+  out_js := draw_cut(load_id, tank, 150, term_id('press_cut', 'free_run'));
+  if (out_js ->> 'cut_total')::numeric <> 550 then
+    raise exception 'FAIL: 400 then 150 into the same cut came to %', out_js ->> 'cut_total';
+  end if;
+  select count(*) into n from lineage where parent_id = load_id;
+  if n <> 1 then
+    raise exception 'FAIL: drawing the same cut twice made % lots', n;
+  end if;
+  perform test_ok('the same cut drawn again is that cut getting bigger rather than a second lot, which is what updating the litres multiple times means');
+
+  select volume_l into q from placement
+   where node_id = (out_js ->> 'cut_id')::uuid and vessel_id = tank and to_at is null;
+  if q <> 550 then
+    raise exception 'FAIL: the tank holds % L after two draws totalling 550', q;
+  end if;
+  perform test_ok('the vessel holds what has actually been put in it, updated on each draw rather than at the end');
+
+  -- A different pressure into a different vessel is a different cut.
+  out_js := draw_cut(load_id, tank2, 90, term_id('press_cut', 'hard_press'));
+  select count(*) into n from lineage where parent_id = load_id;
+  if n <> 2 then
+    raise exception 'FAIL: a second cut gave % children', n;
+  end if;
+  select count(*) into n from lineage where parent_id = load_id and fraction <> 1;
+  if n <> 0 then
+    raise exception 'FAIL: a cut is not entirely made of the load it came out of';
+  end if;
+  perform test_ok('every cut is wholly made of the load, which is what lets its share be written the moment it is drawn instead of at the end');
+
+  -- The picks' proportions live one generation up, where they were known before
+  -- a drop ran. That is the reason the load exists at all.
+  select count(*) into n from lineage where child_id = load_id;
+  if n <> 1 then
+    raise exception 'FAIL: the load does not record what it was made of';
+  end if;
+  perform test_ok('what the load was made of was recorded when it went in, so nothing has to be recomputed as the juice comes off');
+
+  -- 0056, the second way of working. `draw_cut` asks what came off since last
+  -- time, which is subtraction in somebody's head against a number they last saw
+  -- an hour ago. This asks what the tank reads now. The subtraction is a rule and
+  -- lives in the kernel, because two clients doing it differently would disagree
+  -- about how much wine exists.
+  out_js := draw_to_level(load_id, tank, 700);
+  if (out_js ->> 'was_at')::numeric <> 550 then
+    raise exception 'FAIL: the tank was at 550 and the kernel thought %', out_js ->> 'was_at';
+  end if;
+  if (out_js ->> 'volume_l')::numeric <> 150 then
+    raise exception 'FAIL: 550 up to 700 came out as a draw of %', out_js ->> 'volume_l';
+  end if;
+  select quantity into q from node
+   where id = (out_js ->> 'cut_id')::uuid;
+  if q <> 700 then
+    raise exception 'FAIL: after reading the tank at 700 the cut holds %', q;
+  end if;
+  perform test_ok('reading the tank works out what came off, so nobody does subtraction against a number they last saw an hour ago');
+
+  -- The cut is not asked for a vessel already taking juice from this press: a
+  -- tank holding free run receiving more juice is receiving more free run.
+  if out_js ->> 'cut' <> 'Free run' then
+    raise exception 'FAIL: topping up a tank of free run was recorded as %', out_js ->> 'cut';
+  end if;
+  perform test_ok('a tank already taking a cut of this press keeps taking that cut, so the one question with one right answer is not asked again');
+
+  -- **The interesting refusal.** A reading below what is in the vessel means a
+  -- misread gauge or wine having left, and neither is a draw.
+  begin
+    perform draw_to_level(load_id, tank, 400);
+    raise exception 'FAIL: a tank holding 700 L was read at 400 and that was recorded as a draw';
+  exception when others then
+    if position('is not more wine arriving' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a reading below what the vessel already holds is refused, because it is a misread gauge rather than a negative draw');
+  end;
+
+  -- And a reading that has not moved is not a draw either. A13: a success that
+  -- did nothing must not look like a success that did something.
+  begin
+    perform draw_to_level(load_id, tank, 700);
+    raise exception 'FAIL: recording the same level twice counted as a second draw';
+  exception when others then
+    if position('nothing has come off' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a level that has not changed is refused rather than recorded as a draw of nothing, so a double tap does not read as progress');
+  end;
+
+  select litres_so_far into q from press_in_progress where node_id = load_id;
+  if q <> 790 then
+    raise exception 'FAIL: 700 and 90 off shows as % so far', q;
+  end if;
+  perform test_ok('the litres so far is the number that changes every time somebody goes back to the press, and it is what the list shows');
+
+  -- **Finishing.** The yield exists now and did not before.
+  out_js := finish_press(load_id, jsonb_build_object('program', 'Assert program', 'minutes', 95));
+  if (out_js ->> 'litres_out')::numeric <> 790 then
+    raise exception 'FAIL: the press finished at % L', out_js ->> 'litres_out';
+  end if;
+  if (out_js ->> 'yield_l_per_ton')::numeric <> 790 then
+    raise exception 'FAIL: 790 L off a ton came out as % L per ton', out_js ->> 'yield_l_per_ton';
+  end if;
+  perform test_ok('the yield exists when the press finishes and not before, because it is litres over a weight and one of those arrives hours after the other');
+
+  select count(*) into n from press_in_progress where node_id = load_id;
+  if n <> 0 then
+    raise exception 'FAIL: a finished press is still listed as running';
+  end if;
+  select count(*) into n from placement where vessel_id = press and to_at is null;
+  if n <> 0 then
+    raise exception 'FAIL: the press still holds something after it was finished';
+  end if;
+  perform test_ok('a finished press is empty and off the list, so the next load can go in');
+
+  -- The refusals that keep the process honest.
+  begin
+    perform draw_cut(load_id, tank, 10, term_id('press_cut', 'free_run'));
+    raise exception 'FAIL: juice was drawn off a press that had been finished';
+  exception when others then
+    if position('that press is finished' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('nothing can be drawn off a press that was finished, because a correction is a different act from a draw');
+  end;
+
+  -- 0054, and the assertion that found it. Before that fix the pick stayed open
+  -- with its bins emptied, so once the press was free the same fruit could be
+  -- pressed again and a second load made out of juice.
+  select status::text into st_text from node where id = pick;
+  if st_text <> 'closed' then
+    raise exception 'FAIL: a pick whose fruit is in the press is still %', st_text;
+  end if;
+  begin
+    perform start_press(array[pick]::uuid[], press);
+    raise exception 'FAIL: a spent pick was pressed a second time';
+  exception when others then
+    if position('is closed' in sqlerrm) = 0
+       and position('nothing of it left to press' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('fruit that has already gone into a press cannot go into another one, which nothing refused until an assertion asked');
+  end;
+
+  -- Lineage holds a restrict at both ends, so it goes before the lots it links.
+  create temp table asrt_press_cuts on commit drop as
+    select child_id as id from lineage where parent_id = load_id;
+  delete from event where subject_type = 'node'
+     and subject_id in (select id from asrt_press_cuts);
+  delete from event where subject_type = 'node' and subject_id in (load_id, pick);
+  delete from placement where node_id in (select id from asrt_press_cuts);
+  delete from lineage where parent_id = load_id or child_id = load_id;
+  delete from node where id in (select id from asrt_press_cuts);
+  delete from placement where node_id in (load_id, pick);
+  delete from node where id in (load_id, pick);
+  delete from vessel where id in (press, tank, tank2) or name like 'ASRTPRESS%';
+  update term set attributes = attributes - 'tare_lbs'
+   where kind = 'vessel_type' and value = 'picking_bin';
+end $$;
+
+-- An empty press is a press that has not started, and finishing one that gave
+-- nothing would record a press that produced nothing, which is a claim rather
+-- than a measurement.
+do $$
+declare
+  pick  uuid := '00000000-0000-0000-0000-00000000cd11';
+  press uuid := '00000000-0000-0000-0000-00000000cd12';
+  load_id uuid;
+begin
+  insert into vessel (id, name, type_id) values
+    (press, 'Assert empty press', term_id('vessel_type', 'press'));
+  perform add_bins_to_pick(
+    jsonb_build_object('id', pick, 'variety_id', term_id('variety', 'riesling'),
+                       'vintage', 2026),
+    null, 1, term_id('vessel_type', 'picking_bin'), 'ASRTEMPTYPRESS', 100);
+
+  load_id := (start_press(array[pick]::uuid[], press) ->> 'node_id')::uuid;
+  begin
+    perform finish_press(load_id);
+    raise exception 'FAIL: a press that gave nothing was finished';
+  exception when others then
+    if position('nothing has been drawn' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a press nothing was drawn off cannot be finished, because a press that produced nothing is a claim rather than a measurement');
+  end;
+
+  delete from event where subject_type = 'node' and subject_id in (load_id, pick);
+  delete from lineage where child_id = load_id;
+  delete from placement where node_id in (load_id, pick);
+  delete from node where id in (load_id, pick);
+  delete from vessel where id = press or name like 'ASRTEMPTYPRESS%';
 end $$;
 
 -- ---------------------------------------------------------------------------

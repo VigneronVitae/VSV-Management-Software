@@ -118,6 +118,33 @@ count_supply:raise:2	count_supply	raise	raise exception 'a count of % is not an 
 create_vessel_with_wine:permissive:1	create_vessel_with_wine	permissive	coalesce((p_vessel ->> 'has_glycol')::boolean, false),	coalesce((p_vessel ->> 'has_glycol')::boolean, true),	1
 create_vessel_with_wine:permissive:2	create_vessel_with_wine	permissive	coalesce((p_node ->> 'non_vintage')::boolean, false),	coalesce((p_node ->> 'non_vintage')::boolean, true),	1
 create_vessel_with_wine:guard:1	create_vessel_with_wine	guard	if p_generate_history then	if false then	1
+draw_cut:guard:1	draw_cut	guard	if load_n.id is null then	if false then	1
+draw_cut:raise:1	draw_cut	raise	raise exception 'no load with id %', p_load_id;	raise notice 'no load with id %', p_load_id;	1
+draw_cut:guard:2	draw_cut	guard	if load_n.stage <> 'load' then	if false then	1
+draw_cut:raise:2	draw_cut	raise	raise exception 'that lot is not in a press, so nothing is being drawn off it';	raise notice 'that lot is not in a press, so nothing is being drawn off it';	1
+draw_cut:guard:3	draw_cut	guard	if load_n.status = 'closed' then	if false then	1
+draw_cut:raise:3	draw_cut	raise	raise exception 'that press is finished; record a correction against it rather than drawing more';	raise notice 'that press is finished; record a correction against it rather than drawing more';	1
+draw_cut:guard:4	draw_cut	guard	if p_volume_l is null or p_volume_l <= 0 then	if false then	1
+draw_cut:raise:4	draw_cut	raise	raise exception 'a draw of % litres is not a volume',	raise notice 'a draw of % litres is not a volume',	1
+draw_cut:guard:5	draw_cut	guard	if not exists (select 1 from vessel where id = p_vessel_id and active) then	if false then	1
+draw_cut:raise:5	draw_cut	raise	raise exception 'that vessel is not one juice can go into';	raise notice 'that vessel is not one juice can go into';	1
+draw_cut:head:1	draw_cut	head	if p_cut_id is not null and not exists (\n    select 1 from term where id = p_cut_id and kind = 'press_cut' and active) then	if false then	1
+draw_cut:raise:6	draw_cut	raise	raise exception 'that is not a press cut';	raise notice 'that is not a press cut';	1
+draw_cut:guard:6	draw_cut	guard	if cut_n.id is null then	if false then	1
+draw_cut:head:2	draw_cut	head	if exists (select 1 from placement\n              where node_id = cut_id and vessel_id = p_vessel_id and to_at is null) then	if false then	1
+draw_cut:silent:1	draw_cut	silent	where node_id = cut_id and vessel_id = p_vessel_id and to_at is null;	where node_id = cut_id and true;	1
+draw_cut:head:3	draw_cut	head	if exists (select 1 from placement\n                where vessel_id = p_vessel_id and to_at is null and node_id <> cut_id) then	if false then	1
+draw_cut:silent:2	draw_cut	silent	where vessel_id = p_vessel_id and to_at is null and node_id <> cut_id) then	where vessel_id = p_vessel_id and true	1
+draw_cut:raise:7	draw_cut	raise	raise exception '% already holds other wine',	raise notice '% already holds other wine',	1
+draw_to_level:guard:1	draw_to_level	guard	if p_level_l is null or p_level_l < 0 then	if false then	1
+draw_to_level:raise:1	draw_to_level	raise	raise exception 'a level of % is not a reading',	raise notice 'a level of % is not a reading',	1
+draw_to_level:guard:2	draw_to_level	guard	if v_name is null then	if false then	1
+draw_to_level:raise:2	draw_to_level	raise	raise exception 'no vessel with id %', p_vessel_id;	raise notice 'no vessel with id %', p_vessel_id;	1
+draw_to_level:guard:3	draw_to_level	guard	if holder is not null and cut_id is null then	if false then	1
+draw_to_level:guard:4	draw_to_level	guard	if increment < 0 then	if false then	1
+draw_to_level:raise:3	draw_to_level	raise	raise exception	raise notice	3
+draw_to_level:guard:5	draw_to_level	guard	if increment = 0 then	if false then	1
+draw_to_level:raise:4	draw_to_level	raise	raise exception	raise notice	4
 end_run_step:silent:1	end_run_step	silent	where run_id = p_run_id and step_id = p_step_id	where run_id = p_run_id and true	1
 end_run_step:notfound:1	end_run_step	notfound	if not found then	if false then	1
 end_run_step:raise:1	end_run_step	raise	raise exception 'that step was never started, so there is nothing to time';	raise notice 'that step was never started, so there is nothing to time';	1
@@ -133,6 +160,15 @@ finish_pick:guard:2	finish_pick	guard	if n.stage <> 'bin' then	if false then	1
 finish_pick:raise:2	finish_pick	raise	raise exception '% is not a pick', n.name;	raise notice '% is not a pick', n.name;	1
 finish_pick:guard:3	finish_pick	guard	if n.status = 'closed' then	if false then	1
 finish_pick:raise:3	finish_pick	raise	raise exception '% is closed; its fruit has already gone somewhere', n.name;	raise notice '% is closed; its fruit has already gone somewhere', n.name;	1
+finish_press:guard:1	finish_press	guard	if load_n.id is null then	if false then	1
+finish_press:raise:1	finish_press	raise	raise exception 'no load with id %', p_load_id;	raise notice 'no load with id %', p_load_id;	1
+finish_press:guard:2	finish_press	guard	if load_n.stage <> 'load' then	if false then	1
+finish_press:raise:2	finish_press	raise	raise exception 'that lot is not in a press';	raise notice 'that lot is not in a press';	1
+finish_press:guard:3	finish_press	guard	if load_n.status = 'closed' then	if false then	1
+finish_press:raise:3	finish_press	raise	raise exception 'that press is already finished';	raise notice 'that press is already finished';	1
+finish_press:guard:4	finish_press	guard	if cuts = 0 then	if false then	1
+finish_press:raise:4	finish_press	raise	raise exception	raise notice	4
+finish_press:silent:1	finish_press	silent	where node_id = p_load_id and to_at is null;	where node_id = p_load_id and true;	1
 finish_run:raise:1	finish_run	raise	if v_id is null then raise exception 'no such run'; end if;	if v_id is null then raise notice 'no such run'; end if;	1
 fork_lot:notfound:1	fork_lot	notfound	if not found then	if false then	1
 fork_lot:raise:1	fork_lot	raise	raise exception 'no lot with id %', p_node_id;	raise notice 'no lot with id %', p_node_id;	1
@@ -303,6 +339,25 @@ set_vintage:guard:3	set_vintage	guard	if not p_non_vintage and p_vintage is null
 set_vintage:raise:3	set_vintage	raise	raise exception	raise notice	3
 set_vintage:guard:4	set_vintage	guard	if p_vintage is not null and (p_vintage < 1800 or p_vintage > 2200) then	if false then	1
 set_vintage:raise:4	set_vintage	raise	raise exception '% is not a vintage year', p_vintage;	raise notice '% is not a vintage year', p_vintage;	1
+start_press:guard:1	start_press	guard	if n_src = 0 then	if false then	1
+start_press:raise:1	start_press	raise	raise exception 'nothing was named to press';	raise notice 'nothing was named to press';	1
+start_press:guard:2	start_press	guard	if p_press_vessel_id is null then	if false then	1
+start_press:raise:2	start_press	raise	raise exception 'say which press this is going into, so the fruit is somewhere';	raise notice 'say which press this is going into, so the fruit is somewhere';	1
+start_press:guard:3	start_press	guard	if not exists (select 1 from vessel where id = p_press_vessel_id and active) then	if false then	1
+start_press:raise:3	start_press	raise	raise exception 'that press is not an active vessel';	raise notice 'that press is not an active vessel';	1
+start_press:head:1	start_press	head	if exists (select 1 from placement\n              where vessel_id = p_press_vessel_id and to_at is null) then	if false then	1
+start_press:raise:4	start_press	raise	raise exception	raise notice	4
+start_press:guard:4	start_press	guard	if n.id is null then	if false then	1
+start_press:raise:5	start_press	raise	raise exception 'no lot with id %', src;	raise notice 'no lot with id %', src;	1
+start_press:guard:5	start_press	guard	if n.status = 'closed' then	if false then	1
+start_press:raise:6	start_press	raise	raise exception '% is closed; its fruit has already gone somewhere', n.name;	raise notice '% is closed; its fruit has already gone somewhere', n.name;	1
+start_press:head:2	start_press	head	if not exists (select 1 from placement\n                    where node_id = src and to_at is null) then	if false then	1
+start_press:raise:7	start_press	raise	raise exception	raise notice	7
+start_press:guard:6	start_press	guard	if parent_stage is null then	if false then	1
+start_press:guard:7	start_press	guard	elsif parent_stage <> n.stage then	elsif false then	1
+start_press:raise:8	start_press	raise	raise exception	raise notice	8
+start_press:guard:8	start_press	guard	if total_lbs > 0 then	if false then	1
+start_press:silent:1	start_press	silent	where node_id = src and to_at is null;	where node_id = src and true;	1
 start_procedure_session:guard:1	start_procedure_session	guard	if coalesce(array_length(p_vessel_ids, 1), 0) = 0 then	if false then	1
 start_procedure_session:raise:1	start_procedure_session	raise	raise exception 'a session needs at least one vessel';	raise notice 'a session needs at least one vessel';	1
 topping_check:guard:1	topping_check	guard	if tgt is null then	if false then	1
