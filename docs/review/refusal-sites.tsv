@@ -395,6 +395,15 @@ set_lot_hidden:guard:1	set_lot_hidden	guard	if not may_set_privacy(p_node_id) th
 set_lot_hidden:raise:1	set_lot_hidden	raise	raise exception 'only the owner of that wine decides what is hidden about it'	raise notice 'only the owner of that wine decides what is hidden about it'	1
 set_lot_hidden:guard:2	set_lot_hidden	guard	if not (coalesce(p_hidden, '{}') <@ hideable_fields()) then	if false then	1
 set_lot_hidden:raise:2	set_lot_hidden	raise	raise exception 'that is not something the kernel knows how to hide';	raise notice 'that is not something the kernel knows how to hide';	1
+set_lot_owner:guard:1	set_lot_owner	guard	if not is_facility_user() then	if false then	1
+set_lot_owner:raise:1	set_lot_owner	raise	raise exception 'only somebody who works here says whose wine a lot is'	raise notice 'only somebody who works here says whose wine a lot is'	1
+set_lot_owner:guard:2	set_lot_owner	guard	if n.id is null then	if false then	1
+set_lot_owner:raise:2	set_lot_owner	raise	raise exception 'no lot with id %', p_node_id;	raise notice 'no lot with id %', p_node_id;	1
+set_lot_owner:guard:3	set_lot_owner	guard	if o.id is null then	if false then	1
+set_lot_owner:raise:3	set_lot_owner	raise	raise exception 'no party with id %', p_owner_id;	raise notice 'no party with id %', p_owner_id;	1
+set_lot_owner:guard:4	set_lot_owner	guard	if not o.active then	if false then	1
+set_lot_owner:raise:4	set_lot_owner	raise	raise exception	raise notice	4
+set_lot_owner:guard:5	set_lot_owner	guard	if was = p_owner_id then	if false then	1
 set_party_default_hidden:head:1	set_party_default_hidden	head	if not (p_party_id = current_party_id()\n          or (p_party_id = facility_party_id() and is_facility_user())) then	if false then	1
 set_party_default_hidden:raise:1	set_party_default_hidden	raise	raise exception 'only that party decides what it hides by default'	raise notice 'only that party decides what it hides by default'	1
 set_party_default_hidden:guard:1	set_party_default_hidden	guard	if not (coalesce(p_hidden, '{}') <@ hideable_fields()) then	if false then	1

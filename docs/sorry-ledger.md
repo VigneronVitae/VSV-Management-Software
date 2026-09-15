@@ -965,6 +965,32 @@ a barrel, at which point the fix is a `porous` attribute on the `vessel_type` vo
 one changed join, because the rule already lives on a registry row rather than in a function.
 *Load-bearing:* no, and it becomes load-bearing the day a concrete egg arrives, silently.
 
+**S-81. Correcting whose wine a lot is does not carry its children.**
+`set_lot_owner` changes the lot it is given and counts, without changing, every descendant
+still filed under the old party. A pick corrected before it is pressed needs nothing else; a
+lot corrected after it has been pressed, racked and blended leaves children carrying the
+party they copied at the moment they were created.
+It is counted rather than cascaded because **a child legitimately belonging to somebody else
+is not a defect**: fruit sold mid-process, a client buying a share of a press, and a lot
+blended from two parties all produce exactly that shape, and a cascade would quietly rewrite
+those. *Resolves when:* somebody has to correct a lot that already has children, at which
+point the question is whether the answer is a cascade, a prompt listing the descendants, or a
+refusal telling them to correct each one. *Load-bearing:* not today, and it becomes so the
+first time a correction arrives late rather than within the hour.
+
+**S-82. A client's own bins cannot be recorded from the bin screen.**
+`add_bins_to_pick` takes `p_owner_id` and the screen that calls it never passes one: it
+sends `on_loan_from` or nothing. So a bin belonging to a custom crush client, as against one
+on loan from a grower, can only be given its owner by editing the vessel afterwards.
+The two are genuinely different and the schema already knows it. A client is a party, so
+their equipment gets an `owner_id` and the privacy model applies to it. A grower is not a
+party, which is why `0036` made the lender free text rather than inventing one. The screen
+offers only the second. *Resolves when:* a client brings their own bins, at which point the
+bin screen needs the same party picker the vessel form already has, and the two controls
+need to read as one question with two answers rather than two questions.
+*Load-bearing:* no. Both custom crush clients currently use this winery's bins, and the
+vessel edit screen can set an owner today.
+
 ## Discharged
 **S-78. Anybody who can sign up becomes staff.** *Discharged by `0068`.*
 `enable_signup = true`, and `claim_account` gave any authenticated identity that had not

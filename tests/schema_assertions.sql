@@ -45,7 +45,9 @@
 --              supabase/migrations/0076_a_tie_goes_to_the_barrel.sql,
 --              supabase/migrations/0077_a_barrel_can_arrive_red.sql,
 --              supabase/migrations/0078_the_wine_in_a_vessel.sql,
---              supabase/migrations/0079_a_room_says_which_way_it_is_held.sql]
+--              supabase/migrations/0079_a_room_says_which_way_it_is_held.sql,
+--              supabase/migrations/0080_whose_wine_it_is_can_be_corrected.sql,
+--              supabase/migrations/0081_a_borrowed_bin_is_not_ours.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -9305,6 +9307,71 @@ begin
   exception when check_violation then
     perform test_ok('a room held in a direction is controlled, enforced by the table rather than by the one function that writes it');
   end;
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- a borrowed bin is not ours'; end $$;
+
+-- 0081. The winemaker registered five bins on loan from Pearlstaad, and every
+-- screen said they were his. What he typed was recorded correctly: the bins
+-- carried `borrowed` and `on_loan_from`. `facility_owned` was `owner_id is
+-- null`, a grower is not a party and never gets an owner_id, so the unticked
+-- box and the ticked box produced the same visible answer. **That is A13 in its
+-- purest form**: a control that says not ours, a database that agrees, and every
+-- surface saying ours anyway.
+do $$
+declare
+  ours     uuid := '00000000-0000-0000-0000-0000000e0001';
+  lent     uuid := '00000000-0000-0000-0000-0000000e0002';
+  clients  uuid := '00000000-0000-0000-0000-0000000e0003';
+  a_client uuid;
+  got      record;
+begin
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+  select id into a_client from party where kind = 'client' and active limit 1;
+
+  insert into vessel (id, type_id, name, capacity_l, attributes) values
+    (ours, term_id('vessel_type','picking_bin'), 'C9 ours', 400, '{}'::jsonb),
+    (lent, term_id('vessel_type','picking_bin'), 'C9 lent', 400,
+     '{"borrowed": true, "on_loan_from": "Pearlstaad"}'::jsonb);
+  insert into vessel (id, type_id, name, capacity_l, owner_id) values
+    (clients, term_id('vessel_type','picking_bin'), 'C9 theirs', 400, a_client);
+
+  select * into got from vessel_state where id = ours;
+  if not got.facility_owned or got.owner_name is not null then
+    raise exception 'FAIL: a bin nobody else owns reads owner % / facility %',
+      got.owner_name, got.facility_owned;
+  end if;
+  perform test_ok('a bin nobody lent and nobody owns is this winery''s, which is the case the other two are measured against');
+
+  -- The one he hit.
+  select * into got from vessel_state where id = lent;
+  if got.facility_owned then
+    raise exception 'FAIL: a bin on loan from a grower reads as facility owned, which is what the unticked box was meant to prevent';
+  end if;
+  if got.owner_name is distinct from 'Pearlstaad' then
+    raise exception 'FAIL: a borrowed bin says it belongs to %', coalesce(got.owner_name, 'nobody');
+  end if;
+  perform test_ok('a bin on loan from a grower is not this winery''s and says whose it is, because a grower is not a party and the name is the only place it lives');
+
+  -- And the other representation, which always worked and must keep working: a
+  -- client is a party, so their equipment has an owner_id.
+  select * into got from vessel_state where id = clients;
+  if got.facility_owned or got.owner_name is null then
+    raise exception 'FAIL: a client''s own bin reads owner % / facility %',
+      got.owner_name, got.facility_owned;
+  end if;
+  perform test_ok('a client''s own equipment still reads as theirs through the party, so the two ways of not being ours both answer the same question');
+
+  -- Empty and borrowed is owed back. The point of the whole flag: empty is not
+  -- the same as available.
+  if not exists (select 1 from bin_to_return where vessel_id = lent and owed_to = 'Pearlstaad') then
+    raise exception 'FAIL: an empty borrowed bin is not owed back to the grower who lent it';
+  end if;
+  if exists (select 1 from bin_to_return where vessel_id = ours) then
+    raise exception 'FAIL: a bin of ours is owed back to somebody';
+  end if;
+  perform test_ok('an empty borrowed bin is owed back by name and one of ours is not, because empty is not the same as available');
 end $$;
 
 do $$ begin raise notice '--- all assertions passed'; end $$;
