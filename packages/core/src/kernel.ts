@@ -7,6 +7,7 @@ import type {
   BinToReturn,
   Block,
   CodePayload,
+  Contract,
   CutDrawn,
   DayEntry,
   DayNote,
@@ -783,6 +784,15 @@ export async function addPhoto(args: {
   const path = await uploadPhoto(args.subjectType, args.subjectId, args.file);
   const out = await attachPhoto({ ...args, path });
   return { ...out, path };
+}
+
+/** The whole contract in one call. Written for a second periphery and useful
+ * to this one: anything that needs a list of what can be done should read it
+ * here rather than keeping its own. */
+export async function contract(): Promise<Contract> {
+  const { data, error } = await kernel().rpc("contract");
+  if (error) throw new KernelError(error);
+  return data as Contract;
 }
 
 // --- sampling --------------------------------------------------------------

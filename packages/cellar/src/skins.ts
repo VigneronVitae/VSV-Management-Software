@@ -34,6 +34,15 @@ export const skins: Skin[] = [
     label: "Cellar",
     note: "Bigger targets, cards, and a fill gauge on every vessel. For a wet glove in a dark room.",
   },
+  {
+    name: "daylight",
+    label: "Daylight",
+    // The sunlight-readability literature is consistent about two things: high
+    // luminance contrast, and giving somebody a mode they can choose rather
+    // than guessing from an ambient sensor. A vineyard at noon is the case this
+    // app was always going to meet and never had an answer for.
+    note: "Black on white, heavier type, no soft greys. For a phone in a vineyard at noon.",
+  },
 ];
 
 const KEY = "vsv.skin";

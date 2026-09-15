@@ -476,6 +476,31 @@ export type Sample = {
   readings: number;
 };
 
+// What `contract()` returns: who is asking, what may be read, what may be
+// written and what each write needs. A second periphery should need nothing
+// else to start. See 0057 and AR-Q8.
+export type Contract = {
+  viewer: Record<string, unknown>;
+  readables: {
+    key: string;
+    module: string;
+    label: string;
+    note: string | null;
+    relation: string;
+    id_column: string | null;
+    label_column: string | null;
+  }[];
+  capabilities: {
+    key: string;
+    module: string;
+    label: string;
+    note: string | null;
+    fn: string;
+    subject: string | null;
+    fields: Record<string, unknown>[];
+  }[];
+};
+
 // --- photographs -----------------------------------------------------------
 
 // A photograph of anything the subject resolver knows about. See migration

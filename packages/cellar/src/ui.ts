@@ -123,6 +123,15 @@ export function field(options: FieldOptions): Field {
   const input = el("input", {
     class: "input",
     type: options.type ?? "text",
+    // A numeric field gets the numeric keypad. Without this a phone offers the
+    // full keyboard for a gross weight, and hunting for the digits with a wet
+    // glove is the difference between recording a number and deciding to do it
+    // later. `decimal` rather than `numeric` because litres and Brix have
+    // decimal points and `numeric` hides the separator on some keyboards.
+    //
+    // Two hand-rolled inputs in walk.ts already did this and every field built
+    // through here did not, which is most of the numbers in the app.
+    ...(options.type === "number" ? { inputmode: "decimal" } : {}),
     value: options.value ?? "",
     placeholder: options.placeholder ?? "",
     ...(options.attrs ?? {}),

@@ -73,6 +73,8 @@ export type Place =
   // schema is only useful if somebody can add to it.
   | { at: "fact-kinds" }
   // Sampling, and one sample with the readings that came off it.
+  // Type three letters instead of remembering where a thing lives.
+  | { at: "go" }
   | { at: "sampling" }
   | { at: "sample"; id: string };
 
@@ -110,6 +112,7 @@ const WITHOUT_ID = new Set([
   "practice",
   "fact-kinds",
   "sampling",
+  "go",
 ]);
 
 // A calendar day, which is what the day log is addressed by.

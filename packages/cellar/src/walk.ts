@@ -27,6 +27,7 @@ import {
   captionPhoto,
   claimAccount,
   confirmNote,
+  contract,
   countSupply,
   createVesselWithWine,
   currentAppUser,
@@ -344,6 +345,8 @@ async function screenFor(place: Place): Promise<HTMLElement> {
       return practiceScreen();
     case "fact-kinds":
       return factKindsScreen();
+    case "go":
+      return paletteScreen();
     case "sampling":
       return samplingScreen();
     case "sample":
@@ -1160,6 +1163,7 @@ async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> 
   return screen(
     facility.name,
     lede(`${user.name}, ${user.role}. What would you like to do?`),
+    button("Go anywhere", () => go({ at: "go" }), "secondary"),
     arrangeBar,
     section("Harvest", menu(harvest, everything)),
     section("In the cellar", menu(cellar, everything)),
@@ -4832,6 +4836,255 @@ function additionsScreen(): HTMLElement {
   })();
 
   return view;
+}
+
+// --- go anywhere -----------------------------------------------------------
+
+// Linear and Superhuman put every action one keystroke away and show the
+// shortcut beside the command so that muscle memory forms without anybody
+// setting out to learn it. Superhuman treats fifty milliseconds as the product.
+//
+// That is a desktop pattern and this is a phone, so what carries over is not the
+// keystroke: it is **not having to know where a thing lives**. Four taps to
+// reach Stores is four taps whether or not you remember the route, and typing
+// "sto" is one.
+//
+// **It costs almost nothing because the contract already enumerates everything.**
+// `contract()` returns every capability and every readable with a label and a
+// sentence written for a person, which is exactly what a palette needs, and it
+// was written for a second periphery rather than for this. A palette built from
+// it never goes stale: a capability added in a migration appears here without
+// anybody remembering to add it.
+//
+// The screens themselves are not in the contract, so the places are listed
+// alongside. That duplication is real and is the argument for the home menu
+// eventually being generated from the contract too.
+type Destination = {
+  label: string;
+  note: string;
+  hay: string;
+  go: () => void;
+};
+
+function paletteScreen(): HTMLElement {
+  const body = el("div", {}, empty("Loading."));
+  const box = field({
+    label: "Go to",
+    placeholder: "weigh, press, stores, Grundy",
+    hint: "Type a few letters. Screens, things you can record, and vessels by name.",
+  });
+  const view = screen("Go anywhere", rows(box.root, body));
+
+  void (async () => {
+    try {
+      const [spec, kit] = await Promise.all([contract(), vessels()]);
+
+      const places: Destination[] = [
+        {
+          label: "The day",
+          note: "What happened today.",
+          hay: "day log notes",
+          go: () => go({ at: "day" }),
+        },
+        {
+          label: "Picking",
+          note: "Record bins as they are filled.",
+          hay: "pick intake bins fruit",
+          go: () => go({ at: "intake" }),
+        },
+        {
+          label: "Weigh bins",
+          note: "What the scale said.",
+          hay: "weigh scale weight lbs",
+          go: () => go({ at: "scale" }),
+        },
+        {
+          label: "Press",
+          note: "Fruit in, juice out.",
+          hay: "press cut litres",
+          go: () => go({ at: "press" }),
+        },
+        {
+          label: "Sampling",
+          note: "What was sampled and what it read.",
+          hay: "sample brix ph reading",
+          go: () => go({ at: "sampling" }),
+        },
+        {
+          label: "Additions",
+          note: "What went into the wine.",
+          hay: "addition so2 dap nutrient",
+          go: () => go({ at: "additions" }),
+        },
+        {
+          label: "Vessels",
+          note: "What is in the cellar.",
+          hay: "vessel tank barrel map",
+          go: () => go({ at: "vessels" }),
+        },
+        {
+          label: "Rack",
+          note: "Move wine between vessels.",
+          hay: "rack blend transfer",
+          go: () => go({ at: "rack" }),
+        },
+        {
+          label: "Stores",
+          note: "What is on the shelf.",
+          hay: "stores supply shopping buy",
+          go: () => go({ at: "stores" }),
+        },
+        {
+          label: "Bins to return",
+          note: "Borrowed bins that are empty.",
+          hay: "bins return borrowed",
+          go: () => go({ at: "bins-to-return" }),
+        },
+        {
+          label: "Vineyards",
+          note: "Blocks and what is planted.",
+          hay: "vineyard block planting",
+          go: () => go({ at: "vineyards" }),
+        },
+        {
+          label: "On paper",
+          note: "Measurements owed to a form.",
+          hay: "paper form propagate",
+          go: () => go({ at: "paper" }),
+        },
+        {
+          label: "Kinds of fact",
+          note: "What a note can be turned into.",
+          hay: "fact kind brix parameter",
+          go: () => go({ at: "fact-kinds" }),
+        },
+        {
+          label: "Take a copy",
+          note: "Everything you can read, as one file.",
+          hay: "export backup copy",
+          go: () => go({ at: "export" }),
+        },
+      ];
+
+      // Straight from the contract. Nobody maintains this list: a capability
+      // added in a migration turns up here without anybody remembering to.
+      //
+      // Only the ones with a screen behind them. A capability the contract
+      // declares and no screen records is real and is not somewhere to send
+      // anybody, and a palette entry that silently does nothing is worse than
+      // no entry at all.
+      const doable: Destination[] = (spec.capabilities ?? []).flatMap((c) => {
+        const route = capabilityRoute(c.key);
+        if (!route) return [];
+        return [
+          {
+            label: c.label,
+            note: c.note ?? "",
+            hay: `${c.label} ${c.note ?? ""} ${c.key}`,
+            go: () => go(route),
+          },
+        ];
+      });
+
+      const named: Destination[] = kit.map((v) => ({
+        label: v.name,
+        note: v.is_empty ? `${v.type}, empty` : `${v.type}, ${v.lot_name ?? "wine"}`,
+        hay: `${v.name} ${v.type} ${v.lot_name ?? ""}`,
+        go: () =>
+          go(v.is_empty ? { at: "vessel", id: v.id } : { at: "vessel-edit", id: v.id }),
+      }));
+
+      const all = [...places, ...doable, ...named];
+
+      function draw(): void {
+        const q = box.value().toLowerCase().trim();
+        // Every letter in order, not a substring: "wb" finds "Weigh bins". It is
+        // the cheapest fuzzy match there is and it is the one people expect.
+        const hits = q
+          ? all.filter((d) => subsequence(q, d.hay.toLowerCase()))
+          : all.slice(0, 12);
+        body.replaceChildren(
+          hits.length === 0
+            ? empty("Nothing matches that.")
+            : el(
+                "ul",
+                { class: "vessel-list" },
+                ...hits.slice(0, 20).map((d) => {
+                  const row = el(
+                    "li",
+                    {
+                      class: "vessel-row vessel-row-tappable",
+                      role: "button",
+                      tabindex: "0",
+                    },
+                    el("span", { class: "vessel-name", text: d.label }),
+                    el("span", { class: "vessel-detail", text: d.note }),
+                  );
+                  on(row, "click", d.go);
+                  on(row, "keydown", (ev) => {
+                    if (ev.key === "Enter") {
+                      ev.preventDefault();
+                      d.go();
+                    }
+                  });
+                  return row;
+                }),
+              ),
+        );
+      }
+
+      on(box.input, "input", draw);
+      // Enter takes the first hit, which is the whole point of typing three
+      // letters rather than scrolling.
+      on(box.input, "keydown", (ev) => {
+        if (ev.key !== "Enter") return;
+        const q = box.value().toLowerCase().trim();
+        const first = q
+          ? all.find((d) => subsequence(q, d.hay.toLowerCase()))
+          : undefined;
+        if (first) {
+          ev.preventDefault();
+          first.go();
+        }
+      });
+      draw();
+      box.input.focus();
+    } catch (error) {
+      body.replaceChildren(fail(error));
+    }
+  })();
+
+  return view;
+}
+
+/** Every letter of `needle` appearing in order somewhere in `hay`. */
+function subsequence(needle: string, hay: string): boolean {
+  let i = 0;
+  for (const ch of hay) {
+    if (ch === needle[i]) i += 1;
+    if (i === needle.length) return true;
+  }
+  return needle.length === 0;
+}
+
+/** Which screen records a given capability, where one exists. The contract says
+ * what can be recorded and not where somebody does it, which is the gap AR-Q8
+ * names: this map is knowledge living in the client that the kernel could hold,
+ * and it is small enough to be worth saying so rather than pretending. */
+function capabilityRoute(key: string): Place | null {
+  const routes: Record<string, Place> = {
+    "cellar.weigh_bins": { at: "scale" },
+    "cellar.start_press": { at: "press" },
+    "cellar.draw_cut": { at: "press" },
+    "cellar.draw_to_level": { at: "press" },
+    "cellar.finish_press": { at: "press" },
+    "cellar.add_to_wine": { at: "additions" },
+    "cellar.take_sample": { at: "sampling" },
+    "cellar.count_supply": { at: "stores" },
+    "cellar.set_vintage": { at: "vintages" },
+    "cellar.cancel_pick": { at: "intake" },
+  };
+  return routes[key] ?? null;
 }
 
 // --- sampling --------------------------------------------------------------

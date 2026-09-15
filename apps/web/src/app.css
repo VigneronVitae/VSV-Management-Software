@@ -1106,3 +1106,65 @@ body.practising {
   border-color: var(--accent);
   border-width: 3px;
 }
+
+/* --- daylight ------------------------------------------------------------ */
+
+/* A phone in a vineyard at noon.
+   The sunlight-readability literature agrees on two things and this is both of
+   them: push luminance contrast as high as it will go, and make it a mode
+   somebody chooses rather than something guessed from an ambient sensor. Soft
+   greys are the first thing to vanish in direct sun, so this has none: every
+   token that was a mid grey becomes ink or rule. */
+:root[data-skin="daylight"] {
+  --ground: #ffffff;
+  --surface: #ffffff;
+  --ink: #000000;
+  --ink-soft: #1a1a1a;
+  --ink-faint: #333333;
+  --rule: #000000;
+  --accent: #5a0d22;
+  --accent-ink: #ffffff;
+  --good: #14401c;
+  --warn: #5a3800;
+  --bad: #7a1208;
+  --tap: 3.4rem;
+}
+
+[data-skin="daylight"] body {
+  background: #fff;
+  color: #000;
+  font-weight: 500;
+}
+
+/* Hairlines disappear outdoors. Everything that was a rule becomes a line you
+   can see with the sun behind you. */
+[data-skin="daylight"] .input,
+[data-skin="daylight"] .vessel-row,
+[data-skin="daylight"] .menu-item,
+[data-skin="daylight"] .map-vessel {
+  border-width: 2px;
+  border-color: #000;
+}
+
+[data-skin="daylight"] .btn {
+  border: 2px solid #000;
+  font-weight: 700;
+}
+[data-skin="daylight"] .btn-primary {
+  background: #000;
+  color: #fff;
+}
+
+/* Hints and notes are the things that were already faint. Outdoors they either
+   read or they are not worth the space. */
+[data-skin="daylight"] .field-hint,
+[data-skin="daylight"] .menu-note,
+[data-skin="daylight"] .vessel-detail,
+[data-skin="daylight"] .lede {
+  color: #1a1a1a;
+}
+
+/* The fill wash was tuned for a dark room. In sun it needs to be a solid. */
+[data-skin="daylight"] .map-fill {
+  opacity: 0.75;
+}
