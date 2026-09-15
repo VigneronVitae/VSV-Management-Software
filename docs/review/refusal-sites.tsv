@@ -399,6 +399,11 @@ set_party_default_hidden:head:1	set_party_default_hidden	head	if not (p_party_id
 set_party_default_hidden:raise:1	set_party_default_hidden	raise	raise exception 'only that party decides what it hides by default'	raise notice 'only that party decides what it hides by default'	1
 set_party_default_hidden:guard:1	set_party_default_hidden	guard	if not (coalesce(p_hidden, '{}') <@ hideable_fields()) then	if false then	1
 set_party_default_hidden:raise:2	set_party_default_hidden	raise	raise exception 'that is not something the kernel knows how to hide';	raise notice 'that is not something the kernel knows how to hide';	1
+set_room_climate:guard:1	set_room_climate	guard	if not is_facility_user() then	if false then	1
+set_room_climate:raise:1	set_room_climate	raise	raise exception 'only somebody who works here sets a room''s climate'	raise notice 'only somebody who works here sets a room''s climate'	1
+set_room_climate:guard:2	set_room_climate	guard	if l.id is null then	if false then	1
+set_room_climate:raise:2	set_room_climate	raise	raise exception 'no room with id %', p_location_id;	raise notice 'no room with id %', p_location_id;	1
+set_room_climate:raise:3	set_room_climate	raise	raise exception	raise notice	3
 set_vintage:guard:1	set_vintage	guard	if n.id is null then	if false then	1
 set_vintage:raise:1	set_vintage	raise	raise exception 'no lot with id %', p_node_id;	raise notice 'no lot with id %', p_node_id;	1
 set_vintage:guard:2	set_vintage	guard	if p_non_vintage and p_vintage is not null then	if false then	1

@@ -44,7 +44,8 @@
 --              supabase/migrations/0075_two_parents_that_disagree.sql,
 --              supabase/migrations/0076_a_tie_goes_to_the_barrel.sql,
 --              supabase/migrations/0077_a_barrel_can_arrive_red.sql,
---              supabase/migrations/0078_the_wine_in_a_vessel.sql]
+--              supabase/migrations/0078_the_wine_in_a_vessel.sql,
+--              supabase/migrations/0079_a_room_says_which_way_it_is_held.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -2888,7 +2889,10 @@ begin
   -- variety and the product type already use. No new check: a lot with no
   -- colour is legal and is caught by a worklist rather than refused, which is
   -- what the winemaker asked for.
-  want := 'c=39 f=72 p=39 u=20';
+  -- c=39 f=72 p=39 u=20 before 0079, whose one new check is that a room held in
+  -- a direction is a room under control. Those were always one fact and are now
+  -- two columns, so the constraint is what keeps them one.
+  want := 'c=40 f=72 p=39 u=20';
   if have <> want then
     raise exception
       E'FAIL: the constraint inventory changed.\nnow:  %\nwas:  %\nIf that is deliberate, update this line in the same commit that changed the schema.', have, want;
@@ -9238,6 +9242,69 @@ begin
     raise exception 'FAIL: vessel carries a colour column, and a barrel colour is derived';
   end if;
   perform test_ok('no column on vessel caches a barrel colour, so the derivation cannot drift from what the barrel has actually held');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- a room says which way it is held'; end $$;
+
+-- 0079. The winemaker wants the map to draw rooms under cold control as light
+-- negative space and heated rooms as the inverse. `location` said a room was
+-- controlled and at what, and never which direction, and **no temperature can
+-- settle it**: this winery's one controlled room sits at 15.5C, which is
+-- cooling in September and heating in January. So a room says it.
+do $$
+declare
+  r      uuid := '00000000-0000-0000-0000-0000000d0001';
+  got    record;
+begin
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+
+  insert into location (id, name) values (r, 'C8 a room');
+
+  select * into got from room_climate where id = r;
+  if got.mode <> 'off' or got.controlled then
+    raise exception 'FAIL: a new room is % and controlled is %', got.mode, got.controlled;
+  end if;
+  perform test_ok('a room nobody has said anything about is held no way at all, rather than defaulting to one');
+
+  -- Saying which way it is held says it is held. The alternative is a refusal
+  -- telling somebody to go and tick a box first, which is a refusal about
+  -- bookkeeping rather than about the winery.
+  perform set_room_climate(r, 'cooling', 4);
+  select * into got from room_climate where id = r;
+  if got.mode <> 'cooling' or not got.controlled or got.ambient_c <> 4 then
+    raise exception 'FAIL: a room told it is cooling reads % / % / %',
+      got.mode, got.controlled, got.ambient_c;
+  end if;
+  perform test_ok('saying which way a room is held also says it is held, because those were always one fact');
+
+  -- The temperature survives a later change of direction. A room that swings
+  -- from cooling to heating across a season keeps the number somebody typed.
+  perform set_room_climate(r, 'heating', null);
+  select * into got from room_climate where id = r;
+  if got.mode <> 'heating' or got.ambient_c <> 4 then
+    raise exception 'FAIL: changing direction lost the temperature: % at %',
+      got.mode, got.ambient_c;
+  end if;
+  perform test_ok('changing which way a room is held keeps the temperature somebody typed, because the season changes and the setting does not');
+
+  begin
+    perform set_room_climate(r, 'chilly');
+    raise exception 'FAIL: a room was held chilly';
+  exception when others then
+    if position('a room is held cooling, heating, or off' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a room cannot be held in a direction that is not one of the three, because the vocabulary is the vessel''s and there is no reason for a second one');
+  end;
+
+  -- The constraint, not the function. A direction written straight into the
+  -- table without control is the shape the function exists to prevent, and a
+  -- rule that only the function enforces is a rule anything else can walk past.
+  begin
+    update location set mode = 'cooling', controlled = false where id = r;
+    raise exception 'FAIL: a room is held cooling and is not controlled';
+  exception when check_violation then
+    perform test_ok('a room held in a direction is controlled, enforced by the table rather than by the one function that writes it');
+  end;
 end $$;
 
 do $$ begin raise notice '--- all assertions passed'; end $$;

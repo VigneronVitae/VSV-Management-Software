@@ -1107,6 +1107,135 @@ body.practising {
   border-width: 3px;
 }
 
+/* Thermal state, 0079. The winemaker: vessels held cold should be "white ish or
+   a light color" with a little temperature symbol, rooms under cold control
+   should make the whole negative space around the vessels whitish, and the same
+   inverted for heat.
+
+   Cold is a pale blue-white and heat a pale amber, both desaturated hard: these
+   sit behind a map that is already carrying fill height, barrel colour and
+   ownership, and a saturated ground would win against all three. The room tint
+   is the negative space, so it goes on the floor rather than on the shapes. */
+.map-room-cooling .map-floor {
+  background: #eef4f9;
+  box-shadow: inset 0 0 0 1px #cfe0ee;
+}
+
+.map-room-heating .map-floor {
+  background: #faf1e6;
+  box-shadow: inset 0 0 0 1px #eedcc2;
+}
+
+/* And the vessel itself, which overrides whatever the room is doing: a jacket
+   beats the air around it, which is what effective_temp_c has meant since
+   0006. Lighter than the shape would otherwise be for cold, warmer for heat. */
+/* An outline rather than a box-shadow, and deliberately: a barrel already wears
+   an inset box-shadow for its red or white, and two rules setting box-shadow do
+   not merge, the specific one simply wins. Outline is a separate channel, so a
+   barrel can say red and cold at once. It also reads at 52px, where a corner
+   badge is clipped away by the circle. */
+.map-vessel.map-cooling {
+  background: #f4f9fd;
+  border-color: #9cc3de;
+  outline: 3px solid #bcd9ec;
+}
+
+.map-vessel.map-heating {
+  background: #fdf6ec;
+  border-color: #dfb377;
+  outline: 3px solid #eccfa4;
+}
+
+.thermal {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15em;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.thermal-cooling {
+  color: #2f6690;
+}
+
+.thermal-heating {
+  color: #9a5b18;
+}
+
+.thermal-icon {
+  width: 1em;
+  height: 1em;
+  flex: none;
+}
+
+/* On a shape, the badge sits in the corner rather than in the flow: the name
+   and the litres are already using the middle. */
+.map-vessel .thermal {
+  position: absolute;
+  top: 2px;
+  right: 3px;
+}
+
+/* Beside the room's name, because it is a fact about the room. At the far end
+   of the head it reads as one more statistic in a row of them. */
+.map-room-title {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.45em;
+}
+
+/* On a barrel there is room for the icon and not for the number: the name and
+   the litres are already using the whole 52 pixels, and a temperature sitting
+   on top of a name is worse than no temperature. The ring carries the state and
+   the tooltip carries the setpoint, so nothing is lost but the digits.
+
+   Centred rather than in the corner, because the shape is a circle and its
+   corners are outside it. */
+.map-vessel.map-small .thermal-temp {
+  display: none;
+}
+
+.map-vessel.map-small .thermal {
+  top: 3px;
+  right: auto;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.6rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .map-room-cooling .map-floor {
+    background: #16222c;
+    box-shadow: inset 0 0 0 1px #24384a;
+  }
+
+  :root:not([data-theme="light"]) .map-room-heating .map-floor {
+    background: #2a2117;
+    box-shadow: inset 0 0 0 1px #45341f;
+  }
+
+  :root:not([data-theme="light"]) .map-vessel.map-cooling {
+    background: #1b2a36;
+    border-color: #3f6d8c;
+    outline-color: #2b4a61;
+  }
+
+  :root:not([data-theme="light"]) .map-vessel.map-heating {
+    background: #32261a;
+    border-color: #7a5726;
+    outline-color: #58401c;
+  }
+
+  :root:not([data-theme="light"]) .thermal-cooling {
+    color: #8fc0e0;
+  }
+
+  :root:not([data-theme="light"]) .thermal-heating {
+    color: #e0b277;
+  }
+}
+
 /* Barrel colour, 0072. Derived from what the barrel has held, never stored.
    A rim rather than a word: the question is asked while standing in front of a
    wall of barrels looking for somewhere to put a white, and nobody reads labels

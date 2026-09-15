@@ -93,6 +93,19 @@ export type Location = {
   ambient_c: number | null;
 };
 
+// A room, with which way it is held. `mode` is told rather than read off
+// `ambient_c`: the same 15C is cooling in September and heating in January, so
+// a room that is controlled with no direction is a room nobody has said about.
+export type RoomClimate = {
+  id: Uuid;
+  name: string;
+  kind: string | null;
+  controlled: boolean;
+  mode: "cooling" | "heating" | "off";
+  ambient_c: number | null;
+  vessels: number;
+};
+
 export type NodeStage = "bin" | "load" | "ferment" | "maturation" | "finished";
 
 export type Provenance = "observed" | "inferred" | "confirmed";
@@ -127,6 +140,14 @@ export type VesselState = {
   owner_name: string | null;
   facility_owned: boolean;
   location_name: string | null;
+  // The jacket, and what it is doing. `vessel_state` has carried all three
+  // since 0006 and this type did not declare them, so nothing could draw a
+  // vessel that is being held cold.
+  has_glycol: boolean;
+  setpoint_c: number | null;
+  mode: ThermalMode;
+  location_ambient_c: number | null;
+  location_controlled: boolean;
   effective_temp_c: number | null;
   node_id: Uuid | null;
   lot_name: string | null;

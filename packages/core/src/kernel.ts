@@ -34,6 +34,7 @@ import type {
   PressInProgress,
   PressResult,
   PressStarted,
+  RoomClimate,
   Sample,
   ShoppingItem,
   SubjectNote,
@@ -42,6 +43,7 @@ import type {
   SupplyOnHand,
   Term,
   TermKind,
+  ThermalMode,
   ToPropagate,
   TypedFact,
   UnweighedBin,
@@ -1938,4 +1940,31 @@ export async function lotDetail(nodeId: Uuid): Promise<LotDetail[]> {
     .eq("id", nodeId);
   if (error) throw new KernelError(error);
   return (data ?? []) as LotDetail[];
+}
+
+// --- how a room is held ----------------------------------------------------
+
+export async function rooms(): Promise<RoomClimate[]> {
+  const { data, error } = await kernel()
+    .from("room_climate")
+    .select("id,name,kind,controlled,mode,ambient_c,vessels")
+    .order("name");
+  if (error) throw new KernelError(error);
+  return (data ?? []) as RoomClimate[];
+}
+
+// Saying which way a room is held also says it is held, which is why this is one
+// call and not an update to two columns from a screen.
+export async function setRoomClimate(
+  locationId: Uuid,
+  mode: ThermalMode,
+  ambientC: number | null,
+): Promise<{ id: Uuid; mode: string; ambient_c: number | null }> {
+  const { data, error } = await kernel().rpc("set_room_climate", {
+    p_location_id: locationId,
+    p_mode: mode,
+    p_ambient_c: ambientC,
+  });
+  if (error) throw new KernelError(error);
+  return data as { id: Uuid; mode: string; ambient_c: number | null };
 }

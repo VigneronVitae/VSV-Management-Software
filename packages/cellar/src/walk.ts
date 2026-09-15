@@ -80,6 +80,7 @@ import {
   practiceAvailable,
   pressDraws,
   pressesInProgress,
+  type RoomClimate,
   rackPlan,
   rackTransfer,
   reconditionBarrel,
@@ -89,6 +90,7 @@ import {
   resolveCode,
   resolveVesselTypeNote,
   retirePaperRecord,
+  rooms,
   type SiteFields,
   type SubjectNote,
   type SupplyOnHand,
@@ -97,6 +99,7 @@ import {
   setMakerMakes,
   setPaperRecordOperations,
   setPartyLogin,
+  setRoomClimate,
   setVesselTypeBin,
   setVesselTypeFields,
   setVintage,
@@ -1536,11 +1539,60 @@ function vesselListScreen(
 // height rather than a number, and whose wine it is when it is not ours. A
 // vessel somebody else owns is the thing you most need to not make a mistake
 // with, and a list buries that in a column.
+// A snowflake and a flame, drawn rather than typed. An emoji would be a
+// different picture on every phone in the barn and a different size on each,
+// and this has to read at 14px on a shape the size of a thumbnail. Both take
+// their colour from the text around them, so the skins keep control of it.
+function thermalBadge(mode: ThermalMode, temp: number | null): HTMLElement {
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  svg.setAttribute("class", "thermal-icon");
+  svg.setAttribute("aria-hidden", "true");
+  const path = document.createElementNS(ns, "path");
+  if (mode === "cooling") {
+    // Three crossed strokes plus four small arms: a snowflake reads as one at
+    // this size, where anything more detailed turns to mud.
+    path.setAttribute(
+      "d",
+      "M8 1v14M2 4.5l12 7M14 4.5l-12 7M8 4.2 6 2.6M8 4.2l2-1.6M8 11.8l-2 1.6M8 11.8l2 1.6",
+    );
+  } else {
+    // A flame, in one stroke, leaning the way a flame leans.
+    path.setAttribute(
+      "d",
+      "M8 15c3 0 4.6-2 4.6-4.2 0-3.2-3.4-4.4-2.6-8.3C7.6 3.4 6 5.6 6 7.4c0 1 .4 1.7.4 2.3 0 .8-.6 1.2-1.2 1.2-.7 0-1.2-.6-1.3-1.5-.6.8-.9 1.7-.9 2.6C3 13.4 5 15 8 15Z",
+    );
+  }
+  path.setAttribute("fill", "none");
+  path.setAttribute("stroke", "currentColor");
+  path.setAttribute("stroke-width", "1.3");
+  path.setAttribute("stroke-linecap", "round");
+  path.setAttribute("stroke-linejoin", "round");
+  svg.appendChild(path);
+
+  return el(
+    "span",
+    { class: `thermal thermal-${mode}` },
+    svg,
+    el("span", {
+      class: "thermal-temp",
+      // The number is the fact and the colour is the feeling. A held vessel
+      // with no setpoint recorded still says it is held.
+      text: temp === null ? "" : `${Number(temp).toFixed(temp % 1 === 0 ? 0 : 1)}C`,
+    }),
+  );
+}
+
 function cellarMapLayout(
   kit: VesselState[],
   places: Location[],
   barrels: BarrelColour[] = [],
+  climate: RoomClimate[] = [],
 ): Node {
+  // 0079. Which way each room is held, by name, because the map groups by the
+  // room's name and a vessel carries the name rather than the id.
+  const roomClimate = new Map(climate.map((r) => [r.name, r]));
   // 0072. A barrel is red, white or unknown, derived from what has been in it.
   // On a map it is a rim colour rather than a word, because the question it
   // answers is asked while standing in the barrel room looking for somewhere to
@@ -1585,6 +1637,11 @@ function cellarMapLayout(
           (cap ? "" : " map-nosize") +
           (v.is_empty ? " map-empty" : "") +
           (colourOf.has(v.id) ? ` map-barrel-${colourOf.get(v.id)}` : "") +
+          // Held cold, held warm, or neither. A jacket that is off is not a
+          // jacket that is doing something, so `has_glycol` is not the test:
+          // what the vessel is doing right now is.
+          (v.mode === "off" ? "" : ` map-${v.mode}`) +
+          (size < 72 ? " map-small" : "") +
           (v.lot_facility_owned === false ? " map-theirs" : ""),
         style: `--size:${size}px; --fill:${fill.toFixed(3)}`,
         title:
@@ -1592,7 +1649,10 @@ function cellarMapLayout(
           (cap ? `, ${cap.toLocaleString()} L` : "") +
           (v.is_empty
             ? ", empty"
-            : `, ${held.toLocaleString()} L of ${v.lot_name ?? "wine"}`),
+            : `, ${held.toLocaleString()} L of ${v.lot_name ?? "wine"}`) +
+          (v.mode === "off"
+            ? ""
+            : `, ${v.mode} to ${v.setpoint_c ?? "an unrecorded setpoint"}`),
       },
       el("span", { class: "map-fill" }),
       el("span", { class: "map-name", text: v.name }),
@@ -1602,6 +1662,9 @@ function cellarMapLayout(
         class: "map-litres",
         text: v.is_empty ? "" : `${Math.round(held)}`,
       }),
+      // The setpoint rather than the room: a jacketed vessel overrides what the
+      // room is doing, which is what `effective_temp_c` has meant since 0006.
+      ...(v.mode === "off" ? [] : [thermalBadge(v.mode, v.setpoint_c)]),
     );
 
     // Always the choice screen, for the same reason the list rows are: a barrel
@@ -1620,22 +1683,43 @@ function cellarMapLayout(
       const here = byPlace.get(room) ?? [];
       const full = here.filter((v) => !v.is_empty).length;
       const litres = here.reduce((sum, v) => sum + Number(v.current_volume_l ?? 0), 0);
+      // The room itself, which is the negative space behind the shapes. A room
+      // that is controlled and has not said which way it is held gets the
+      // temperature and no colour, because that is the honest picture of what
+      // anybody knows about it.
+      const air = roomClimate.get(room);
+      const holding = air && air.mode !== "off" ? air.mode : null;
       return el(
         "div",
-        { class: "map-room" },
+        { class: `map-room${holding ? ` map-room-${holding}` : ""}` },
         el(
           "div",
           { class: "map-room-head" },
-          el("span", {
-            class: "map-room-name",
-            text: room === "" ? "Nobody has said where these are" : room,
-          }),
+          el(
+            "span",
+            { class: "map-room-title" },
+            el("span", {
+              class: "map-room-name",
+              text: room === "" ? "Nobody has said where these are" : room,
+            }),
+            ...(holding ? [thermalBadge(holding, air?.ambient_c ?? null)] : []),
+          ),
           el("span", {
             class: "map-room-note",
             text:
               `${full} of ${here.length} holding wine` +
               (litres > 0 ? `, ${Math.round(litres).toLocaleString()} L` : ""),
           }),
+          // Controlled, and nobody has said which way. Worth a word rather than
+          // silence: the room is doing something and the map cannot draw it.
+          ...(air?.controlled && !holding
+            ? [
+                el("span", {
+                  class: "map-room-note",
+                  text: `held at ${air.ambient_c ?? "an unrecorded temperature"}, direction not said`,
+                }),
+              ]
+            : []),
         ),
         el("div", { class: "map-floor" }, ...here.map(vesselShape)),
       );
@@ -1748,10 +1832,85 @@ function locationScreen(): HTMLElement {
 
   void kind.reload();
 
+  const existing = el("div", {});
+
+  // 0079. Every room that is already here, with the one control that did not
+  // exist when it was added. A screen that can only add rooms is a screen that
+  // cannot answer a question about the rooms there are.
+  async function drawExisting(): Promise<void> {
+    const air = await rooms();
+    const said = el("div", {});
+
+    function row(r: RoomClimate): HTMLElement {
+      async function hold(mode: ThermalMode): Promise<void> {
+        try {
+          await setRoomClimate(r.id, mode, null);
+          await drawExisting();
+        } catch (error) {
+          said.replaceChildren(fail(error));
+        }
+      }
+
+      return el(
+        "details",
+        { class: "more" },
+        el("summary", {
+          text:
+            `${r.name}, ${r.vessels} vessel${r.vessels === 1 ? "" : "s"}` +
+            (r.mode === "off"
+              ? r.controlled
+                ? ", controlled, direction not said"
+                : ""
+              : `, ${r.mode} at ${r.ambient_c ?? "an unrecorded temperature"}`),
+        }),
+        rows(
+          el("p", {
+            class: "field-hint",
+            text:
+              "Which way the room is held. It cannot be read off the " +
+              "temperature: the same 15C is cooling in September and heating " +
+              "in January.",
+          }),
+          el(
+            "div",
+            { class: "button-row" },
+            button(
+              "Held cold",
+              () => void hold("cooling"),
+              r.mode === "cooling" ? "primary" : "secondary",
+            ),
+            button(
+              "Held warm",
+              () => void hold("heating"),
+              r.mode === "heating" ? "primary" : "secondary",
+            ),
+            button(
+              "Neither",
+              () => void hold("off"),
+              r.mode === "off" ? "primary" : "secondary",
+            ),
+          ),
+        ),
+      );
+    }
+
+    existing.replaceChildren(
+      rows(
+        el("h2", { class: "section-head", text: "Rooms there are" }),
+        ...air.map(row),
+        said,
+      ),
+    );
+  }
+
+  void drawExisting();
+
   return screen(
-    "Add a location",
+    "Locations",
     lede("Where vessels live. Add them as you walk into them."),
     rows(
+      existing,
+      el("h2", { class: "section-head", text: "Add one" }),
       name.root,
       kind.root,
       controlled.root,
