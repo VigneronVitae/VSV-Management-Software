@@ -176,7 +176,7 @@ do $$ begin
   begin
     insert into node (stage, name, variety_id, vintage) values ('bin', 'x', term_id('vessel_maker','francois_freres'), 2026);
     raise exception 'FAIL: a cooper was accepted where a variety belongs';
-  exception when foreign_key_violation then
+  exception when foreign_key_violation or restrict_violation then
     perform test_ok('a term of the wrong kind is refused by the database, not by the picker');
   end;
 end $$;
@@ -2698,12 +2698,23 @@ do $$
 declare have text; want text;
 begin
   if not snapshots_on() then perform skip_snapshot('the constraint inventory'); return; end if;
+  -- The four kinds this census is about, named rather than "whatever is in the
+  -- catalog". It used to group over every `contype` present, which silently
+  -- coupled the suite to the Postgres major version: **Postgres 18 records NOT
+  -- NULL constraints in `pg_constraint` as contype 'n' and Postgres 17 does
+  -- not**, so the same schema reports `n=181` on one and nothing on the other.
+  --
+  -- Found by applying this kernel to a Postgres compiled to WASM, which is
+  -- Postgres 18, while investigating whether the kernel could run on a phone.
+  -- The kernel was fine and this assertion was not, and it would have failed the
+  -- same way the day this winery's server was upgraded.
   select string_agg(x.line, ' ' order by x.line) into have from (
     select c.contype::text || '=' || count(*)::text as line
       from pg_constraint c
       join pg_class t on t.oid = c.conrelid
       join pg_namespace n on n.oid = t.relnamespace
      where n.nspname = 'public'
+       and c.contype in ('c', 'f', 'p', 'u')
      group by c.contype
   ) x;
 
@@ -2858,20 +2869,20 @@ begin
     insert into node (stage, name, variety_id, vintage)
       values ('bin','wrong variety', term_id('vessel_maker','francois_freres'), 2026);
     raise exception 'FAIL: node.variety_id accepted a cooper';
-  exception when foreign_key_violation then refused := refused + 1;
+  exception when foreign_key_violation or restrict_violation then refused := refused + 1;
   end;
 
   begin
     insert into node (stage, name, product_type_id, vintage)
       values ('bin','wrong product', term_id('variety','pinot_noir'), 2026);
     raise exception 'FAIL: node.product_type_id accepted a variety';
-  exception when foreign_key_violation then refused := refused + 1;
+  exception when foreign_key_violation or restrict_violation then refused := refused + 1;
   end;
 
   begin
     insert into vessel (name, type_id) values ('wrong type', term_id('variety','pinot_noir'));
     raise exception 'FAIL: vessel.type_id accepted a variety';
-  exception when foreign_key_violation then refused := refused + 1;
+  exception when foreign_key_violation or restrict_violation then refused := refused + 1;
   end;
 
   begin
@@ -2880,14 +2891,14 @@ begin
               '00000000-0000-0000-0000-00000000b001',
               '00000000-0000-0000-0000-00000000a001');
     raise exception 'FAIL: event.operation_id accepted a variety';
-  exception when foreign_key_violation then refused := refused + 1;
+  exception when foreign_key_violation or restrict_violation then refused := refused + 1;
   end;
 
   begin
     insert into task (operation_id, subject_type, subject_id)
       values (term_id('variety','pinot_noir'), 'node', '00000000-0000-0000-0000-00000000b001');
     raise exception 'FAIL: task.operation_id accepted a variety';
-  exception when foreign_key_violation then refused := refused + 1;
+  exception when foreign_key_violation or restrict_violation then refused := refused + 1;
   end;
 
   if refused <> 5 then raise exception 'FAIL: only % of 5 wrong-kind writes were refused', refused; end if;
@@ -3852,7 +3863,7 @@ begin
       values (term_id('operation','punchdown'), 'unregistered_thing',
               '00000000-0000-0000-0000-00000000b001');
     raise exception 'FAIL: a task was created against an unregistered subject type';
-  exception when foreign_key_violation then
+  exception when foreign_key_violation or restrict_violation then
     perform test_ok('a task cannot name a subject type nobody registered');
   end;
 end $$;
@@ -3894,7 +3905,7 @@ begin
   begin
     delete from subject_resolver where subject_type = 'location';
     raise exception 'FAIL: a subject type was deregistered while tasks still pointed at it';
-  exception when foreign_key_violation then
+  exception when foreign_key_violation or restrict_violation then
     perform test_ok('deregistering a subject type with live tasks is refused, not cascaded');
   end;
   delete from task where id = '00000000-0000-0000-0000-00000000aa02';
@@ -3935,7 +3946,7 @@ begin
     insert into term (kind, value, label, sort_order)
       values ('not_a_kind', 'x', 'X', 1);
     raise exception 'FAIL: a term was created under an unregistered kind';
-  exception when foreign_key_violation then
+  exception when foreign_key_violation or restrict_violation then
     perform test_ok('a term cannot name a kind nobody registered');
   end;
 
@@ -5242,7 +5253,7 @@ begin
     values ('00000000-0000-0000-0000-00000000e0a2',
             term_id('variety', 'pinot_noir'), 'vessel_type', 'Lying about its kind');
     raise exception 'FAIL: a schedule named a variety and called it a vessel type';
-  exception when foreign_key_violation then
+  exception when foreign_key_violation or restrict_violation then
     perform test_ok('a schedule naming a term of one kind and claiming another is refused by the composite key');
   end;
 
@@ -6112,7 +6123,7 @@ begin
   begin
     insert into planting (block_id, variety_id) values (blk, term_id('vessel_type', 'barrel'));
     raise exception 'FAIL: a block was planted to a vessel type';
-  exception when foreign_key_violation then
+  exception when foreign_key_violation or restrict_violation then
     perform test_ok('a planting names a variety or nothing, which the composite key is what enforces');
   end;
 
@@ -6971,7 +6982,7 @@ begin
     insert into supply_material_kind (supply_id, kind_id)
     values (dap, term_id('variety', 'riesling'));
     raise exception 'FAIL: a supply was flagged as a grape variety';
-  exception when foreign_key_violation then
+  exception when foreign_key_violation or restrict_violation then
     perform test_ok('a sort of supply names the material vocabulary and nothing else');
   end;
 

@@ -820,6 +820,58 @@ pointed at a stranger instead of at your own server, with S-32 as the extra thin
 true only in the stranger case. Building submit gets most of export for free, which is the
 opposite of the usual relationship between a sync feature and a migration feature.
 
+**AR-Q10. What runs the kernel on the device.**
+*Status:* measured, not yet built
+*Asked by the winemaker, 2026-09-15: "what could run the kernel on the device?", and
+"could we just do the whole thing on the phone not needing postgres?"*
+
+**The second question is the one with a real answer, and the answer is no.** Not because it
+cannot be done, but because of what it costs. The kernel is 57 plpgsql functions, 22 sql
+functions, 18 triggers, 93 policies and 19 views. Rewriting that in TypeScript is a second
+implementation of every rule in the system, which is the exact failure CLAUDE.md's hardest
+rule exists to prevent: two implementations of a rule disagree eventually, and the
+disagreement is silent. The 456 assertions prove the Postgres one and would prove nothing
+about a second one. A device kernel is only worth having if it is *the same kernel*.
+
+**So the question is whether Postgres runs on a phone, and it was measured rather than
+argued.** PGlite 0.5.8, Postgres 18.3 compiled to WASM, under 3MB gzipped, persisting to
+IndexedDB, in a scratch directory outside the repository:
+
+- plpgsql is present, roles can be created, and `SET ROLE` works, so row level security is
+  live rather than inert. That was the thing most likely to disqualify it.
+- All 61 migrations apply, with `tests/shim.sql` in front exactly as `scripts/green.sh` uses
+  it against a bare Postgres. 57 plpgsql functions, 93 policies, 19 views, 37 tables, and a
+  constraint census identical to Postgres 17 with the same shim.
+- `contract()` executes.
+- **The whole assertion suite completes without raising.**
+
+Two fixes were needed and neither was in the kernel. Both were in the suite, and both are
+version couplings nobody knew were there:
+
+1. The constraint census grouped over every `contype` in the catalog. **Postgres 18 records
+   NOT NULL constraints in `pg_constraint` and Postgres 17 does not**, so the same schema
+   reported `n=181` on one and nothing on the other. It now names the four kinds it means.
+2. Twelve handlers caught `foreign_key_violation` for an `ON DELETE RESTRICT` refusal.
+   **Postgres 18 raises those as `restrict_violation`**, which is more precise and which
+   those handlers did not catch, so a refusal the suite was asserting escaped as a failure.
+   They now catch both.
+
+*Both would have fired the day this winery's server was upgraded to Postgres 18, with no
+warning and no connection to whatever change was being made at the time.* That is worth more
+than the WASM result: a test suite that silently depends on a major version is a suite that
+goes red for a reason nobody can find.
+
+*What is still unmeasured, and must be before this is built.* Photographs: PGlite has no
+storage API, so the bucket needs separate handling on the device. Durability: IndexedDB with
+a leader-elected single connection across tabs, and the docs do not state what happens to an
+in-flight transaction when the leader tab dies. Size on a barn connection, once. And
+`auth.uid()`, which the shim provides for tests and which a device kernel needs as something
+real, though with one user on one device that is a stub rather than a problem.
+
+*Resolves when:* somebody builds the submit path of AR-Q9 against a PGlite kernel. The
+experiment above is the reason to expect that to work rather than a reason to believe it
+does.
+
 **AR-Q5. Solera truncation depth.**
 *Status:* open question
 Perpetual fractional draw has no terminating lineage walk. Composition converges as a
