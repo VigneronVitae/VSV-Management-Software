@@ -423,6 +423,20 @@ export type LotAddition = {
   took_from_the_shelf: boolean;
 };
 
+// Something somebody said about anything, at any time. Never evidence: a note
+// changes no quantity, clears no worklist and satisfies no form. See 0062.
+export type SubjectNote = {
+  id: Uuid;
+  subject_type: string;
+  subject_id: Uuid;
+  about_event: Uuid | null;
+  body: string;
+  at: string;
+  edited_at: string | null;
+  by_name: string | null;
+  by_user: Uuid | null;
+};
+
 // --- photographs -----------------------------------------------------------
 
 // A photograph of anything the subject resolver knows about. See migration

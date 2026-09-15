@@ -865,6 +865,20 @@ whole entry exists inside. *Load-bearing:* no, while a periphery can afford to t
 Yes the moment somebody wants a periphery that never offers an action that cannot work, which is
 exactly what an audio one would need.
 
+**S-73. There are now three note tables and `0062` did not remove the other two.**
+`day_note` belongs to a date, `vessel_type_note` belongs to a vessel type and carries a
+resolve, and `0062` adds `note`, which belongs to any subject the resolver knows and
+therefore to both of those. **Inventing a note table per subject is what `0062` exists to
+stop, and it ships alongside the two it was meant to replace.** That is deliberate and it is
+not free: the daily log and the vessel type screens work and it is harvest, so rewriting
+them onto the general table is a change with no upside this week and a real chance of
+breaking two screens somebody is using. *Resolves when:* `day_note` becomes a note on a
+subject type of `day`, which the resolver would have to learn, and `vessel_type_note`
+becomes a note on a `vessel_type` with its resolve kept as the one thing the general table
+does not have. Both are migrations plus a screen each. *Load-bearing:* no, while somebody
+knows which of the three to read. Yes for anybody writing a fourth client, who will find
+three shapes of the same idea and no statement of which is current.
+
 ## Discharged
 **S-52. A press recorded no cuts.** *Discharged by `0045`.*
 The entry said that pressing free run and hard press separately recorded shares proportional to

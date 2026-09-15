@@ -27,6 +27,12 @@ add_bins_to_pick:permissive:1	add_bins_to_pick	permissive	and coalesce((attribut
 add_bins_to_pick:raise:6	add_bins_to_pick	raise	raise exception 'that is not a picking bin type, so fruit is not weighed in it';	raise notice 'that is not a picking bin type, so fruit is not weighed in it';	1
 add_bins_to_pick:guard:6	add_bins_to_pick	guard	if lender is not null then	if false then	1
 add_bins_to_pick:guard:7	add_bins_to_pick	guard	elsif p_owner_id is not null and p_owner_id is distinct from facility_party_id() then	elsif false then	1
+add_note:guard:1	add_note	guard	if not is_facility_user() then	if false then	1
+add_note:raise:1	add_note	raise	raise exception 'notes are written by people who work here';	raise notice 'notes are written by people who work here';	1
+add_note:guard:2	add_note	guard	if p_body is null or btrim(p_body) = '' then	if false then	1
+add_note:raise:2	add_note	raise	raise exception 'there is nothing here to say';	raise notice 'there is nothing here to say';	1
+add_note:guard:3	add_note	guard	if not exists (select 1 from subject_resolver where subject_type = p_subject_type) then	if false then	1
+add_note:raise:3	add_note	raise	raise exception 'nothing in this system is a %, so a note cannot be about one',	raise notice 'nothing in this system is a %, so a note cannot be about one',	1
 add_to_wine:guard:1	add_to_wine	guard	if n_vessels = 0 then	if false then	1
 add_to_wine:raise:1	add_to_wine	raise	raise exception 'no vessel was named, so there is nothing for this to go into';	raise notice 'no vessel was named, so there is nothing for this to go into';	1
 add_to_wine:guard:2	add_to_wine	guard	if p_amount is null or p_amount <= 0 then	if false then	1
@@ -203,6 +209,15 @@ node_history:earlyreturn:1	node_history	earlyreturn	return;	null;	2
 node_history:head:2	node_history	head	if 'history' = any(n.hidden)\n     and not coalesce(may_see_all_of(n.owner_id, n.hidden), false) then	if false then	1
 node_history:permissive:1	node_history	permissive	and not coalesce(may_see_all_of(n.owner_id, n.hidden), false) then	and not coalesce(may_see_all_of(n.owner_id, n.hidden), true) then	1
 node_history:earlyreturn:2	node_history	earlyreturn	return;	null;	3
+note_event_matches_subject:guard:1	note_event_matches_subject	guard	if new.about_event is null then	if false then	1
+note_event_matches_subject:earlyreturn:1	note_event_matches_subject	earlyreturn	return new;	null;	1
+note_event_matches_subject:guard:2	note_event_matches_subject	guard	if e.id is null then	if false then	1
+note_event_matches_subject:raise:1	note_event_matches_subject	raise	raise exception 'there is no event % for this note to be about', new.about_event;	raise notice 'there is no event % for this note to be about', new.about_event;	1
+note_event_matches_subject:guard:3	note_event_matches_subject	guard	if e.subject_type <> new.subject_type or e.subject_id <> new.subject_id then	if false then	1
+note_event_matches_subject:raise:2	note_event_matches_subject	raise	raise exception	raise notice	2
+note_is_not_refiled:head:1	note_is_not_refiled	head	if new.subject_type <> old.subject_type\n     or new.subject_id <> old.subject_id\n     or new.about_event is distinct from old.about_event\n     or new.by_user is distinct from old.by_user then	if false then	1
+note_is_not_refiled:raise:1	note_is_not_refiled	raise	raise exception	raise notice	1
+note_is_not_refiled:guard:1	note_is_not_refiled	guard	if new.body <> old.body then	if false then	1
 plan_processing:guard:1	plan_processing	guard	if coalesce(array_length(p_vessel_ids, 1), 0) = 0 then	if false then	1
 plan_processing:raise:1	plan_processing	raise	raise exception 'no bins were named, so there is nothing to plan';	raise notice 'no bins were named, so there is nothing to plan';	1
 plan_processing:guard:2	plan_processing	guard	if p_on is null then	if false then	1

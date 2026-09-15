@@ -5,6 +5,7 @@ import {
   addBlock,
   addDayNote,
   addLocation,
+  addNote,
   addPaperRecord,
   addParty,
   addPhoto,
@@ -48,6 +49,7 @@ import {
   type NodePayload,
   newId,
   nodeHistory,
+  notesFor,
   openPicks,
   type PaperRecord,
   type Party,
@@ -2756,7 +2758,7 @@ function vesselChoiceScreen(vesselId: string, vesselName: string): HTMLElement {
         "secondary",
       ),
       button(
-        "Photographs",
+        "Notes and photographs",
         () => go({ at: "vessel-photos", id: vesselId }),
         "secondary",
       ),
@@ -4009,7 +4011,7 @@ function pickBinsScreen(openOn?: string): HTMLElement {
           // than no button.
           nodeId
             ? button(
-                "Photographs",
+                "Notes and photographs",
                 () => (nodeId ? go({ at: "pick-photos", id: nodeId }) : undefined),
                 "secondary",
               )
@@ -4728,21 +4730,23 @@ function photosScreen(subject: "node" | "vessel", subjectId: string): HTMLElemen
   const body = el("div", {}, empty("Loading."));
   const message = el("div", {});
   const view = screen(
-    "Photographs",
+    "Notes and photographs",
     lede(
       subject === "node"
-        ? "Pictures of this pick. A photograph of the scale belongs to the " +
-            "reading it shows, so attach it to that reading rather than to the pick."
-        : "Pictures of this vessel. As many as you take: nothing here replaces " +
-            "what was already attached.",
+        ? "Anything worth saying about this pick, and any picture of it, added " +
+            "whenever somebody gets to it. A photograph of the scale belongs to " +
+            "the reading it shows rather than to the pick."
+        : "Anything worth saying about this vessel, and any picture of it. As " +
+            "many as you like: nothing here replaces what was already there.",
     ),
     body,
   );
 
   async function load(): Promise<void> {
-    const [already, weighings] = await Promise.all([
+    const [already, weighings, said] = await Promise.all([
       attachmentsFor(subject, subjectId),
       subject === "node" ? pickWeighings(subjectId) : Promise.resolve([]),
+      notesFor(subject, subjectId),
     ]);
 
     // One picker per reading. A single picker plus a dropdown would be fewer
@@ -4859,8 +4863,68 @@ function photosScreen(subject: "node" | "vessel", subjectId: string): HTMLElemen
       already.map((a) => photoCard(a, () => void load(), message)),
     );
 
+    // First on the screen, because it is the cheapest thing to do and it is what
+    // somebody standing over a bin actually came here for. "The fruit was mostly
+    // good" is a sentence, not a form.
+    const saying = field({
+      label: "Say something",
+      placeholder:
+        subject === "node"
+          ? "fruit was mostly good, a bit of shrivel"
+          : "gasket perished",
+      hint: "Kept with this and never counted as a measurement.",
+    });
+    const noteWhen = field({
+      label: "When it is about",
+      type: "datetime-local",
+      hint: "Blank means now. Useful for something you noticed this morning.",
+    });
+    const noteSaid = el("div", {});
+
     body.replaceChildren(
       rows(
+        el("h2", { class: "section-head", text: "Notes" }),
+        saying.root,
+        noteWhen.root,
+        button("Add this note", async () => {
+          if (!saying.value().trim()) {
+            noteSaid.replaceChildren(banner("Type what you want to say.", "error"));
+            return;
+          }
+          try {
+            await addNote({
+              subjectType: subject,
+              subjectId,
+              body: saying.value(),
+              at: noteWhen.value() ? new Date(noteWhen.value()).toISOString() : null,
+            });
+            saying.input.value = "";
+            await load();
+          } catch (error) {
+            noteSaid.replaceChildren(fail(error));
+          }
+        }),
+        noteSaid,
+        said.length === 0
+          ? empty("Nothing said about this yet.")
+          : el(
+              "ul",
+              { class: "vessel-list" },
+              ...said.map((n) =>
+                el(
+                  "li",
+                  { class: "vessel-row" },
+                  el("span", { class: "vessel-name", text: n.body }),
+                  el("span", {
+                    class: "vessel-detail",
+                    text:
+                      `${n.by_name ?? "somebody"}, ${new Date(n.at).toLocaleString()}` +
+                      (n.edited_at ? " (reworded)" : ""),
+                  }),
+                ),
+              ),
+            ),
+
         ...(subject === "node"
           ? [
               el("h2", { class: "section-head", text: "Weighings" }),

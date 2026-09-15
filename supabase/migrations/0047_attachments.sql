@@ -4,7 +4,7 @@
 --           rather than only at the moment the thing was recorded."
 -- Depends on: [supabase/migrations/0023_subject_resolver.sql,
 --              supabase/migrations/0042_weighing_photo.sql]
--- Depended on by: [tests/schema_assertions.sql, supabase/migrations/0048_pick_weighing.sql]
+-- Depended on by: [tests/schema_assertions.sql, supabase/migrations/0048_pick_weighing.sql, supabase/migrations/0062_a_note_on_anything.sql]
 -- Axioms enforced: T0-3 (a photograph is evidence and carries who took it and
 --                  when), T0-5 (an attachment is appended; removing one is an
 --                  administrator's act rather than a correction)

@@ -28,6 +28,7 @@ import type {
   PressResult,
   PressStarted,
   ShoppingItem,
+  SubjectNote,
   SupplyCount,
   SupplyForAddition,
   SupplyOnHand,
@@ -780,6 +781,47 @@ export async function addPhoto(args: {
   const path = await uploadPhoto(args.subjectType, args.subjectId, args.file);
   const out = await attachPhoto({ ...args, path });
   return { ...out, path };
+}
+
+// --- notes -----------------------------------------------------------------
+
+export async function notesFor(
+  subjectType: string,
+  subjectId: Uuid,
+): Promise<SubjectNote[]> {
+  const { data, error } = await kernel()
+    .from("subject_note")
+    .select("id,subject_type,subject_id,about_event,body,at,edited_at,by_name,by_user")
+    .eq("subject_type", subjectType)
+    .eq("subject_id", subjectId)
+    .order("at", { ascending: false });
+  if (error) throw new KernelError(error);
+  return (data ?? []) as SubjectNote[];
+}
+
+export async function addNote(args: {
+  subjectType: string;
+  subjectId: Uuid;
+  body: string;
+  aboutEvent?: Uuid | null;
+  at?: string | null;
+}): Promise<{ id: Uuid; at: string }> {
+  const { data, error } = await kernel().rpc("add_note", {
+    p_subject_type: args.subjectType,
+    p_subject_id: args.subjectId,
+    p_body: args.body,
+    p_about_event: args.aboutEvent ?? null,
+    p_at: args.at ?? null,
+  });
+  if (error) throw new KernelError(error);
+  return data as { id: Uuid; at: string };
+}
+
+/** The words can be corrected by whoever wrote them. Where it is filed cannot
+ * move: the kernel refuses that, and refiling is writing a new one. */
+export async function rewordNote(id: Uuid, body: string): Promise<void> {
+  const { error } = await kernel().from("note").update({ body }).eq("id", id);
+  if (error) throw new KernelError(error);
 }
 
 export async function attachmentsFor(

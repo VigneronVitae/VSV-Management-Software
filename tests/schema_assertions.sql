@@ -34,7 +34,7 @@
 --              supabase/migrations/0029_viewer_scope.sql,
 --              supabase/migrations/0030_writable_columns.sql,
 --              supabase/migrations/0031_scheduling_to_core.sql,
---              supabase/migrations/0032_vessel_maker_and_room_temperature.sql, supabase/migrations/0033_intake.sql, supabase/migrations/0034_press.sql, supabase/migrations/0035_bins_in_bulk.sql, supabase/migrations/0036_bins_on_loan.sql, supabase/migrations/0037_export.sql, supabase/migrations/0038_cancel_a_pick.sql, supabase/migrations/0039_vineyard.sql, supabase/migrations/0040_block_variety_is_history.sql, supabase/migrations/0041_daily_log.sql, supabase/migrations/0042_weighing_photo.sql, supabase/migrations/0043_record_propagation.sql, supabase/migrations/0044_finishing_a_pick.sql, supabase/migrations/0045_press_detail.sql, supabase/migrations/0046_supply_inventory.sql, supabase/migrations/0047_attachments.sql, supabase/migrations/0048_pick_weighing.sql, supabase/migrations/0049_every_lot_says_its_vintage.sql, supabase/migrations/0050_additions.sql, supabase/migrations/0051_supplies_for_addition.sql, supabase/migrations/0052_press_as_a_process.sql, supabase/migrations/0053_a_press_is_a_vessel.sql, supabase/migrations/0054_a_spent_pick_is_spent.sql, supabase/migrations/0055_press_draws.sql, supabase/migrations/0056_draw_to_a_level.sql, supabase/migrations/0057_the_contract.sql, supabase/migrations/0058_an_open_pick_is_a_view.sql, supabase/migrations/0061_two_declarations_were_wrong.sql, supabase/migrations/0060_the_contract_catches_up.sql, supabase/migrations/0059_a_weighing_says_its_pick.sql]
+--              supabase/migrations/0032_vessel_maker_and_room_temperature.sql, supabase/migrations/0033_intake.sql, supabase/migrations/0034_press.sql, supabase/migrations/0035_bins_in_bulk.sql, supabase/migrations/0036_bins_on_loan.sql, supabase/migrations/0037_export.sql, supabase/migrations/0038_cancel_a_pick.sql, supabase/migrations/0039_vineyard.sql, supabase/migrations/0040_block_variety_is_history.sql, supabase/migrations/0041_daily_log.sql, supabase/migrations/0042_weighing_photo.sql, supabase/migrations/0043_record_propagation.sql, supabase/migrations/0044_finishing_a_pick.sql, supabase/migrations/0045_press_detail.sql, supabase/migrations/0046_supply_inventory.sql, supabase/migrations/0047_attachments.sql, supabase/migrations/0048_pick_weighing.sql, supabase/migrations/0049_every_lot_says_its_vintage.sql, supabase/migrations/0050_additions.sql, supabase/migrations/0051_supplies_for_addition.sql, supabase/migrations/0052_press_as_a_process.sql, supabase/migrations/0053_a_press_is_a_vessel.sql, supabase/migrations/0054_a_spent_pick_is_spent.sql, supabase/migrations/0055_press_draws.sql, supabase/migrations/0056_draw_to_a_level.sql, supabase/migrations/0057_the_contract.sql, supabase/migrations/0058_an_open_pick_is_a_view.sql, supabase/migrations/0061_two_declarations_were_wrong.sql, supabase/migrations/0063_a_note_is_a_thing_too.sql, supabase/migrations/0062_a_note_on_anything.sql, supabase/migrations/0060_the_contract_catches_up.sql, supabase/migrations/0059_a_weighing_says_its_pick.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -2465,7 +2465,10 @@ begin
   -- are judged in the disposition list below as permissive, for the same
   -- reason `subject_resolver` and `term_kind` are: the contract says what
   -- kinds of thing exist and what may be done, and never whose wine.
-  want := '93';
+  -- 93 before 0062, which added four on `note`: read, insert, a reword
+  -- restricted to the author, and an admin delete. None reads blanket true,
+  -- and the read is the same too-narrow one S-65 names for photographs.
+  want := '97';
   if have <> want then
     raise exception
       'FAIL: there are % policies in public and this suite was written against %. If that is deliberate, update this number, and judge the new policy in the disposition list below if it reads or writes blanket true', have, want;
@@ -2767,7 +2770,10 @@ begin
   -- exemption must carry a reason. The one foreign key is a capability's
   -- subject into `readable`, restricted, because a capability pointing at a
   -- list that has gone is a periphery with nothing to offer.
-  want := 'c=36 f=64 p=37 u=20';
+  -- c=36 f=64 p=37 u=20 before 0062, which added `note`: its primary key,
+  -- the check that it says something, and three foreign keys, being the
+  -- subject type into the resolver, the event it is about, and who wrote it.
+  want := 'c=37 f=67 p=38 u=20';
   if have <> want then
     raise exception
       E'FAIL: the constraint inventory changed.\nnow:  %\nwas:  %\nIf that is deliberate, update this line in the same commit that changed the schema.', have, want;
@@ -2963,7 +2969,11 @@ begin
   -- a=36 c=14 n=2 r=11 before 0057. The new restrict is a capability's
   -- subject into `readable`: a capability that acts on a list which has been
   -- deleted is a thing a periphery would offer and could not fill.
-  want := 'a=36 c=14 n=2 r=12';
+  -- a=36 c=14 n=2 r=12 before 0062. Two new restricts on `note`, the same
+  -- pair `attachment` carries: the subject type into the resolver, and the
+  -- event it is about. The new no-action is whoever wrote it, which outlives
+  -- their account the way a day note does.
+  want := 'a=37 c=14 n=2 r=14';
   if have <> want then
     raise exception
       E'FAIL: foreign key delete behaviour changed.\nnow:  %\nwas:  %\na is no action, c is cascade, n is set null, r is restrict.', have, want;
@@ -2998,6 +3008,7 @@ begin
        || 'capability.capability_subject_fkey, '
        || 'event.event_subject_type_is_registered, '
        || 'lineage.lineage_child_id_fkey, lineage.lineage_parent_id_fkey, '
+       || 'note.note_about_event_fkey, note.note_subject_type_fkey, '
        || 'placement.placement_node_id_fkey, placement.placement_vessel_id_fkey, '
        || 'procedure.procedure_subject_type_is_registered, '
        || 'supply_movement.supply_movement_caused_by_fkey, '
@@ -3006,7 +3017,7 @@ begin
   if have <> want then
     raise exception E'FAIL: the restrict keys changed.\nnow:  %\nwas:  %', have, want;
   end if;
-  perform test_ok('the twelve ON DELETE RESTRICT keys are the lineage and placement ones ledger A20 names, the five registry ones, and the one holding a photograph to the reading it is evidence of');
+  perform test_ok('the fourteen ON DELETE RESTRICT keys are the lineage and placement ones ledger A20 names, the five registry ones, and the one holding a photograph to the reading it is evidence of');
 end $$;
 
 -- ---------------------------------------------------------------------------
@@ -3801,6 +3812,17 @@ declare
     -- photograph naming no event is kept and does not clear a weighing, and one
     -- naming an event about another subject is refused.
     'attachment_event_matches_subject',
+    -- 0062's pair are the same two shapes one table over, and they are listed
+    -- separately rather than waved at, because "it is like the other one" is how
+    -- a difference gets missed. `note_event_matches_subject` opens with the same
+    -- deliberate null permit: a note about no particular event has nothing to
+    -- compare, and everything it does compare is `not null` by column
+    -- definition. `note_is_not_refiled` guards the two nullable columns with
+    -- `is distinct from` so that attaching an event to a note that had none is a
+    -- refusal rather than a comparison evaluating to null. Both exercised in the
+    -- note block below, in both directions.
+    'note_event_matches_subject',
+    'note_is_not_refiled',
     -- `attachment_is_not_rewritten` is the case where the null was designed
     -- against. `about_event` and `by_user` are the two nullable columns it
     -- guards, and both are compared with `is distinct from` rather than `<>`
@@ -8163,6 +8185,175 @@ begin
   perform test_ok('what counts as an open pick is a view rather than three filters typed into a client, which is the R-4 that declaring the contract found');
 
   delete from node where id = probe;
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- a note on anything, and what a note may never do'; end $$;
+
+-- 0062. The winemaker: "everything needs to be an item that I can add more
+-- detail to. Like the fruit condition was mostly good in the PG. How do I add
+-- that to the bins now?"
+--
+-- The rule is his reference's, from Knowledge Game: comments "carry no grade and
+-- can never be cited as support", so that "talking never masquerades as
+-- evidence", enforced mechanically rather than by policy. **The assertions below
+-- are that mechanism.** Without them the rule is a sentence in a migration.
+do $$
+declare
+  pick   uuid := '00000000-0000-0000-0000-00000000cf01';
+  bin    uuid;
+  ev     uuid;
+  out_js jsonb;
+  n      int;
+  before int;
+  q      numeric;
+begin
+  update term set attributes = attributes || '{"tare_lbs": 60}'::jsonb
+   where kind = 'vessel_type' and value = 'picking_bin';
+  perform add_bins_to_pick(
+    jsonb_build_object('id', pick, 'variety_id', term_id('variety', 'riesling'),
+                       'vintage', 2026),
+    null, 2, term_id('vessel_type', 'picking_bin'), 'ASRTNOTE', 100);
+  select vessel_id into bin from unweighed_bin where node_id = pick limit 1;
+
+  -- A note goes on a bin, which is a vessel, and on the pick, which is a lot,
+  -- and on anything else the resolver knows. That is the whole point of it not
+  -- being a fourth note table.
+  out_js := add_note('vessel', bin, 'fruit was mostly good, a bit of shrivel');
+  if (out_js ->> 'id') is null then
+    raise exception 'FAIL: a note on a bin was not written';
+  end if;
+  perform add_note('node', pick, 'picked in two passes');
+  select count(*) into n from subject_note where subject_id in (pick, bin);
+  if n <> 2 then
+    raise exception 'FAIL: % notes came back and two were written', n;
+  end if;
+  perform test_ok('a note goes on a bin or a lot or anything else the resolver knows, so nobody has to invent a note table per kind of thing');
+
+  -- **The rule.** A note changes nothing that computes.
+  select quantity into q from node where id = pick;
+  if q is not null then
+    raise exception 'FAIL: a pick with two notes and no weighing has a quantity of %', q;
+  end if;
+  select count(*) into n from unweighed_bin where node_id = pick;
+  if n <> 2 then
+    raise exception 'FAIL: writing a note changed the bins waiting for a scale to %', n;
+  end if;
+  perform test_ok('a note changes no quantity and clears no worklist, because talking is not evidence and the difference is mechanical rather than a convention');
+
+  -- Nor can it discharge paperwork. A propagation is cleared by filling the
+  -- form, and saying you filled it is not filling it.
+  perform weigh_bins(pick,
+    array(select vessel_id from unweighed_bin where node_id = pick), 2120);
+  select e.id into ev from event e
+   where e.subject_type = 'node' and e.subject_id = pick
+     and e.operation_id = term_id('operation', 'weigh')
+   limit 1;
+  select count(*) into before from measurement_to_propagate where event_id = ev;
+  perform add_note('node', pick, 'wrote this one on the paper sheet', ev);
+  select count(*) into n from measurement_to_propagate where event_id = ev;
+  if n <> before then
+    raise exception
+      'FAIL: a note changed the propagation list from % to %, so saying a thing was written down counted as writing it down',
+      before, n;
+  end if;
+  perform test_ok('a note cannot discharge a paper form: saying a measurement was written down is not writing it down');
+
+  -- A note about one weighing rather than about the pick, which is the same
+  -- distinction 0047 gave photographs and for the same reason.
+  select count(*) into n from subject_note where about_event = ev;
+  if n <> 1 then
+    raise exception 'FAIL: a note about a weighing is not attached to it';
+  end if;
+  begin
+    insert into note (subject_type, subject_id, body, about_event, by_user)
+    values ('vessel', bin, 'wrong subject', ev,
+            '00000000-0000-0000-0000-00000000a001');
+    raise exception 'FAIL: a note on a bin claimed to be about a weighing of a pick';
+  exception when others then
+    if position('so one of the two is wrong' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a note that names an event must be filed under what that event was about');
+  end;
+
+  -- Reworded, not refiled.
+  update note set body = 'fruit was mostly good, some shrivel on the north end'
+   where subject_id = bin;
+  select count(*) into n from note where subject_id = bin and edited_at is not null;
+  if n <> 1 then
+    raise exception 'FAIL: a reworded note does not say it was reworded';
+  end if;
+  perform test_ok('a note can be reworded and says that it was, because a note that changed silently is one nobody can rely on having read');
+
+  begin
+    update note set subject_id = pick where subject_id = bin;
+    raise exception 'FAIL: a note was refiled onto a different subject';
+  exception when others then
+    if position('reworded but not refiled' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a note cannot be moved to another thing, because where it is filed is what it is about');
+  end;
+
+  begin
+    perform add_note('node', pick, '   ');
+    raise exception 'FAIL: an empty note was written';
+  exception when others then
+    if position('nothing here to say' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a note that says nothing is refused rather than stored as a blank line somebody has to read past');
+  end;
+
+  -- The cellar's notes are the cellar's business, the same as its photographs.
+  perform test_act_as('00000000-0000-0000-0000-00000000a003');
+  set local role authenticated;
+  select count(*) into n from note;
+  reset role;
+  if n <> 0 then
+    raise exception 'FAIL: a client can read notes that are not theirs';
+  end if;
+  perform test_ok('a client reads none of the winery notes, which is the same limit S-65 names for photographs');
+
+  -- Back to the admin before anything else is written, which the block below
+  -- needs and the first version of it did not do.
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+
+  -- 0063, and the winemaker's own follow-up: "notes themselves could be tied to
+  -- objects, if desired?" They are objects, so a note about a note is a reply
+  -- and nothing had to be built for it.
+  declare
+    first_note uuid;
+    reply      uuid;
+  begin
+    select id into first_note from note where subject_id = bin limit 1;
+    reply := (add_note('note', first_note, 'agreed, the north end was worse') ->> 'id')::uuid;
+    select count(*) into n from subject_note where subject_type = 'note' and subject_id = first_note;
+    if n <> 1 then
+      raise exception 'FAIL: a reply to a note is not attached to it';
+    end if;
+    -- And a photograph of what the note is talking about.
+    perform attach_photo('note', first_note, 'notes/the-north-end.jpg');
+    select count(*) into n from attachment where subject_type = 'note' and subject_id = first_note;
+    if n <> 1 then
+      raise exception 'FAIL: a photograph cannot hang off a note';
+    end if;
+    perform test_ok('a note is itself a thing, so a reply is a note about a note and a photograph can hang off one, and neither needed building');
+
+    -- The resolver names it by what it says, because a subject name is for
+    -- somebody picking it out of a list.
+    if resolve_subject_name('note', first_note) is null then
+      raise exception 'FAIL: a note has no name, so nothing can list it as a subject';
+    end if;
+    perform test_ok('a note and a photograph can be named by the resolver, which is what lets every screen that lists subjects list them');
+
+    delete from attachment where subject_type = 'note';
+    delete from note where id = reply;
+  end;
+
+  delete from note where subject_id in (pick, bin);
+  delete from attachment where subject_type = 'node' and subject_id = pick;
+  delete from event where subject_type = 'node' and subject_id = pick;
+  delete from placement where node_id = pick;
+  delete from node where id = pick;
+  delete from vessel where name like 'ASRTNOTE%';
+  update term set attributes = attributes - 'tare_lbs'
+   where kind = 'vessel_type' and value = 'picking_bin';
 end $$;
 
 -- ---------------------------------------------------------------------------
