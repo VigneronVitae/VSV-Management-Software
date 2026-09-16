@@ -18,8 +18,8 @@ are corpus and are not edited; this file is the correction.
 |---|---|
 | Head when this was written | the W-7 commit that added the two gates below |
 | Branch holding it | `claude/sql-files-to-markdown-i31rob` |
-| Tracked files | 228 tracked files |
-| Migrations | 93 migrations, `0001_core_schema.sql` through `0032_vessel_maker_and_room_temperature.sql` |
+| Tracked files | 229 tracked files |
+| Migrations | 94 migrations, `0001_core_schema.sql` through `0032_vessel_maker_and_room_temperature.sql` |
 | Assertions | 295 from an empty database, 297 against a copy of the cellar |
 
 The file and migration counts above are derived rather than typed, and `scripts/verify.sh`

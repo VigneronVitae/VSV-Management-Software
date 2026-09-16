@@ -59,7 +59,8 @@
 --              supabase/migrations/0091_a_bin_says_its_weight_everywhere.sql,
 --              supabase/migrations/0089_correcting_one_bin.sql,
 --              supabase/migrations/0092_gross_or_net_and_a_bulging_bin.sql,
---              supabase/migrations/0093_a_guess_is_not_a_weight.sql]
+--              supabase/migrations/0093_a_guess_is_not_a_weight.sql,
+--              supabase/migrations/0094_an_import_is_a_proposal.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -2585,7 +2586,11 @@ begin
   -- deliberate. An invite is a credential, so a cellar hand who could read the
   -- list could admit their own second account, which is the thing the gate
   -- exists to stop.
-  want := '98';
+  -- 98 before 0094, which added four across the two import tables: a read and
+  -- a write on each, both scoped to `is_facility_user()`. None reads blanket
+  -- true. A batch names a document, who read it and who let it in, which is
+  -- exactly the kind of thing a custom crush client has no business seeing.
+  want := '102';
   if have <> want then
     raise exception
       'FAIL: there are % policies in public and this suite was written against %. If that is deliberate, update this number, and judge the new policy in the disposition list below if it reads or writes blanket true', have, want;
@@ -2910,7 +2915,14 @@ begin
   -- fruit: that a weight is a weight, and that a bin says pounds or says how
   -- full and never both. The second is the one that matters: two answers to
   -- one question with nothing to say which was typed and which was computed.
-  want := 'c=42 f=72 p=39 u=20';
+  -- c=42 f=72 p=39 u=20 before 0094, which added two tables. `import_batch`
+  -- brings a primary key, two checks that a source and a reader are actually
+  -- said, and two no-action keys into app_user and attachment. `import_step`
+  -- brings a primary key, a unique on batch and ordinal, three checks on its
+  -- status and on a step not claiming to have applied with nothing behind it,
+  -- three keys for the batch it belongs to, the capability it names and who
+  -- decided it.
+  want := 'c=47 f=77 p=41 u=21';
   if have <> want then
     raise exception
       E'FAIL: the constraint inventory changed.\nnow:  %\nwas:  %\nIf that is deliberate, update this line in the same commit that changed the schema.', have, want;
@@ -3128,7 +3140,14 @@ begin
   -- a=41 c=14 n=2 r=14 before 0071. The new no-action is a lot''s colour into
   -- the vocabulary: a colour is retired by deactivating the term, not by
   -- deleting the row, so nothing needs to cascade and nothing needs to restrict.
-  want := 'a=42 c=14 n=2 r=14';
+  -- a=42 c=14 n=2 r=14 before 0094. Three new no-actions: who brought an
+  -- import in, who decided a step, and the document it came from, all of which
+  -- outlive the accounts and files behind them. One new cascade, a step to its
+  -- batch, because a step without the document it came from is a call nobody
+  -- can account for. One new restrict, a step to the capability it names: a
+  -- capability that has been removed leaves steps naming something that cannot
+  -- run, and that is worth a refusal rather than a dangling key.
+  want := 'a=45 c=15 n=2 r=15';
   if have <> want then
     raise exception
       E'FAIL: foreign key delete behaviour changed.\nnow:  %\nwas:  %\na is no action, c is cascade, n is set null, r is restrict.', have, want;
@@ -3158,10 +3177,14 @@ begin
   -- is what happens if somebody writes the code that would.
   -- 0050 added supply_movement.caused_by, the third restrict guarding
   -- evidence rather than structure.
+  -- 0094 added import_step.capability. A capability that has been removed
+  -- leaves steps naming a call that cannot run, and a step is a claim about
+  -- something somebody proposed: worth a refusal rather than a dangling key.
   want := 'attachment.attachment_about_event_fkey, '
        || 'attachment.attachment_subject_type_fkey, '
        || 'capability.capability_subject_fkey, '
        || 'event.event_subject_type_is_registered, '
+       || 'import_step.import_step_capability_fkey, '
        || 'lineage.lineage_child_id_fkey, lineage.lineage_parent_id_fkey, '
        || 'note.note_about_event_fkey, note.note_subject_type_fkey, '
        || 'placement.placement_node_id_fkey, placement.placement_vessel_id_fkey, '
@@ -10136,6 +10159,138 @@ begin
     raise exception 'FAIL: a bin in a two bin weighing reports % pounds of its own', got.lbs;
   end if;
   perform test_ok('a weighing that covers several bins gives none of them a weight of its own, because one number split evenly is two measurements nobody made');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- an import is a proposal'; end $$;
+
+-- 0094. "It needs to be able to ingest and format (even if tagged as LLM
+-- assisted) structured data as excel sheets or hand written or whatever", and
+-- before that: "more I'm thinking about other people transferring stuff to
+-- this" and "plus importing all of the data we have".
+--
+-- An import is a sequence of capability calls rather than a pile of rows.
+-- Loading rows straight into tables would walk past every refusal the kernel
+-- exists to make; calls go through the same guards as a person tapping a
+-- screen. These assert that the proposal is checked against the contract before
+-- anybody starts applying it, and that a step is decided once.
+do $$
+declare
+  out_js  jsonb;
+  batch   uuid;
+  step    uuid;
+  n       int;
+  a_lot   uuid;
+begin
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+  select id into a_lot from node where stage = 'maturation' limit 1;
+
+  out_js := propose_import(
+    'CI 2024 barrel log.xlsx', 'Claude',
+    jsonb_build_array(
+      jsonb_build_object(
+        'capability', 'cellar.set_colour',
+        'args', jsonb_build_object('p_node_id', a_lot, 'p_colour', 'white'),
+        'source_ref', 'row 14'),
+      jsonb_build_object(
+        'capability', 'cellar.set_colour',
+        'args', jsonb_build_object('p_node_id', a_lot, 'p_colour', 'red'),
+        'source_ref', 'row 15')),
+    'the first three columns only');
+  batch := (out_js ->> 'batch')::uuid;
+
+  if (out_js ->> 'steps')::int <> 2 then
+    raise exception 'FAIL: a two step import recorded % steps', out_js ->> 'steps';
+  end if;
+  select waiting into n from import_waiting where batch_id = batch;
+  if n <> 2 then
+    raise exception 'FAIL: % steps are waiting and two should be', n;
+  end if;
+  perform test_ok('an import arrives as proposed capability calls that nothing has run, so a document becomes a plan somebody looks at rather than a write');
+
+  -- **Named, including when it is a person.** "Even if tagged as LLM assisted"
+  -- only means something if the untagged case is named too.
+  if (select reader from import_waiting where batch_id = batch) <> 'Claude' then
+    raise exception 'FAIL: an import does not say what read the document';
+  end if;
+  if (select source from import_waiting where batch_id = batch) is null then
+    raise exception 'FAIL: an import does not say what it came from';
+  end if;
+  perform test_ok('an import says what it came from and what read it, so a row brought in by an assistant is marked as one for as long as it exists');
+
+  -- **Checked against the contract while somebody is still looking at the
+  -- document**, rather than three hundred rows into applying it.
+  begin
+    perform propose_import('CI bad.xlsx', 'Claude',
+      jsonb_build_array(jsonb_build_object(
+        'capability', 'cellar.invent_a_lot',
+        'args', '{}'::jsonb)));
+    raise exception 'FAIL: an import named a capability that does not exist';
+  exception when others then
+    if position('not something this winery can record' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('an import naming something this winery cannot record is refused when it is proposed, because finding out halfway through applying it is finding out too late');
+  end;
+
+  begin
+    perform propose_import('CI thin.xlsx', 'Claude',
+      jsonb_build_array(jsonb_build_object(
+        'capability', 'cellar.set_colour',
+        'args', jsonb_build_object('p_node_id', a_lot))));
+    raise exception 'FAIL: a step left out a parameter the kernel needs';
+  exception when others then
+    if position('cannot do without' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a step leaving out a parameter the kernel has no default for is refused at proposal, using the same field list the contract asserts covers them');
+  end;
+
+  begin
+    perform propose_import('CI empty.xlsx', 'Claude', '[]'::jsonb);
+    raise exception 'FAIL: an empty import was accepted';
+  exception when others then
+    if position('is not an import' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('an import with no steps in it is refused rather than recorded as a batch that did nothing');
+  end;
+
+  -- Settling, which is what a periphery does after it has made the call.
+  select id into step from import_step where batch_id = batch and ordinal = 1;
+  perform settle_import_step(step, 'applied', jsonb_build_object('id', a_lot));
+  if (select status from import_step where id = step) <> 'applied' then
+    raise exception 'FAIL: a settled step is not applied';
+  end if;
+  if (select decided_by from import_step where id = step) is null then
+    raise exception 'FAIL: nothing records who let that step in';
+  end if;
+  perform test_ok('a step records what it returned and who decided it, so an imported row can be traced to a document, a reader and a person');
+
+  -- Once. A step that has run is history rather than a plan.
+  begin
+    perform settle_import_step(step, 'rejected');
+    raise exception 'FAIL: an applied step was decided a second time';
+  exception when others then
+    if position('already applied' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a step that has run cannot be decided again, because what happened is not a plan somebody can change their mind about');
+  end;
+
+  -- A failure keeps the reason, which is the most useful thing an import makes:
+  -- the kernel saying the document describes something that could not happen.
+  select id into step from import_step where batch_id = batch and ordinal = 2;
+  perform settle_import_step(step, 'failed', null, 'that lot is closed');
+  if (select error from import_step where id = step) is null then
+    raise exception 'FAIL: a failed step does not say why';
+  end if;
+  select failed into n from import_waiting where batch_id = batch;
+  if n <> 1 then
+    raise exception 'FAIL: the batch does not count its failures';
+  end if;
+  perform test_ok('a failed step keeps the refusal that caused it, which is the kernel saying the document describes something that could not have happened');
+
+  -- And the shape that would let a step claim success with nothing behind it.
+  begin
+    insert into import_step (batch_id, ordinal, capability, status)
+    values (batch, 99, 'cellar.set_colour', 'applied');
+    raise exception 'FAIL: a step claimed to have applied with nothing to show';
+  exception when check_violation then
+    perform test_ok('a step cannot claim to have applied with no result behind it, which is the A13 shape arriving in the import table');
+  end;
 end $$;
 
 do $$ begin raise notice '--- all assertions passed'; end $$;

@@ -311,6 +311,15 @@ press:guard:15	press	guard	if exists (select 1 from placement where vessel_id = 
 press:raise:17	press	raise	raise exception	raise notice	17
 press:guard:16	press	guard	if held - weights[i] <= 0.0001 then	if false then	1
 press:silent:1	press	silent	where node_id = parent_ids[i] and to_at is null;	where node_id = parent_ids[i] and true;	1
+propose_import:guard:1	propose_import	guard	if not is_facility_user() then	if false then	1
+propose_import:raise:1	propose_import	raise	raise exception 'only somebody who works here brings records in'	raise notice 'only somebody who works here brings records in'	1
+propose_import:head:1	propose_import	head	if p_steps is null or jsonb_typeof(p_steps) <> 'array'\n     or jsonb_array_length(p_steps) = 0 then	if false then	1
+propose_import:raise:2	propose_import	raise	raise exception 'an import with no steps in it is not an import';	raise notice 'an import with no steps in it is not an import';	1
+propose_import:guard:2	propose_import	guard	if cap.key is null then	if false then	1
+propose_import:raise:3	propose_import	raise	raise exception	raise notice	3
+propose_import:permissive:1	propose_import	permissive	where coalesce((f ->> 'required')::boolean, false)	where coalesce((f ->> 'required')::boolean, true)	1
+propose_import:guard:3	propose_import	guard	if missing is not null then	if false then	1
+propose_import:raise:4	propose_import	raise	raise exception 'step % of this import leaves out %, which % cannot do without',	raise notice 'step % of this import leaves out %, which % cannot do without',	1
 rack:guard:1	rack	guard	if jsonb_array_length(plan -> 'overfill') > 0 and not p_allow_overfill then	if false then	1
 rack:raise:1	rack	raise	raise exception 'that puts more in % than it holds; confirm the overfill to record it anyway',	raise notice 'that puts more in % than it holds; confirm the overfill to record it anyway',	1
 rack:guard:2	rack	guard	if plan ->> 'kind' = 'move' then	if false then	1
@@ -466,6 +475,15 @@ set_vintage:guard:3	set_vintage	guard	if not p_non_vintage and p_vintage is null
 set_vintage:raise:3	set_vintage	raise	raise exception	raise notice	3
 set_vintage:guard:4	set_vintage	guard	if p_vintage is not null and (p_vintage < 1800 or p_vintage > 2200) then	if false then	1
 set_vintage:raise:4	set_vintage	raise	raise exception '% is not a vintage year', p_vintage;	raise notice '% is not a vintage year', p_vintage;	1
+settle_import_step:guard:1	settle_import_step	guard	if not is_facility_user() then	if false then	1
+settle_import_step:raise:1	settle_import_step	raise	raise exception 'only somebody who works here decides an import step'	raise notice 'only somebody who works here decides an import step'	1
+settle_import_step:guard:2	settle_import_step	guard	if st.id is null then	if false then	1
+settle_import_step:raise:2	settle_import_step	raise	raise exception 'no import step with id %', p_step_id;	raise notice 'no import step with id %', p_step_id;	1
+settle_import_step:guard:3	settle_import_step	guard	if st.status <> 'proposed' then	if false then	1
+settle_import_step:raise:3	settle_import_step	raise	raise exception	raise notice	3
+settle_import_step:guard:4	settle_import_step	guard	if p_status not in ('applied', 'rejected', 'failed') then	if false then	1
+settle_import_step:raise:4	settle_import_step	raise	raise exception '% is not something that happens to an import step', p_status;	raise notice '% is not something that happens to an import step', p_status;	1
+settle_import_step:silent:1	settle_import_step	silent	where batch_id = st.batch_id and status = 'proposed'));	where batch_id = st.batch_id and true;	1
 start_press:guard:1	start_press	guard	if n_src = 0 then	if false then	1
 start_press:raise:1	start_press	raise	raise exception 'nothing was named to press';	raise notice 'nothing was named to press';	1
 start_press:guard:2	start_press	guard	if p_press_vessel_id is null then	if false then	1

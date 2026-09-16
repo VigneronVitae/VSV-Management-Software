@@ -1033,6 +1033,21 @@ in pounds rather than in bins, at which point the honest answer is probably to r
 *Load-bearing:* no, and it is the reason the press screen counts bins rather than pounds
 when it says what is left.
 
+**S-86. An applied import cannot be undone as a batch.**
+`0094` brings records in as proposed capability calls that somebody confirms one at a time,
+and each applied step records what it returned. What it does not have is a way to put a batch
+back: three hundred rows applied against the wrong vintage would have to be undone the way
+anything else is undone here, which is a correction per row, and for events that means a new
+event rather than a deletion.
+This is the append-only rule meeting a bulk operation, and it is not obviously wrong: an
+import that could be rolled back would be the one write path in this app that can erase
+history. *Resolves when:* somebody actually does a bad import, at which point the question is
+whether the answer is a reversal capability, a practice-first rule that makes it not matter,
+or a batch that stays open until every step is confirmed. **The practice stack already makes
+this survivable** and is the reason it is filed rather than built: import there, look at it,
+throw the stack away. *Load-bearing:* not while every import is rehearsed in practice first,
+and immediately if anybody imports straight into the cellar.
+
 ## Discharged
 **S-78. Anybody who can sign up becomes staff.** *Discharged by `0068`.*
 `enable_signup = true`, and `claim_account` gave any authenticated identity that had not
