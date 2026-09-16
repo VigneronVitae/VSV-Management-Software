@@ -878,3 +878,31 @@ export type PickBin = {
   pct_full: number | null;
   from_at: string;
 };
+
+// Everything started and not finished. Running is derived from the absence of
+// an ending in every case, so nothing here can be left set by somebody who
+// walked away.
+export type RunningOperation = {
+  kind: "press" | "pick" | "procedure" | "task" | "import";
+  heading: string;
+  what: string;
+  detail: string | null;
+  since: string | null;
+  subject_type: string;
+  subject_id: Uuid;
+};
+
+// The hot list: something somebody asked to keep in front of them, and what
+// they expected of it. The expectation is told and never becomes a measurement;
+// `so_far` is what the thing has actually reached, where the app knows.
+export type Watching = {
+  subject_type: string;
+  subject_id: Uuid;
+  what: string | null;
+  expect: number | null;
+  unit: string | null;
+  note: string | null;
+  since: string;
+  by_name: string | null;
+  so_far: number | null;
+};

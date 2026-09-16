@@ -38,6 +38,7 @@ import type {
   PressResult,
   PressStarted,
   RoomClimate,
+  RunningOperation,
   Sample,
   SampleKind,
   SampleTarget,
@@ -59,6 +60,7 @@ import type {
   ViewerScope,
   Vineyard,
   WalkResult,
+  Watching,
   Weighing,
   WeighingWithoutPhoto,
 } from "./types.ts";
@@ -1186,13 +1188,17 @@ export async function pressDraws(loadId?: Uuid): Promise<PressDraw[]> {
 }
 
 export async function startPress(args: {
-  sourceIds: Uuid[];
+  // 0090. Vessels, not lots: a press is loaded from bins, and the lots are read
+  // off them. The kernel's parameter was renamed so every caller had to be
+  // revisited, and this one was missed, because an rpc argument is a string and
+  // nothing typechecks it.
+  vesselIds: Uuid[];
   pressVesselId: Uuid;
   node?: Record<string, unknown>;
   detail?: Record<string, unknown>;
 }): Promise<PressStarted> {
   const { data, error } = await kernel().rpc("start_press", {
-    p_source_ids: args.sourceIds,
+    p_vessel_ids: args.vesselIds,
     p_press_vessel_id: args.pressVesselId,
     p_node: args.node ?? {},
     p_detail: args.detail ?? {},
@@ -2119,4 +2125,59 @@ export async function pickBins(nodeId?: Uuid): Promise<PickBin[]> {
   const { data, error } = await q.order("bin");
   if (error) throw new KernelError(error);
   return (data ?? []) as PickBin[];
+}
+
+// "A tab called running operations that has open things: press going, pick
+// going, etc." One read, because the alternative is the five badges it replaces.
+export async function running(): Promise<RunningOperation[]> {
+  const { data, error } = await kernel()
+    .from("running_operation")
+    .select("kind,heading,what,detail,since,subject_type,subject_id")
+    .order("since");
+  if (error) throw new KernelError(error);
+  return (data ?? []) as RunningOperation[];
+}
+
+// --- the hot list ----------------------------------------------------------
+
+export async function watching(): Promise<Watching[]> {
+  const { data, error } = await kernel()
+    .from("watching")
+    .select("subject_type,subject_id,what,expect,unit,note,since,by_name,so_far")
+    .order("since", { ascending: false });
+  if (error) throw new KernelError(error);
+  return (data ?? []) as Watching[];
+}
+
+// "I imagine by the time it's finished it'll be more like 450 liters." A number
+// he already has and the app had nowhere to put. Appended, so changing your
+// mind is a second statement rather than an edit to the first.
+export async function watchSubject(args: {
+  subjectType: string;
+  subjectId: Uuid;
+  expect?: number | null;
+  unit?: string | null;
+  note?: string | null;
+}): Promise<{ event: Uuid; what: string; expect: number | null }> {
+  const { data, error } = await kernel().rpc("watch_subject", {
+    p_subject_type: args.subjectType,
+    p_subject_id: args.subjectId,
+    p_expect: args.expect ?? null,
+    p_unit: args.unit ?? null,
+    p_note: args.note ?? null,
+  });
+  if (error) throw new KernelError(error);
+  return data as { event: Uuid; what: string; expect: number | null };
+}
+
+export async function unwatchSubject(
+  subjectType: string,
+  subjectId: Uuid,
+): Promise<{ event: Uuid; watching: boolean }> {
+  const { data, error } = await kernel().rpc("unwatch_subject", {
+    p_subject_type: subjectType,
+    p_subject_id: subjectId,
+  });
+  if (error) throw new KernelError(error);
+  return data as { event: Uuid; watching: boolean };
 }

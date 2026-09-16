@@ -60,9 +60,11 @@
 --              supabase/migrations/0089_correcting_one_bin.sql,
 --              supabase/migrations/0092_gross_or_net_and_a_bulging_bin.sql,
 --              supabase/migrations/0093_a_guess_is_not_a_weight.sql,
---              supabase/migrations/0094_an_import_is_a_proposal.sql]
+--              supabase/migrations/0094_an_import_is_a_proposal.sql,
+--              supabase/migrations/0095_what_is_running.sql,
+--              supabase/migrations/0096_what_you_are_watching.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
---                  scripts/status.sh]
+--                  scripts/status.sh, scripts/rpc-args.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
 -- Open sorries: S-7 (what this exercises is Postgres policy evaluation, not
 --               Supabase's JWT to role mapping, so S-7 narrows and stays open)
@@ -10290,6 +10292,150 @@ begin
     raise exception 'FAIL: a step claimed to have applied with nothing to show';
   exception when check_violation then
     perform test_ok('a step cannot claim to have applied with no result behind it, which is the A13 shape arriving in the import table');
+  end;
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- what is running, and what you are watching'; end $$;
+
+-- 0095 and 0096. "There should also be a tab called running operations that has
+-- open things: press going, pick going, etc." And then, minutes after starting
+-- a press: "also similarly something like a hot list... I imagine by the time
+-- it's finished it'll be more like 450 liters."
+--
+-- Two different questions. Running is derived from the absence of an ending and
+-- nobody sets it. Watching is told, and the expectation on it is a number
+-- somebody has in their head that the app previously had nowhere to put.
+do $$
+declare
+  bin_t   uuid;
+  b1      uuid := '00000000-0000-0000-0000-0000000f5001';
+  press_v uuid := '00000000-0000-0000-0000-0000000f5002';
+  pick    jsonb;
+  pid     uuid;
+  load_id uuid;
+  n       int;
+  got     record;
+begin
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+  select id into bin_t from term
+   where kind = 'vessel_type'
+     and coalesce((attributes ->> 'intake_bin')::boolean, false)
+   limit 1;
+  update term set attributes = attributes || '{"tare_lbs": 92}'::jsonb
+   where kind = 'vessel_type' and value = 'picking_bin';
+
+  insert into vessel (id, type_id, name, capacity_l) values
+    (b1, bin_t, 'CJ1', null),
+    (press_v, term_id('vessel_type','press'), 'CJ press', null),
+    -- Juice comes off a press into something else. Drawing back into the press
+    -- is refused, correctly, because it already holds the load.
+    ('00000000-0000-0000-0000-0000000f5003', term_id('vessel_type','tank'),
+     'CJ tank', 1000);
+
+  pick := jsonb_build_object('id', gen_random_uuid(), 'vintage', 2026,
+                             'name', 'CJ a pick');
+  pid := (add_bin_to_pick(pick, b1, null, 900, null) ->> 'node_id')::uuid;
+
+  -- A pick with fruit still in bins is running, and nobody set a flag.
+  select count(*) into n from running_operation
+   where kind = 'pick' and subject_id = pid;
+  if n <> 1 then
+    raise exception 'FAIL: a pick with fruit in bins is not running';
+  end if;
+  perform test_ok('a pick with fruit still in its bins is running, derived from the fruit being there rather than from a flag anybody set');
+
+  load_id := (start_press(array[b1], press_v) ->> 'node_id')::uuid;
+
+  -- And now it is not, because its last bin emptied. The same absence that
+  -- closes the pick takes it off this list.
+  select count(*) into n from running_operation
+   where kind = 'pick' and subject_id = pid;
+  if n <> 0 then
+    raise exception 'FAIL: a pick whose bins are all empty is still running';
+  end if;
+  select count(*) into n from running_operation
+   where kind = 'press' and subject_id = load_id;
+  if n <> 1 then
+    raise exception 'FAIL: a press with fruit in it is not running';
+  end if;
+  perform test_ok('pressing a pick takes it off the running list and puts the press on it, because both are read off what has and has not ended');
+
+  -- **The hot list.** Told, and the expectation is a number that never becomes
+  -- a measurement.
+  perform watch_subject('node', load_id, 450, 'litres', 'by the time it finishes');
+  select * into got from watching where subject_id = load_id;
+  if got.expect <> 450 or got.unit <> 'litres' then
+    raise exception 'FAIL: an expectation of 450 litres reads % %', got.expect, got.unit;
+  end if;
+  perform test_ok('something can be watched with what somebody expects of it, which is a number they already have and the app had nowhere to put');
+
+  -- What it has reached, beside what was expected, and neither dressed as the
+  -- other. The press's own litres still come from the draws.
+  perform draw_cut(load_id, '00000000-0000-0000-0000-0000000f5003', 150);
+  select * into got from watching where subject_id = load_id;
+  if got.so_far is null then
+    raise exception 'FAIL: a watched press does not say what it has reached';
+  end if;
+  if (select quantity from node where id = load_id) = 450 then
+    raise exception 'FAIL: an expectation was written onto the load as a quantity';
+  end if;
+  perform test_ok('an expectation sits beside what has actually happened and never becomes it, so a yield cannot be made to look like the one somebody hoped for');
+
+  -- A number with no unit is a number nobody can read back.
+  begin
+    perform watch_subject('node', load_id, 450, null);
+    raise exception 'FAIL: an expectation was accepted with no unit';
+  exception when others then
+    if position('say what' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('an expectation with no unit is refused, because 450 of what is not a thing anybody can read back');
+  end;
+
+  -- Changing your mind is a second statement, not an edit. The first one is
+  -- pushed back an hour first: everything inside one transaction shares a
+  -- single now(), so without this "the latest" is a tie and the assertion would
+  -- be measuring which row the planner happened to reach.
+  update event set at = at - interval '1 hour'
+   where subject_id = load_id and operation_id = term_id('operation', 'watch');
+  perform watch_subject('node', load_id, 380, 'litres', 'second cut came slow');
+  select count(*) into n from event
+   where subject_id = load_id and operation_id = term_id('operation', 'watch');
+  if n <> 2 then
+    raise exception 'FAIL: changing an expectation left % statements', n;
+  end if;
+  select * into got from watching where subject_id = load_id;
+  if got.expect <> 380 then
+    raise exception 'FAIL: the latest expectation is %', got.expect;
+  end if;
+  perform test_ok('changing what you expect is a second statement and the latest one is what the screens read, so how the day went survives as a record');
+
+  -- Stopping is appended too. That somebody was watching it, and what they
+  -- expected, is the record of their attention.
+  -- Same tie again, and for the same reason: the stop has to be after the
+  -- statement it stops, and inside one transaction it is not unless it is said
+  -- so. In a winery an hour passes on its own.
+  update event set at = at - interval '1 minute'
+   where subject_id = load_id
+     and operation_id = term_id('operation', 'watch');
+  perform unwatch_subject('node', load_id);
+  select count(*) into n from watching where subject_id = load_id;
+  if n <> 0 then
+    raise exception 'FAIL: something unwatched is still on the hot list';
+  end if;
+  select count(*) into n from event
+   where subject_id = load_id
+     and operation_id in (term_id('operation','watch'), term_id('operation','unwatch'));
+  if n <> 3 then
+    raise exception 'FAIL: stopping deleted the watching rather than appending to it';
+  end if;
+  perform test_ok('stopping watching is appended rather than deleted, because that somebody was watching and what they expected is a record of their attention');
+
+  begin
+    perform watch_subject('a_kind_of_thing', load_id);
+    raise exception 'FAIL: something that is not a kind of thing was watched';
+  exception when others then
+    if position('not a kind of thing' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('only a registered kind of thing can be watched, which is the subject registry doing the job it was built for');
   end;
 end $$;
 

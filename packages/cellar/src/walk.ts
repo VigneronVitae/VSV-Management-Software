@@ -86,6 +86,7 @@ import {
   pressDraws,
   pressesInProgress,
   type RoomClimate,
+  type RunningOperation,
   rackPlan,
   rackTransfer,
   reconditionBarrel,
@@ -97,6 +98,7 @@ import {
   resolveVesselTypeNote,
   retirePaperRecord,
   rooms,
+  running,
   type SampleKind,
   type SiteFields,
   type SubjectNote,
@@ -134,6 +136,7 @@ import {
   typedFacts,
   typeNote,
   type UnweighedBin,
+  unwatchSubject,
   unweighedBins,
   updateBlock,
   updatePlanting,
@@ -152,6 +155,9 @@ import {
   vesselTypeNotes,
   viewerScope,
   vineyards,
+  type Watching,
+  watching,
+  watchSubject,
   weighBins,
   weighingsWithoutPhoto,
   withdrawInvite,
@@ -374,6 +380,8 @@ async function screenFor(place: Place): Promise<HTMLElement> {
       return coloursScreen();
     case "bins":
       return binsScreen();
+    case "running":
+      return runningScreen();
     case "wine":
       return wineScreen(place.id);
     case "additions":
@@ -970,6 +978,7 @@ async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> 
     pressing,
     uncoloured,
     clashes,
+    inFlight,
   ] = await Promise.all([
     locations(),
     vessels(),
@@ -981,6 +990,7 @@ async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> 
     pressesInProgress(),
     lotsWithoutColour(),
     colourConflicts(),
+    running(),
   ]);
   const filled = kit.filter((v) => !v.is_empty).length;
   // On the home screen on purpose. T1-4 allows a bin to exist with no weight,
@@ -1080,6 +1090,19 @@ async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> 
       note: "What went into the wine, and off the shelf at the same time.",
       go: () => go({ at: "additions" }),
     },
+    // 0095. First, and only when there is something in it. A heading that is
+    // permanently present and permanently empty is one people stop seeing, and
+    // this one is worth seeing.
+    ...(inFlight.length > 0
+      ? [
+          {
+            name: "Running",
+            note: "Started and not finished.",
+            badge: String(inFlight.length),
+            go: () => go({ at: "running" }),
+          },
+        ]
+      : []),
     {
       name: "Vessels",
       note: "What is in the cellar, and how full.",
@@ -6018,6 +6041,12 @@ function paletteScreen(): HTMLElement {
           go: () => go({ at: "bins" }),
         },
         {
+          label: "Running",
+          note: "Everything started and not finished.",
+          hay: "running open in progress going press pick unfinished",
+          go: () => go({ at: "running" }),
+        },
+        {
           label: "Take a copy",
           note: "Everything you can read, as one file.",
           hay: "export backup copy",
@@ -6180,6 +6209,205 @@ function capabilityRoute(key: string): Place | null {
 // rather than listed, because the useful facts about sixty interchangeable
 // objects are how many there are, how many hold fruit, and how many go back to
 // somebody, and a list of sixty names answers none of those without arithmetic.
+// --- what is running -------------------------------------------------------
+
+// The winemaker: "there should also be a tab called running operations that has
+// open things: press going, pick going, etc."
+//
+// Every one of these was already a badge on the home screen, added one at a
+// time as somebody noticed a thing going missing. The cost of that is that
+// knowing what is in flight means knowing which badges to read, which is
+// exactly the knowledge somebody coming back after two days does not have.
+//
+// Grouped by heading rather than flat, because "a press is going" and "a pick
+// has fruit on the pad" are different kinds of worry, and oldest first inside
+// each, because the press started four hours ago is the one worth asking about.
+function runningScreen(): HTMLElement {
+  const body = el("div", {}, empty("Loading."));
+  const view = screen("Running", lede("Everything started and not finished."), body);
+
+  function where(r: RunningOperation): Place | null {
+    switch (r.kind) {
+      case "press":
+        return { at: "press" };
+      case "pick":
+        return { at: "pick-bins", id: r.subject_id };
+      case "import":
+        return null;
+      default:
+        return r.subject_type === "vessel" ? { at: "vessel", id: r.subject_id } : null;
+    }
+  }
+
+  function ago(since: string | null): string {
+    if (!since) return "";
+    const mins = Math.max(0, Math.round((Date.now() - Date.parse(since)) / 60000));
+    if (mins < 60) return `${mins} min`;
+    const hours = Math.round(mins / 60);
+    if (hours < 36) return `${hours} h`;
+    return `${Math.round(hours / 24)} days`;
+  }
+
+  async function load(): Promise<void> {
+    const [rows_, hot] = await Promise.all([running(), watching()]);
+
+    if (rows_.length === 0 && hot.length === 0) {
+      body.replaceChildren(
+        banner("Nothing is running and nothing is being watched.", "good"),
+        button("Back", () => goBack(), "quiet"),
+      );
+      return;
+    }
+
+    // The hot list first. 0096. A thing somebody asked to keep in front of
+    // them outranks a thing that merely has not finished, and the two are
+    // different questions: "what is going on" and "what am I worried about".
+    const watched = new Set(hot.map((w) => w.subject_id));
+
+    function hotRow(w: Watching): HTMLElement {
+      const said = el("div", {});
+      // "I imagine by the time it's finished it'll be more like 450 liters."
+      // The gap is the whole point, so both numbers are on the row and
+      // neither is dressed up as the other.
+      const progress =
+        w.expect !== null && w.so_far !== null
+          ? `${Number(w.so_far).toLocaleString()} of ${Number(w.expect).toLocaleString()} ${w.unit ?? ""}`.trim() +
+            `, ${Math.round((Number(w.so_far) / Number(w.expect)) * 100)}% of what you expected`
+          : w.expect !== null
+            ? `expecting ${Number(w.expect).toLocaleString()} ${w.unit ?? ""}`.trim()
+            : "no number, just keeping an eye on it";
+
+      return el(
+        "li",
+        { class: "vessel-row" },
+        el("span", { class: "vessel-name", text: w.what ?? "something" }),
+        el("span", { class: "vessel-detail", text: progress }),
+        ...(w.note ? [el("span", { class: "vessel-detail", text: w.note })] : []),
+        button(
+          "Stop watching",
+          async () => {
+            try {
+              await unwatchSubject(w.subject_type, w.subject_id);
+              await load();
+            } catch (error) {
+              said.replaceChildren(fail(error));
+            }
+          },
+          "quiet",
+        ),
+        said,
+      );
+    }
+
+    // On a running thing that nobody is watching yet: say what you expect.
+    function expectBox(r: RunningOperation): HTMLElement {
+      const how = field({
+        label: "What do you expect",
+        type: "number",
+        placeholder: r.kind === "press" ? "450" : "",
+        hint:
+          r.kind === "press"
+            ? "Litres by the time it is finished. It stays an expectation and never becomes a measurement."
+            : "A number you have in mind. It stays an expectation.",
+      });
+      const said = el("div", {});
+      return el(
+        "details",
+        { class: "more" },
+        el("summary", { text: "Watch this" }),
+        rows(
+          how.root,
+          button(
+            "Keep it in front of me",
+            async () => {
+              try {
+                await watchSubject({
+                  subjectType: r.subject_type,
+                  subjectId: r.subject_id,
+                  expect: how.value() ? Number(how.value()) : null,
+                  unit: how.value() ? (r.kind === "press" ? "litres" : "units") : null,
+                });
+                await load();
+              } catch (error) {
+                said.replaceChildren(fail(error));
+              }
+            },
+            "secondary",
+          ),
+          said,
+        ),
+      );
+    }
+
+    const headings = [...new Set(rows_.map((r) => r.heading))];
+
+    body.replaceChildren(
+      rows(
+        ...(hot.length === 0
+          ? []
+          : [
+              el("h2", { class: "section-head", text: "Watching" }),
+              el("ul", { class: "vessel-list" }, ...hot.map(hotRow)),
+            ]),
+        ...headings.flatMap((h) => [
+          el("h2", { class: "section-head", text: h }),
+          el(
+            "ul",
+            { class: "vessel-list" },
+            ...rows_
+              .filter((r) => r.heading === h)
+              .map((r) => {
+                const to = where(r);
+                const row = el(
+                  "li",
+                  {
+                    class: `vessel-row${to ? " vessel-row-tappable" : ""}`,
+                    ...(to ? { role: "button", tabindex: "0" } : {}),
+                  },
+                  el("span", { class: "vessel-name", text: r.what }),
+                  el("span", {
+                    class: "vessel-detail",
+                    text: r.detail ?? "",
+                  }),
+                  // How long it has been going, which is the thing that turns
+                  // a list into a question worth asking.
+                  el("span", { class: "tag tag-inherited", text: ago(r.since) }),
+                );
+                if (to) {
+                  const open = () => go(to);
+                  on(row, "click", open);
+                  on(row, "keydown", (ev) => {
+                    if (ev.key === "Enter" || ev.key === " ") {
+                      ev.preventDefault();
+                      open();
+                    }
+                  });
+                }
+                return watched.has(r.subject_id)
+                  ? row
+                  : el("li", { class: "vessel-row-group" }, row, expectBox(r));
+              }),
+          ),
+        ]),
+        button("Back", () => goBack(), "quiet"),
+      ),
+    );
+  }
+
+  void (async () => {
+    try {
+      await load();
+    } catch (error) {
+      body.replaceChildren(
+        fail(error),
+        button("Back", () => goBack(), "quiet"),
+      );
+    }
+  })();
+
+  return view;
+}
+
 function binsScreen(): HTMLElement {
   const body = el("div", {}, empty("Loading."));
   const message = el("div", {});
@@ -8086,7 +8314,7 @@ function pressScreen(): HTMLElement {
           }
           try {
             const out = await startPress({
-              sourceIds: chosen,
+              vesselIds: chosen,
               pressVesselId: whichPress.value,
             });
             said.replaceChildren(

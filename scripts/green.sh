@@ -7,7 +7,7 @@
 #           and a copy of the cellar. Every phase of the modularization has to
 #           end green and this is what says whether it did."
 # Depends on: [scripts/verify.sh, tests/shim.sql, tests/schema_assertions.sql,
-#              scripts/guards.sh, scripts/status.sh]
+#              scripts/guards.sh, scripts/status.sh, scripts/rpc-args.sh]
 # Depended on by: [docs/session-reports/modularization-progress.md, docs/status-ledger.md]
 # ---------------------------------------------------------------------------
 #
@@ -228,7 +228,30 @@ elif [ "$scratch_ok" = yes ] && [ "$copy_ok" = yes ]; then
 fi
 
 # ---------------------------------------------------------------------------
-step "6. the refusal surface is still the one that was measured"
+step "6. every rpc argument names a parameter the kernel has"
+# ---------------------------------------------------------------------------
+# Added after a press failed in the winemaker's hand with "could not find the
+# function public.start_press(p_detail, p_node, p_press_vessel_id,
+# p_source_ids)". 0090 renamed that parameter on purpose so every caller would
+# break; the three in SQL did, and the one in TypeScript did not, because an rpc
+# argument is a key in a bag that nothing typechecks.
+#
+# Against the scratch database, which is built from the migrations, so this
+# measures what the code says rather than what the cellar happens to have.
+if [ "$scratch_ok" = yes ] && [ -z "$broke" ]; then
+  if out=$(bash scripts/rpc-args.sh "$SCRATCH" 2>&1); then
+    ok "$(printf '%s' "$out" | sed 's/^ok[[:space:]]*//')"
+  else
+    bad "the client calls the kernel with arguments it does not have:"
+    printf '%s
+' "$out" | sed 's/^/      /'
+  fi
+else
+  bad "rpc arguments not checked: the migrations did not apply"
+fi
+
+# ---------------------------------------------------------------------------
+step "7. the refusal surface is still the one that was measured"
 # ---------------------------------------------------------------------------
 # The expensive half of this gate is scripts/ratchet.sh, which runs the whole
 # mutation harness and takes about twenty five minutes. This is the cheap half,
@@ -274,7 +297,7 @@ admin -c "drop database if exists $SCRATCH;" >/dev/null 2>&1
 admin -c "drop database if exists $COPY;" >/dev/null 2>&1
 
 # ---------------------------------------------------------------------------
-step "7. what is built, what is claimed, what is only ruled"
+step "8. what is built, what is claimed, what is only ruled"
 # ---------------------------------------------------------------------------
 # Needs no database, and runs whether or not one is up, because it reads the tree
 # against itself. Seventy one rulings and eleven session reports, and until this

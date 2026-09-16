@@ -1153,6 +1153,23 @@ body.practising {
   border-width: 3px;
 }
 
+/* A running row with its own controls under it, 0096. The row keeps its own
+   shape and the control hangs beneath, rather than a second list item that
+   reads as another running thing. */
+.vessel-row-group {
+  display: block;
+  padding: 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.vessel-row-group > .vessel-row {
+  border-bottom: 0;
+}
+
+.vessel-row-group > .more {
+  margin: 0 0 0.5rem 0.75rem;
+}
+
 /* A row somebody has chosen for a batch, 0088. A tick in the name as well as a
    ground: a ground alone is a rumour on a phone in sunlight, which is the
    condition this app is used in. */

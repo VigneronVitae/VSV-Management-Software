@@ -518,6 +518,10 @@ type_note:guard:1	type_note	guard	if n.id is null then	if false then	1
 type_note:raise:1	type_note	raise	raise exception 'there is no note with id %', p_note_id;	raise notice 'there is no note with id %', p_note_id;	1
 type_note:guard:2	type_note	guard	if k.id is null then	if false then	1
 type_note:raise:2	type_note	raise	raise exception	raise notice	2
+unwatch_subject:guard:1	unwatch_subject	guard	if not is_facility_user() then	if false then	1
+unwatch_subject:raise:1	unwatch_subject	raise	raise exception 'only somebody who works here decides what is worth watching'	raise notice 'only somebody who works here decides what is worth watching'	1
+unwatch_subject:head:1	unwatch_subject	head	if not exists (\n    select 1 from event\n     where subject_type = p_subject_type and subject_id = p_subject_id\n       and operation_id = term_id('operation', 'watch')\n  ) then	if false then	1
+unwatch_subject:raise:2	unwatch_subject	raise	raise exception 'that was not being watched';	raise notice 'that was not being watched';	1
 update_vessel:notfound:1	update_vessel	notfound	if not found then	if false then	1
 update_vessel:raise:1	update_vessel	raise	raise exception 'no vessel with id %', p_vessel_id;	raise notice 'no vessel with id %', p_vessel_id;	1
 update_vessel:head:1	update_vessel	head	if (was.has_glycol, was.setpoint_c, was.mode)\n     is distinct from\n     (now_.has_glycol, now_.setpoint_c, now_.mode)\n  then	if false then	1
@@ -559,6 +563,16 @@ visible_node:guard:3	visible_node	guard	if 'owner'      = any(n.hidden) then	if 
 visible_node:guard:4	visible_node	guard	if 'variety'    = any(n.hidden) then	if false then	1
 visible_node:guard:5	visible_node	guard	if 'vintage'    = any(n.hidden) then	if false then	1
 visible_node:guard:6	visible_node	guard	if 'attributes' = any(n.hidden) then	if false then	1
+watch_subject:guard:1	watch_subject	guard	if not is_facility_user() then	if false then	1
+watch_subject:raise:1	watch_subject	raise	raise exception 'only somebody who works here decides what is worth watching'	raise notice 'only somebody who works here decides what is worth watching'	1
+watch_subject:guard:2	watch_subject	guard	if not exists (select 1 from subject_resolver where subject_type = p_subject_type) then	if false then	1
+watch_subject:raise:2	watch_subject	raise	raise exception '% is not a kind of thing this winery records', p_subject_type;	raise notice '% is not a kind of thing this winery records', p_subject_type;	1
+watch_subject:guard:3	watch_subject	guard	if what is null then	if false then	1
+watch_subject:raise:3	watch_subject	raise	raise exception 'there is no % with that id to watch', p_subject_type;	raise notice 'there is no % with that id to watch', p_subject_type;	1
+watch_subject:guard:4	watch_subject	guard	if p_expect is not null and nullif(btrim(coalesce(p_unit, '')), '') is null then	if false then	1
+watch_subject:raise:4	watch_subject	raise	raise exception 'say what % is measured in', p_expect;	raise notice 'say what % is measured in', p_expect;	1
+watch_subject:guard:5	watch_subject	guard	if p_expect is not null and p_expect <= 0 then	if false then	1
+watch_subject:raise:5	watch_subject	raise	raise exception 'an expectation of % is not something to watch for', p_expect;	raise notice 'an expectation of % is not something to watch for', p_expect;	1
 weigh_bins:guard:1	weigh_bins	guard	if n_bins = 0 then	if false then	1
 weigh_bins:raise:1	weigh_bins	raise	raise exception 'no bins were named, so there is nothing this weight is of';	raise notice 'no bins were named, so there is nothing this weight is of';	1
 weigh_bins:guard:2	weigh_bins	guard	if p_gross_lbs is null or p_gross_lbs <= 0 then	if false then	1
