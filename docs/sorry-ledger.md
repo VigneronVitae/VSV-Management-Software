@@ -1008,6 +1008,18 @@ history on the node rather than a category on the sample, since nothing else in 
 can say what a lot was on a given day either. *Load-bearing:* no, and it is worth knowing
 before anybody builds a ripening curve off these rows.
 
+**S-84. An estimate in the bins and a weighing of the pick sit side by side, unreconciled.**
+`bin_fruit` says what somebody thought was in each bin. `weigh_bins` records what the scale
+said for a set of bins together, and the lot's `quantity` comes from that. Nothing compares
+them, so a pick estimated at eight bins of 850 and weighed at 5,100 pounds reports both
+figures and says nothing about the 1,700 pound gap.
+The gap is the useful number. It is how you learn that your bins run light, that somebody
+counted a bin twice, or that fruit went somewhere between the vineyard and the scale.
+*Resolves when:* somebody wants it, at which point it is a view comparing the estimate
+against the weighing per pick and a threshold worth flagging, and the threshold is a
+winemaking judgement rather than an arithmetic one. *Load-bearing:* no. The weighing is
+authoritative and the estimate never overwrites it, which is the failure that would matter.
+
 ## Discharged
 **S-78. Anybody who can sign up becomes staff.** *Discharged by `0068`.*
 `enable_signup = true`, and `claim_account` gave any authenticated identity that had not

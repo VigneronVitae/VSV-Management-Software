@@ -52,7 +52,8 @@
 --              supabase/migrations/0083_what_you_can_sample.sql,
 --              supabase/migrations/0084_a_bin_of_fruit_is_not_juice.sql,
 --              supabase/migrations/0085_a_stack_of_bins_is_inventory.sql,
---              supabase/migrations/0086_a_variable_named_like_a_column.sql]
+--              supabase/migrations/0086_a_variable_named_like_a_column.sql,
+--              supabase/migrations/0087_a_bin_holds_pounds.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -2899,7 +2900,11 @@ begin
   -- c=39 f=72 p=39 u=20 before 0079, whose one new check is that a room held in
   -- a direction is a room under control. Those were always one fact and are now
   -- two columns, so the constraint is what keeps them one.
-  want := 'c=40 f=72 p=39 u=20';
+  -- c=40 f=72 p=39 u=20 before 0087, whose two new checks are on a bin's
+  -- fruit: that a weight is a weight, and that a bin says pounds or says how
+  -- full and never both. The second is the one that matters: two answers to
+  -- one question with nothing to say which was typed and which was computed.
+  want := 'c=42 f=72 p=39 u=20';
   if have <> want then
     raise exception
       E'FAIL: the constraint inventory changed.\nnow:  %\nwas:  %\nIf that is deliberate, update this line in the same commit that changed the schema.', have, want;
@@ -9568,6 +9573,101 @@ begin
     raise exception 'FAIL: the inventory does not count the borrowed stack';
   end if;
   perform test_ok('the bin inventory counts bins by whose they are, which is the question sixty interchangeable objects can actually answer');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- a bin holds pounds'; end $$;
+
+-- 0087. "Picking bins should hold fruit in lbs or % ton", and then the better
+-- version when asked what a full bin holds: "800-900 lbs of fruit if it's
+-- bulging. But the bins should each have a fruit amount in lbs so we just use
+-- that right?" Right: pounds are the told fact and how full is the derived one,
+-- which is the reverse of what 0033 built.
+do $$
+declare
+  bin_t  uuid;
+  b1     uuid := '00000000-0000-0000-0000-0000000e1001';
+  b2     uuid := '00000000-0000-0000-0000-0000000e1002';
+  pick   jsonb;
+  pick_id uuid;
+  got    record;
+  full_l numeric;
+begin
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+  select id into bin_t from term
+   where kind = 'vessel_type'
+     and coalesce((attributes ->> 'intake_bin')::boolean, false)
+   limit 1;
+  select (attributes ->> 'full_lbs')::numeric into full_l from term where id = bin_t;
+
+  if coalesce(full_l, 0) <= 0 then
+    raise exception 'FAIL: no figure for what a full bin holds, so no percentage can become a weight';
+  end if;
+  perform test_ok('a picking bin type says what a full bin holds, which is the only thing a percentage can be turned into pounds against');
+
+  insert into vessel (id, type_id, name) values
+    (b1, bin_t, 'CD1'), (b2, bin_t, 'CD2');
+
+  pick := jsonb_build_object('id', gen_random_uuid(), 'vintage', 2026);
+
+  -- Pounds, which is what he asked for.
+  pick_id := (add_bin_to_pick(pick, b1, null, 700) ->> 'node_id')::uuid;
+  select * into got from bin_fruit where vessel_id = b1;
+  if got.said_as <> 'lbs' or got.lbs <> 700 then
+    raise exception 'FAIL: a bin told 700 pounds reads % as %', got.lbs, got.said_as;
+  end if;
+  if got.said_pct is not null then
+    raise exception 'FAIL: a percentage was written next to pounds somebody gave';
+  end if;
+  perform test_ok('a bin says how many pounds of fruit are in it, and nothing writes a percentage beside the figure somebody actually gave');
+
+  -- And the derived half, which is never stored.
+  if got.pct_full <> round(700 / full_l * 100, 0) then
+    raise exception 'FAIL: how full a 700 pound bin is reads %', got.pct_full;
+  end if;
+  if got.tons <> round(700 / 2000.0, 3) then
+    raise exception 'FAIL: 700 pounds is % tons', got.tons;
+  end if;
+  perform test_ok('how full a bin is and what it is in tons are worked out from the pounds at read time, so neither can drift from the figure they came from');
+
+  -- The other way round, for somebody who eyeballs it.
+  perform add_bin_to_pick(pick || jsonb_build_object('id', pick_id), b2, 50, null);
+  select * into got from bin_fruit where vessel_id = b2;
+  if got.said_as <> 'pct' then
+    raise exception 'FAIL: a bin told half full reads as %', got.said_as;
+  end if;
+  if got.lbs <> round(full_l / 2, 0) then
+    raise exception 'FAIL: half a bin is % pounds and a full one is %', got.lbs, full_l;
+  end if;
+  perform test_ok('a bin can still be given as a percentage and reads back in pounds, because somebody standing at a bin is looking at it rather than weighing it');
+
+  -- Never both. Two answers to one question, with nothing to say which was
+  -- typed and which was computed.
+  begin
+    perform add_bin_to_pick(pick || jsonb_build_object('id', pick_id),
+      (select id from vessel where type_id = bin_t and id not in (b1, b2)
+        and not exists (select 1 from placement pl where pl.vessel_id = vessel.id and pl.to_at is null)
+        limit 1), 50, 700);
+    raise exception 'FAIL: a bin said both pounds and how full';
+  exception when others then
+    if position('not both' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a bin cannot say pounds and say how full at once, because one of the two would be a guess sitting beside a figure somebody gave');
+  end;
+
+  -- The constraint, not the function. A rule only the function enforces is a
+  -- rule anything else can walk past.
+  begin
+    update placement set fill_pct = 90 where vessel_id = b1 and to_at is null;
+    raise exception 'FAIL: both halves were written straight into the table';
+  exception when check_violation then
+    perform test_ok('the table refuses a bin carrying both a weight and a percentage, so the rule does not depend on everything going through one function');
+  end;
+
+  -- And the lot's own quantity is still the scale's, not a total of estimates.
+  if (select n.quantity from node n where n.id = pick_id) is not null then
+    raise exception 'FAIL: estimates in the bins gave the pick a weight before anybody weighed it';
+  end if;
+  perform test_ok('estimates in the bins do not give the pick a weight, because a pick reading a number nobody weighed is the A13 shape at the moment T1-4 exists to protect');
 end $$;
 
 do $$ begin raise notice '--- all assertions passed'; end $$;

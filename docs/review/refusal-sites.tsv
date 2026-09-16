@@ -1,16 +1,19 @@
+add_bin_to_pick:guard:1	add_bin_to_pick	guard	if p_fill_pct is not null and p_fruit_lbs is not null then	if false then	1
+add_bin_to_pick:raise:1	add_bin_to_pick	raise	raise exception	raise notice	1
+add_bin_to_pick:guard:2	add_bin_to_pick	guard	if p_fruit_lbs is not null and p_fruit_lbs <= 0 then	if false then	1
+add_bin_to_pick:raise:2	add_bin_to_pick	raise	raise exception 'a bin with no fruit in it is not part of a pick';	raise notice 'a bin with no fruit in it is not part of a pick';	1
 add_bin_to_pick:head:1	add_bin_to_pick	head	if not exists (\n    select 1 from vessel v\n      join term vt on vt.id = v.type_id and vt.kind = 'vessel_type'\n     where v.id = p_vessel_id\n       and v.active\n       and coalesce((vt.attributes ->> 'intake_bin')::boolean, false)\n  ) then	if false then	1
 add_bin_to_pick:permissive:1	add_bin_to_pick	permissive	and coalesce((vt.attributes ->> 'intake_bin')::boolean, false)	and coalesce((vt.attributes ->> 'intake_bin')::boolean, true)	1
-add_bin_to_pick:raise:1	add_bin_to_pick	raise	raise exception	raise notice	1
-add_bin_to_pick:guard:1	add_bin_to_pick	guard	if holder = pick_id then	if false then	1
-add_bin_to_pick:raise:2	add_bin_to_pick	raise	raise exception 'that bin is already part of this pick';	raise notice 'that bin is already part of this pick';	1
-add_bin_to_pick:guard:2	add_bin_to_pick	guard	if holder is not null then	if false then	1
-add_bin_to_pick:raise:3	add_bin_to_pick	raise	raise exception 'that bin already holds other fruit; empty it before filling it again';	raise notice 'that bin already holds other fruit; empty it before filling it again';	1
-add_bin_to_pick:guard:3	add_bin_to_pick	guard	if existing.id is null then	if false then	1
-add_bin_to_pick:permissive:2	add_bin_to_pick	permissive	coalesce((p_pick ->> 'non_vintage')::boolean, false),	coalesce((p_pick ->> 'non_vintage')::boolean, true),	1
-add_bin_to_pick:guard:4	add_bin_to_pick	guard	elsif existing.stage <> 'bin' then	elsif false then	1
-add_bin_to_pick:raise:4	add_bin_to_pick	raise	raise exception 'that lot is not a pick, so bins cannot be added to it';	raise notice 'that lot is not a pick, so bins cannot be added to it';	1
-add_bin_to_pick:guard:5	add_bin_to_pick	guard	elsif existing.status = 'closed' then	elsif false then	1
-add_bin_to_pick:raise:5	add_bin_to_pick	raise	raise exception 'that pick is closed; its fruit has already gone somewhere';	raise notice 'that pick is closed; its fruit has already gone somewhere';	1
+add_bin_to_pick:raise:3	add_bin_to_pick	raise	raise exception	raise notice	3
+add_bin_to_pick:guard:3	add_bin_to_pick	guard	if holder = pick_id then	if false then	1
+add_bin_to_pick:raise:4	add_bin_to_pick	raise	raise exception 'that bin is already part of this pick';	raise notice 'that bin is already part of this pick';	1
+add_bin_to_pick:guard:4	add_bin_to_pick	guard	if holder is not null then	if false then	1
+add_bin_to_pick:raise:5	add_bin_to_pick	raise	raise exception 'that bin already holds other fruit; empty it before filling it again';	raise notice 'that bin already holds other fruit; empty it before filling it again';	1
+add_bin_to_pick:guard:5	add_bin_to_pick	guard	if existing.id is null then	if false then	1
+add_bin_to_pick:guard:6	add_bin_to_pick	guard	elsif existing.stage <> 'bin' then	elsif false then	1
+add_bin_to_pick:raise:6	add_bin_to_pick	raise	raise exception 'that lot is not a pick, so bins cannot be added to it';	raise notice 'that lot is not a pick, so bins cannot be added to it';	1
+add_bin_to_pick:guard:7	add_bin_to_pick	guard	elsif existing.status = 'closed' then	elsif false then	1
+add_bin_to_pick:raise:7	add_bin_to_pick	raise	raise exception 'that pick is closed; its fruit has already gone somewhere';	raise notice 'that pick is closed; its fruit has already gone somewhere';	1
 add_bins_to_pick:head:1	add_bins_to_pick	head	if coalesce(p_new_count, 0) = 0\n     and coalesce(array_length(p_vessel_ids, 1), 0) = 0 then	if false then	1
 add_bins_to_pick:raise:1	add_bins_to_pick	raise	raise exception 'no bins were named and none were asked for, so there is nothing to add';	raise notice 'no bins were named and none were asked for, so there is nothing to add';	1
 add_bins_to_pick:guard:1	add_bins_to_pick	guard	if coalesce(p_new_count, 0) < 0 or coalesce(p_new_count, 0) > 40 then	if false then	1

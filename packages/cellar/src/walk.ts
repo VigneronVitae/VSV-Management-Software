@@ -1666,7 +1666,32 @@ function cellarMapLayout(
             : `, ${v.mode} to ${v.setpoint_c ?? "an unrecorded setpoint"}`),
       },
       el("span", { class: "map-fill" }),
-      el("span", { class: "map-name", text: v.name }),
+      // The winemaker: "instead of saying the vessel name on the vessel (Eric,
+      // intern Randy, etc) it should say the wine in the vessel". The shape is
+      // the vessel; what you need to read off a wall of them is what is in
+      // each. An empty one has nothing to say but its own name, which is also
+      // when its name is the thing you want, because you are looking for
+      // somewhere to put something.
+      el("span", {
+        class: "map-name",
+        // A barrel is 52 pixels across and "Cynic Pinot Gris 2025" is not. On a
+        // small shape the variety and the year are what somebody says out loud
+        // in a barrel room anyway, and the full name is one tap away; on a
+        // shape with room, the lot's own name is better because two barrels of
+        // one variety and year are otherwise identical.
+        text: v.is_empty
+          ? v.name
+          : size < 72 && v.variety
+            ? `${v.variety}${v.vintage ? ` ${String(v.vintage).slice(-2)}` : ""}`
+            : (v.lot_name ?? "wine"),
+      }),
+      // And the vessel underneath, where there is room for it. A 52 pixel
+      // barrel gets one line and the name arrives on tap; anything bigger can
+      // carry both, which is what makes "where is Eric" answerable without
+      // leaving the map.
+      ...(v.is_empty || size < 72
+        ? []
+        : [el("span", { class: "map-vessel-name", text: v.name })]),
       // The number, because a height is a feeling and somebody deciding where
       // 400 litres will fit needs the figure.
       el("span", {
@@ -4584,16 +4609,69 @@ function pickBinsScreen(openOn?: string): HTMLElement {
       const binTypeIds = new Set(binTypes.map((t) => t.id));
       const free = kit.filter((v) => binTypeIds.has(v.type_id) && v.is_empty);
 
+      // 0087. "Picking bins should hold fruit in lbs or % ton", and then the
+      // better version: "the bins should each have a fruit amount in lbs so we
+      // just use that right?" Right, so pounds are what gets stored and how
+      // full is what gets worked out, which is the reverse of what this asked
+      // before. Both units are offered because he asked for both, and which one
+      // is remembered per device because it is a habit rather than a decision.
+      //
+      // A full bin is 850 pounds here, which is his "800 to 900 if it's
+      // bulging" with the middle taken. It lives on the bin type, so the middle
+      // moves without a release.
+      const fullLbs = Number(binTypes[0]?.attributes?.full_lbs ?? 0) || null;
+      // No figure for a full bin means percent cannot be turned into anything,
+      // so it is not offered as if it could.
+      // Read once and never reassigned: the toggle writes the preference and
+      // redraws, rather than mutating this and leaving the field's own label
+      // saying the old unit.
+      const unit: "lbs" | "pct" = fullLbs && pref("bin_unit") === "pct" ? "pct" : "lbs";
+
       const fill = field({
-        label: "How full, percent",
+        label: unit === "lbs" ? "Fruit in each bin, lbs" : "How full, percent",
         type: "number",
-        value: "100",
-        hint: "By eye. A bin weighed on its own later turns this into a real number.",
+        value: unit === "lbs" ? (fullLbs ? String(fullLbs) : "") : "100",
+        hint: "By eye. The scale replaces this with a real number when the bins are weighed.",
       });
+      const converted = el("p", { class: "field-hint" });
+
+      const saidLbs = (): number | null => {
+        const raw = fill.value();
+        if (!raw) return null;
+        return unit === "lbs" ? Number(raw) : null;
+      };
       const fillPct = (): number | null => {
         const raw = fill.value();
-        return raw ? Number(raw) : null;
+        if (!raw) return null;
+        return unit === "pct" ? Number(raw) : null;
       };
+
+      function showConversion(): void {
+        const raw = fill.value() ? Number(fill.value()) : null;
+        if (raw === null || !fullLbs) {
+          converted.textContent = "";
+          return;
+        }
+        // The kernel does this arithmetic when the row is written. This repeats
+        // it to put a number in front of somebody before they commit to it,
+        // which is the one thing a client may do with a rule it does not own.
+        const lbs = unit === "lbs" ? raw : Math.round((raw / 100) * fullLbs);
+        const pct = unit === "lbs" ? Math.round((raw / fullLbs) * 100) : raw;
+        converted.textContent =
+          `About ${lbs.toLocaleString()} lb a bin, ${(lbs / 2000).toFixed(2)} ton, ` +
+          `${pct}% of a full one.`;
+      }
+
+      const unitToggle = button(
+        unit === "lbs" ? "Say it as percent instead" : "Say it as pounds instead",
+        () => {
+          setPref("bin_unit", unit === "lbs" ? "pct" : "lbs");
+          void route();
+        },
+        "quiet",
+      );
+      on(fill.input, "input", showConversion);
+      showConversion();
 
       async function refreshTally(id: string): Promise<void> {
         const waiting = await unweighedBins(id);
@@ -4682,6 +4760,7 @@ function pickBinsScreen(openOn?: string): HTMLElement {
             pick,
             vesselIds: chosen,
             fillPct: fillPct(),
+            fruitLbs: saidLbs(),
           });
           for (const e of existing) {
             if (chosen.includes(e.vessel.id)) {
@@ -4763,6 +4842,7 @@ function pickBinsScreen(openOn?: string): HTMLElement {
             newTypeId: newType.value,
             namePrefix: prefix.value(),
             fillPct: fillPct(),
+            fruitLbs: saidLbs(),
             onLoanFrom: ours.input.checked ? null : lender.value(),
           });
           await landed(result, `Registered ${result.registered.join(", ")}.`);
@@ -4846,6 +4926,10 @@ function pickBinsScreen(openOn?: string): HTMLElement {
         rows(
           tally,
           fill.root,
+          converted,
+          // Only where percent means something. With no figure for what a full
+          // bin holds, a percent is a number with no second half.
+          ...(fullLbs ? [unitToggle] : []),
           el("h2", { class: "section-head", text: "New bins" }),
           howMany.root,
           prefix.root,

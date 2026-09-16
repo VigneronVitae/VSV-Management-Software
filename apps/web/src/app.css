@@ -1153,6 +1153,32 @@ body.practising {
   border-width: 3px;
 }
 
+/* However short the label, a name longer than the shape has to stop rather than
+   spill over the edge of it. Two lines, then an ellipsis. */
+.map-name {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  max-width: 100%;
+  padding: 0 3px;
+  overflow-wrap: anywhere;
+}
+
+/* The vessel's own name, under the wine's. Quieter and smaller: the wine is
+   what somebody scanning the room is reading, and the vessel is how they say
+   where it is once they have found it. */
+.map-vessel-name {
+  font-size: 0.62rem;
+  line-height: 1.1;
+  color: var(--ink-faint);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 2px;
+}
+
 /* Thermal state, 0079. The winemaker: vessels held cold should be "white ish or
    a light color" with a little temperature symbol, rooms under cold control
    should make the whole negative space around the vessels whitish, and the same

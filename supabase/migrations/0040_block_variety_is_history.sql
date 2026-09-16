@@ -3,7 +3,8 @@
 -- Purpose: "0039 left block.variety behind to preserve what somebody typed, and
 --           left it NOT NULL, which meant no new block could be created at all."
 -- Depends on: [supabase/migrations/0039_vineyard.sql]
--- Depended on by: [tests/schema_assertions.sql, supabase/migrations/0041_daily_log.sql]
+-- Depended on by: [tests/schema_assertions.sql, supabase/migrations/0041_daily_log.sql,
+--                  supabase/migrations/0087_a_bin_holds_pounds.sql]
 -- Axioms enforced: none. This is a defect fix.
 -- Open sorries: none
 -- ---------------------------------------------------------------------------

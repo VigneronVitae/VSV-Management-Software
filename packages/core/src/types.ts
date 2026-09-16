@@ -821,3 +821,22 @@ export type BinInventory = {
   empty: number;
   capacity_l: number | null;
 };
+
+// What is in one picking bin, in every unit anybody asks for. `said_as` is
+// which half a person actually typed, so a screen can show that figure rather
+// than the one the kernel worked out from it.
+export type BinFruit = {
+  placement_id: Uuid;
+  vessel_id: Uuid;
+  bin: string;
+  node_id: Uuid | null;
+  pick: string | null;
+  from_at: string;
+  said_lbs: number | null;
+  said_pct: number | null;
+  full_lbs: number | null;
+  lbs: number | null;
+  pct_full: number | null;
+  tons: number | null;
+  said_as: "lbs" | "pct" | null;
+};

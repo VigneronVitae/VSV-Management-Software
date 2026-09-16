@@ -6,6 +6,7 @@ import type {
   Attachment,
   BarrelColour,
   BarrelWarning,
+  BinFruit,
   BinInventory,
   BinToReturn,
   Block,
@@ -1368,12 +1369,17 @@ export async function addBinToPick(args: {
     owner_id?: Uuid | null;
   };
   vesselId: Uuid;
+  // One of the two, never both: the kernel refuses a bin that says pounds and
+  // says how full, because one of them would be a guess written next to a
+  // figure somebody actually gave.
   fillPct: number | null;
+  fruitLbs?: number | null;
 }): Promise<{ node_id: Uuid; placement_id: Uuid; bins: number; unweighed: number }> {
   const { data, error } = await kernel().rpc("add_bin_to_pick", {
     p_pick: args.pick,
     p_vessel_id: args.vesselId,
     p_fill_pct: args.fillPct,
+    p_fruit_lbs: args.fruitLbs ?? null,
   });
   if (error) throw new KernelError(error);
   return data as { node_id: Uuid; placement_id: Uuid; bins: number; unweighed: number };
@@ -1472,6 +1478,7 @@ export async function addBinsToPick(args: {
   // once, because they are two different situations. See 0036.
   ownerId?: Uuid | null;
   onLoanFrom?: string | null;
+  fruitLbs?: number | null;
 }): Promise<{ node_id: Uuid; registered: string[]; bins: number; unweighed: number }> {
   const { data, error } = await kernel().rpc("add_bins_to_pick", {
     p_pick: args.pick,
@@ -1482,6 +1489,7 @@ export async function addBinsToPick(args: {
     p_fill_pct: args.fillPct,
     p_owner_id: args.ownerId ?? null,
     p_on_loan_from: args.onLoanFrom ?? null,
+    p_fruit_lbs: args.fruitLbs ?? null,
   });
   if (error) throw new KernelError(error);
   return data as {
@@ -2026,4 +2034,19 @@ export async function registerBins(args: {
     from: string;
     to: string;
   };
+}
+
+// What is in each bin that has fruit in it, in whichever unit somebody wants.
+// The conversion lives in the kernel: a client doing it would be a second
+// opinion about what a full bin holds.
+export async function binFruit(nodeId?: Uuid): Promise<BinFruit[]> {
+  let q = kernel()
+    .from("bin_fruit")
+    .select(
+      "placement_id,vessel_id,bin,node_id,pick,from_at,said_lbs,said_pct,full_lbs,lbs,pct_full,tons,said_as",
+    );
+  if (nodeId) q = q.eq("node_id", nodeId);
+  const { data, error } = await q.order("bin");
+  if (error) throw new KernelError(error);
+  return (data ?? []) as BinFruit[];
 }
