@@ -25,8 +25,19 @@ cd "$(dirname "$0")/.." || exit 2
 
 CONTAINER="${VSV_DB_CONTAINER:-supabase_db_vsv-management-software}"
 CELLAR="${VSV_CELLAR_DB:-postgres}"
-SCRATCH=vsv_green_scratch
-COPY=vsv_green_cellar_copy
+# One directory per run. These were fixed paths in /tmp until two runs overlapped
+# and step 1 printed the other run's last line under its own ok, which is a
+# failure rendered as a success and the exact shape the assertion suite exists to
+# catch elsewhere. A concurrent run is operator error; a gate that misreports
+# because of one is not.
+LOGS="/tmp/green-$$"
+mkdir -p "$LOGS"
+
+# Per run, for the same reason the logs are. These were fixed names, and a second
+# run's "drop database if exists" at the top of step 3 would take the first run's
+# scratch out from under it while it was being read.
+SCRATCH="vsv_green_scratch_$$"
+COPY="vsv_green_cellar_copy_$$"
 
 fails=0
 step() { printf '\n=== %s\n' "$*"; }
@@ -45,24 +56,33 @@ if ! docker exec "$CONTAINER" true 2>/dev/null; then
   db_up=no
 fi
 
+# The fixed scratch names from before the per-run change, dropped once so they do
+# not sit there holding 100MB apiece. Here rather than beside the names above,
+# because admin() and db_up do not exist yet up there and a cleanup that cannot
+# run is worse than none: it reads as done.
+if [ "$db_up" = yes ]; then
+  admin -c "drop database if exists vsv_green_scratch;" >/dev/null 2>&1
+  admin -c "drop database if exists vsv_green_cellar_copy;" >/dev/null 2>&1
+fi
+
 # ---------------------------------------------------------------------------
 step "1. bun run verify"
 # ---------------------------------------------------------------------------
-if bash scripts/verify.sh > /tmp/green-verify.log 2>&1; then
-  ok "$(tail -1 /tmp/green-verify.log | sed 's/^ok *//')"
+if bash scripts/verify.sh > "$LOGS/verify.log" 2>&1; then
+  ok "$(tail -1 "$LOGS/verify.log" | sed 's/^ok *//')"
 else
-  bad "verify: $(grep -c '^FAIL' /tmp/green-verify.log) problem(s), see /tmp/green-verify.log"
-  grep '^FAIL' /tmp/green-verify.log | head -5 | sed 's/^/      /'
+  bad "verify: $(grep -c '^FAIL' "$LOGS/verify.log") problem(s), see $LOGS/verify.log"
+  grep '^FAIL' "$LOGS/verify.log" | head -5 | sed 's/^/      /'
 fi
 
 # ---------------------------------------------------------------------------
 step "2. bun run typecheck and bun run lint"
 # ---------------------------------------------------------------------------
-if bun run typecheck > /tmp/green-tsc.log 2>&1; then ok "typecheck, zero errors"
-else bad "typecheck"; tail -5 /tmp/green-tsc.log | sed 's/^/      /'; fi
+if bun run typecheck > $LOGS/tsc.log 2>&1; then ok "typecheck, zero errors"
+else bad "typecheck"; tail -5 $LOGS/tsc.log | sed 's/^/      /'; fi
 
-if bun run lint > /tmp/green-lint.log 2>&1; then ok "lint"
-else bad "lint"; grep -E '^\S+\.(ts|json|css)' /tmp/green-lint.log | head -5 | sed 's/^/      /'; fi
+if bun run lint > $LOGS/lint.log 2>&1; then ok "lint"
+else bad "lint"; grep -E '^\S+\.(ts|json|css)' $LOGS/lint.log | head -5 | sed 's/^/      /'; fi
 
 # ---------------------------------------------------------------------------
 step "3. every migration from empty, into a scratch database"
@@ -87,15 +107,15 @@ if [ "$db_up" = yes ]; then
   fi
 fi
 
-if [ "$scratch_ok" = yes ] && ! psql_ -q -d "$SCRATCH" < tests/shim.sql > /tmp/green-shim.log 2>&1; then
-  bad "the shim did not apply"; tail -5 /tmp/green-shim.log | sed 's/^/      /'
+if [ "$scratch_ok" = yes ] && ! psql_ -q -d "$SCRATCH" < tests/shim.sql > $LOGS/shim.log 2>&1; then
+  bad "the shim did not apply"; tail -5 $LOGS/shim.log | sed 's/^/      /'
   scratch_ok=no
 fi
 
 applied=0; broke=""
 if [ "$scratch_ok" = yes ]; then
   for f in supabase/migrations/0*.sql; do
-    if psql_ -q -d "$SCRATCH" < "$f" > /tmp/green-mig.log 2>&1; then
+    if psql_ -q -d "$SCRATCH" < "$f" > $LOGS/mig.log 2>&1; then
       applied=$((applied + 1))
     else
       broke="$f"; break
@@ -107,7 +127,7 @@ if [ "$scratch_ok" != yes ]; then
   bad "migrations not attempted: there is no scratch database to apply them to"
 elif [ -n "$broke" ]; then
   bad "$(basename "$broke") did not apply from empty ($applied of $total applied first)"
-  grep -E '^(ERROR|FATAL)' /tmp/green-mig.log | head -3 | sed 's/^/      /'
+  grep -E '^(ERROR|FATAL)' $LOGS/mig.log | head -3 | sed 's/^/      /'
 else
   ok "$applied of $total migrations apply clean from empty"
 fi
@@ -160,7 +180,7 @@ step "4. the assertion suite against that scratch database"
 # ---------------------------------------------------------------------------
 scratch_n=0
 if [ "$scratch_ok" = yes ] && [ -z "$broke" ]; then
-  assert_run "$SCRATCH" /tmp/green-assert-scratch.log "against a database built from empty"
+  assert_run "$SCRATCH" $LOGS/assert-scratch.log "against a database built from empty"
   scratch_n=$ASSERT_N
 else
   bad "assertions against scratch skipped: the migrations did not apply"
@@ -186,13 +206,13 @@ if [ "$copy_ok" = yes ]; then
   # failure printed `ok cellar copied, 0 tables`. The table count is now the
   # test rather than the decoration.
   docker exec "$CONTAINER" sh -c "pg_dump -U postgres -d $CELLAR | psql -U postgres -q -d $COPY" \
-    > /tmp/green-copy.log 2>&1
+    > $LOGS/copy.log 2>&1
   rows=$(docker exec "$CONTAINER" psql -U postgres -At -d "$COPY" \
            -c "select count(*) from pg_tables where schemaname not in ('pg_catalog','information_schema');" 2>/dev/null)
   rows=${rows:-0}
   if [ "$rows" -lt 1 ]; then
     bad "the cellar copy has $rows tables, so pg_dump produced nothing"
-    tail -5 /tmp/green-copy.log | sed 's/^/      /'
+    tail -5 $LOGS/copy.log | sed 's/^/      /'
     copy_ok=no
   else
     ok "cellar copied, $rows tables"
@@ -201,7 +221,7 @@ fi
 
 copy_n=0
 if [ "$copy_ok" = yes ]; then
-  assert_run "$COPY" /tmp/green-assert-copy.log "against a copy of the cellar"
+  assert_run "$COPY" $LOGS/assert-copy.log "against a copy of the cellar"
   copy_n=$ASSERT_N
 else
   bad "assertions against the cellar copy skipped: there is no usable copy"
@@ -218,7 +238,7 @@ fi
 # whenever both gates reported success, and a zero on either side is already a
 # failure above.
 if [ "$scratch_n" -gt 0 ] && [ "$copy_n" -gt 0 ]; then
-  skipped=$(grep -c 'no storage schema here' /tmp/green-assert-scratch.log)
+  skipped=$(grep -c 'no storage schema here' $LOGS/assert-scratch.log)
   actual=$((copy_n - scratch_n))
   if [ "$actual" -ne "$skipped" ]; then
     bad "the two runs differ by $actual assertions and $skipped storage block(s) were skipped; those should match"
@@ -266,20 +286,20 @@ step "7. the refusal surface is still the one that was measured"
 if [ "$db_up" != yes ] || [ "$scratch_ok" != yes ]; then
   bad "no scratch database, so the refusal surface was not checked"
 else
-  if bash scripts/guards.sh "$SCRATCH" > /tmp/green-guards.tsv 2>/tmp/green-guards.err; then
-    n_live=$(grep -c . /tmp/green-guards.tsv)
+  if bash scripts/guards.sh "$SCRATCH" > $LOGS/guards.tsv 2>$LOGS/guards.err; then
+    n_live=$(grep -c . $LOGS/guards.tsv)
     n_committed=$(grep -vc '^#' docs/review/refusal-sites.tsv)
-    if [ -s /tmp/green-guards.err ]; then
-      bad "$(head -1 /tmp/green-guards.err)"
-    elif ! diff -q <(grep -v '^#' docs/review/refusal-sites.tsv) /tmp/green-guards.tsv >/dev/null; then
+    if [ -s $LOGS/guards.err ]; then
+      bad "$(head -1 $LOGS/guards.err)"
+    elif ! diff -q <(grep -v '^#' docs/review/refusal-sites.tsv) $LOGS/guards.tsv >/dev/null; then
       bad "the refusal surface has $n_live sites and docs/review/refusal-sites.tsv records $n_committed;"
       echo "      regenerate it with scripts/guards.sh, then run scripts/ratchet.sh before landing"
-      diff <(grep -v '^#' docs/review/refusal-sites.tsv) /tmp/green-guards.tsv | head -6 | sed 's/^/      /'
+      diff <(grep -v '^#' docs/review/refusal-sites.tsv) $LOGS/guards.tsv | head -6 | sed 's/^/      /'
     else
       # A disposition naming a site that no longer exists is a reason recorded
       # against code that has gone. The ratchet checks this too; it is here as
       # well because it costs nothing and the ratchet is not run every phase.
-      orphans=$(comm -23         <(awk -F'	' '$0 !~ /^#/ && NF >= 2 { print $1 }' docs/review/refusal-dispositions.tsv | sort -u)         <(cut -f1 /tmp/green-guards.tsv | sort -u))
+      orphans=$(comm -23         <(awk -F'	' '$0 !~ /^#/ && NF >= 2 { print $1 }' docs/review/refusal-dispositions.tsv | sort -u)         <(cut -f1 $LOGS/guards.tsv | sort -u))
       if [ -n "$orphans" ]; then
         bad "docs/review/refusal-dispositions.tsv files sites that are no longer enumerated:"
         printf '%s
@@ -289,7 +309,7 @@ else
       fi
     fi
   else
-    bad "the refusal enumeration did not run: $(head -1 /tmp/green-guards.err)"
+    bad "the refusal enumeration did not run: $(head -1 $LOGS/guards.err)"
   fi
 fi
 
@@ -303,17 +323,17 @@ step "8. what is built, what is claimed, what is only ruled"
 # against itself. Seventy one rulings and eleven session reports, and until this
 # existed the only way to answer "is AR-E6 built" was to read four documents and
 # trust them, which X-3 already found drifting in eight places.
-if bash scripts/status.sh > /tmp/green-status.log 2>&1; then
-  ok "$(grep -m1 '^ok    [0-9]* rulings' /tmp/green-status.log | sed 's/^ok *//')"
+if bash scripts/status.sh > $LOGS/status.log 2>&1; then
+  ok "$(grep -m1 '^ok    [0-9]* rulings' $LOGS/status.log | sed 's/^ok *//')"
   # The claimed count is printed rather than gated. It is supposed to be
   # uncomfortable to read and it is not supposed to fail the build: W-9
   # established that a gate set before the surface is known measures the wrong
   # thing, and the client's surface is still not known.
-  sed -n '/built and nothing checks them/,/^$/p' /tmp/green-status.log | sed 's/^/      /'
-  sed -n '/pending, with the prompt/,/^$/p' /tmp/green-status.log | sed 's/^/      /'
+  sed -n '/built and nothing checks them/,/^$/p' $LOGS/status.log | sed 's/^/      /'
+  sed -n '/pending, with the prompt/,/^$/p' $LOGS/status.log | sed 's/^/      /'
 else
-  bad "status: $(grep -c '^FAIL' /tmp/green-status.log) problem(s)"
-  grep '^FAIL' /tmp/green-status.log | head -5 | sed 's/^/      /'
+  bad "status: $(grep -c '^FAIL' $LOGS/status.log) problem(s)"
+  grep '^FAIL' $LOGS/status.log | head -5 | sed 's/^/      /'
 fi
 
 # ---------------------------------------------------------------------------
