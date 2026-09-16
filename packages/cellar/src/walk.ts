@@ -328,6 +328,7 @@ async function screenFor(place: Place): Promise<HTMLElement> {
         await vessels(),
         await locations(),
         await barrelColours(),
+        await rooms(),
       );
     case "vessel-new":
       return vesselScreen();
@@ -1366,6 +1367,7 @@ function vesselListScreen(
   kit: VesselState[],
   places: Location[],
   barrels: BarrelColour[],
+  climate: RoomClimate[],
 ): HTMLElement {
   const body = el("div", {});
   const count = el("p", { class: "lede" });
@@ -1386,6 +1388,26 @@ function vesselListScreen(
   // somebody chose yesterday would be holding a loaded gun.
   const picked = new Set<string>();
   let selecting = false;
+  // One object, handed to whichever view is drawn, so the list and the map
+  // cannot disagree about what is chosen.
+  const selection: Selecting = {
+    get on() {
+      return selecting;
+    },
+    has: (id) => picked.has(id),
+    toggle: (id) => {
+      if (picked.has(id)) picked.delete(id);
+      else picked.add(id);
+      draw();
+    },
+    // What a long press means: turn choosing on and take the thing under the
+    // finger with it.
+    begin: (id) => {
+      selecting = true;
+      picked.add(id);
+      draw();
+    },
+  };
   let order: VesselOrder = (pref("vessel_order") as VesselOrder) || "name";
   let onlyFull = pref("vessel_only") === "full";
   let onlyEmpty = pref("vessel_only") === "empty";
@@ -1425,22 +1447,16 @@ function vesselListScreen(
       key: "list",
       label: "List",
       note: "Sortable, filterable, and it tells you the numbers exactly.",
-      render: () =>
-        vesselList(shown(), {
-          on: selecting,
-          has: (id) => picked.has(id),
-          toggle: (id) => {
-            if (picked.has(id)) picked.delete(id);
-            else picked.add(id);
-            draw();
-          },
-        }),
+      render: () => vesselList(shown(), selection),
     },
     {
       key: "map",
       label: "Map",
       note: "The rooms, with what is standing in them. Sized by capacity, filled by how full.",
-      render: () => cellarMapLayout(shown(), places, barrels),
+      // The map takes the same selection, because six barrels to a new room is
+      // a thing somebody does looking at where the barrels are, which is the
+      // map's whole argument.
+      render: () => cellarMapLayout(shown(), places, barrels, climate, selection),
     },
   ];
 
@@ -1543,6 +1559,10 @@ function vesselListScreen(
     const chosen = pref("vessel_view", "list");
     const view = views.find((v) => v.key === chosen) ?? views[0];
     body.replaceChildren(
+      // Above the list rather than under it. Under twenty one vessels and the
+      // layout switcher is a control nobody scrolls to, which is how it first
+      // shipped and why the winemaker could not find it.
+      batchBar(list),
       list.length === 0
         ? empty("Nothing matches. Widen the filters above.")
         : (view?.render() ?? vesselList(list)),
@@ -1550,9 +1570,6 @@ function vesselListScreen(
         setPref("vessel_view", key);
         draw();
       }),
-      // Only over the list. The map has no rows to tick and a selection you
-      // cannot see is worse than one you cannot make.
-      ...(chosen === "list" ? [batchBar(list)] : []),
     );
   }
 
@@ -1714,6 +1731,7 @@ function cellarMapLayout(
   places: Location[],
   barrels: BarrelColour[] = [],
   climate: RoomClimate[] = [],
+  sel?: Selecting,
 ): Node {
   // 0079. Which way each room is held, by name, because the map groups by the
   // room's name and a vessel carries the name rather than the id.
@@ -1819,10 +1837,28 @@ function cellarMapLayout(
 
     // Always the choice screen, for the same reason the list rows are: a barrel
     // on a map is a barrel with wine in it, and the wine is usually what
-    // somebody tapping it wants.
+    // somebody tapping it wants. While choosing, a tap chooses instead.
     on(shape, "click", () => {
-      go({ at: "vessel", id: v.id });
+      if (sel?.on) sel.toggle(v.id);
+      else go({ at: "vessel", id: v.id });
     });
+    if (sel?.on && sel.has(v.id)) shape.classList.add("map-chosen");
+
+    // And the same long press, because six barrels to a new room is a thing
+    // somebody does while looking at where the barrels are.
+    if (sel && !sel.on) {
+      let timer: number | undefined;
+      const start = (): void => {
+        timer = window.setTimeout(() => sel.begin(v.id), 550);
+      };
+      const stop = (): void => {
+        if (timer) window.clearTimeout(timer);
+      };
+      on(shape, "pointerdown", start);
+      on(shape, "pointerup", stop);
+      on(shape, "pointercancel", stop);
+      on(shape, "pointerleave", stop);
+    }
     return shape;
   }
 
@@ -1892,6 +1928,9 @@ type Selecting = {
   on: boolean;
   has: (id: string) => boolean;
   toggle: (id: string) => void;
+  // Turn choosing on and take this one with it, which is what a long press
+  // means: the thing under your finger is the first one you chose.
+  begin: (id: string) => void;
 };
 
 function vesselList(kit: VesselState[], sel?: Selecting): HTMLElement {
@@ -1972,6 +2011,24 @@ function vesselList(kit: VesselState[], sel?: Selecting): HTMLElement {
         if (sel?.on) sel.toggle(v.id);
         else go({ at: "vessel", id: v.id });
       };
+
+      // A long press starts choosing and takes this row with it. He reached for
+      // this before reading anything, which settles whether it is the right
+      // gesture: the home screen's arrange mode already works this way, so it
+      // is the one this app has taught.
+      if (sel && !sel.on) {
+        let timer: number | undefined;
+        const start = (): void => {
+          timer = window.setTimeout(() => sel.begin(v.id), 550);
+        };
+        const stop = (): void => {
+          if (timer) window.clearTimeout(timer);
+        };
+        on(row, "pointerdown", start);
+        on(row, "pointerup", stop);
+        on(row, "pointercancel", stop);
+        on(row, "pointerleave", stop);
+      }
       on(row, "click", openRow);
       on(row, "keydown", (ev) => {
         if (ev.key === "Enter" || ev.key === " ") {

@@ -1161,6 +1161,13 @@ body.practising {
   box-shadow: inset 3px 0 0 var(--accent);
 }
 
+/* A shape somebody has chosen for a batch. Heavier than the row's ground,
+   because a shape is small and sitting on a tinted floor already. */
+.map-vessel.map-chosen {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
 /* The bar that says how many are chosen and where they are going. It sits under
    the list rather than over it: a phone keyboard takes the bottom half of the
    screen and a control pinned there is a control nobody can reach. */
