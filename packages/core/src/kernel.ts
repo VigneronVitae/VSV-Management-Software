@@ -2051,7 +2051,7 @@ export async function binFruit(nodeId?: Uuid): Promise<BinFruit[]> {
   let q = kernel()
     .from("bin_fruit")
     .select(
-      "placement_id,vessel_id,bin,node_id,pick,from_at,said_net,said_gross,said_pct,full_lbs,tare_lbs,lbs,gross,pct_full,tons,said_as",
+      "placement_id,vessel_id,bin,node_id,pick,from_at,said_net,said_gross,said_pct,full_lbs,tare_lbs,lbs,gross,pct_full,tons,said_as,weighed_at",
     );
   if (nodeId) q = q.eq("node_id", nodeId);
   const { data, error } = await q.order("bin");

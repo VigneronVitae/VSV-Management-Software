@@ -58,7 +58,8 @@
 --              supabase/migrations/0090_a_press_takes_bins.sql,
 --              supabase/migrations/0091_a_bin_says_its_weight_everywhere.sql,
 --              supabase/migrations/0089_correcting_one_bin.sql,
---              supabase/migrations/0092_gross_or_net_and_a_bulging_bin.sql]
+--              supabase/migrations/0092_gross_or_net_and_a_bulging_bin.sql,
+--              supabase/migrations/0093_a_guess_is_not_a_weight.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -10044,6 +10045,97 @@ begin
     raise exception 'FAIL: correcting a bin with a gross left the old net beside it';
   end if;
   perform test_ok('correcting a bin with what the scale said replaces the figure that was there rather than sitting beside it, so a bin never carries two answers');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- a guess is not a weight'; end $$;
+
+-- 0093. "I think the problem is the % full. That is literally just a guess. It
+-- shouldn't be used in a calculation except to see the difference between my
+-- guesses and reality."
+--
+-- 0087 multiplied a percentage by a nominal and produced a number that looked
+-- exactly like a weight, in the same column as a figure off a scale. Nothing
+-- downstream could tell them apart, so a guess could reach a press load, a
+-- yield and a tonnage.
+do $$
+declare
+  bin_t uuid;
+  b1    uuid := '00000000-0000-0000-0000-0000000f4001';
+  b2    uuid := '00000000-0000-0000-0000-0000000f4002';
+  pick  jsonb;
+  pid   uuid;
+  got   record;
+begin
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+  select id into bin_t from term
+   where kind = 'vessel_type'
+     and coalesce((attributes ->> 'intake_bin')::boolean, false)
+   limit 1;
+  update term set attributes = attributes || '{"tare_lbs": 92}'::jsonb
+   where kind = 'vessel_type' and value = 'picking_bin';
+
+  insert into vessel (id, type_id, name) values (b1, bin_t, 'CH1'), (b2, bin_t, 'CH2');
+  pick := jsonb_build_object('id', gen_random_uuid(), 'vintage', 2026,
+                             'name', 'CH a pick');
+
+  -- A guess, and nothing else.
+  pid := (add_bin_to_pick(pick, b1, 100, null, null) ->> 'node_id')::uuid;
+  select * into got from bin_fruit where vessel_id = b1;
+  if got.lbs is not null then
+    raise exception
+      'FAIL: a bin nobody weighed reports % pounds from a percentage', got.lbs;
+  end if;
+  if got.said_pct <> 100 then
+    raise exception 'FAIL: the guess was not kept';
+  end if;
+  if got.said_as <> 'pct' then
+    raise exception 'FAIL: a guessed bin reads as %', got.said_as;
+  end if;
+  perform test_ok('a bin somebody only guessed at has no weight at all, because a percentage times a nominal is a number that looks like a weight and is not one');
+
+  -- And the same bin, weighed. The scale outranks everything.
+  perform weigh_bins(pid, array[b1], 981);
+  select * into got from bin_fruit where vessel_id = b1;
+  if got.said_as <> 'weighed' then
+    raise exception 'FAIL: a weighed bin reads as %', got.said_as;
+  end if;
+  if got.lbs <> 981 - 92 then
+    raise exception 'FAIL: a bin weighed at 981 gross holds % pounds', got.lbs;
+  end if;
+  if got.gross <> 981 then
+    raise exception 'FAIL: a bin weighed at 981 gross reads % on the scale', got.gross;
+  end if;
+  perform test_ok('a weighing of one bin is that bin''s weight, which is what the scale had already said while the app was reporting an estimate');
+
+  -- **The comparison, which is the whole job the percentage has left.** The
+  -- guess is kept and what turned up is derived from the weight.
+  if got.said_pct <> 100 then
+    raise exception 'FAIL: weighing a bin threw away what somebody guessed';
+  end if;
+  if got.pct_full <> round((981 - 92) / 850.0 * 100, 0) then
+    raise exception 'FAIL: what the bin turned out to be reads %', got.pct_full;
+  end if;
+  perform test_ok('a weighed bin keeps the guess beside what turned up, which is the only thing a percentage is for once there is a real number');
+
+  -- A weighing covering more than one bin is not a per-bin weight, and
+  -- splitting it evenly would invent measurements nobody made.
+  -- A third bin, because weigh_bins refuses to weigh one that has been weighed
+  -- already and says to correct that weighing instead, which is right.
+  insert into vessel (id, type_id, name)
+    values ('00000000-0000-0000-0000-0000000f4003', bin_t, 'CH3');
+  perform add_bin_to_pick(jsonb_build_object('id', pid), b2, 100, null, null);
+  perform add_bin_to_pick(jsonb_build_object('id', pid),
+    '00000000-0000-0000-0000-0000000f4003', 100, null, null);
+  perform weigh_bins(pid, array[b2, '00000000-0000-0000-0000-0000000f4003'], 1900);
+  select * into got from bin_fruit where vessel_id = b2;
+  if got.said_as = 'weighed' then
+    raise exception 'FAIL: a weighing of two bins was read as a weight for one of them';
+  end if;
+  if got.lbs is not null then
+    raise exception 'FAIL: a bin in a two bin weighing reports % pounds of its own', got.lbs;
+  end if;
+  perform test_ok('a weighing that covers several bins gives none of them a weight of its own, because one number split evenly is two measurements nobody made');
 end $$;
 
 do $$ begin raise notice '--- all assertions passed'; end $$;

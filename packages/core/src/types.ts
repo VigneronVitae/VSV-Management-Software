@@ -858,7 +858,8 @@ export type BinFruit = {
   gross: number | null;
   pct_full: number | null;
   tons: number | null;
-  said_as: "net" | "gross" | "pct" | null;
+  said_as: "weighed" | "net" | "gross" | "pct" | null;
+  weighed_at?: string | null;
 };
 
 // One bin still holding fruit, and which pick it belongs to. A pick is usually

@@ -6,7 +6,8 @@
 -- Depends on: [supabase/migrations/0087_a_bin_holds_pounds.sql,
 --              supabase/migrations/0042_weighing_photo.sql,
 --              supabase/migrations/0089_correcting_one_bin.sql]
--- Depended on by: [tests/schema_assertions.sql]
+-- Depended on by: [tests/schema_assertions.sql,
+--                  supabase/migrations/0093_a_guess_is_not_a_weight.sql]
 -- Axioms enforced: A13 (a number whose unit is ambiguous is a number that is
 --                  wrong about a tenth of the time and never says so), T0-2
 --                  (whichever of the three was said is stored and the rest are

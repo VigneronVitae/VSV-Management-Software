@@ -4946,7 +4946,11 @@ function pickBinsScreen(openOn?: string): HTMLElement {
       showConversion();
 
       async function refreshTally(id: string): Promise<void> {
-        const [waiting, inBins] = await Promise.all([unweighedBins(id), binFruit(id)]);
+        const [waiting, inBins, shots] = await Promise.all([
+          unweighedBins(id),
+          binFruit(id),
+          attachmentsFor("node", id),
+        ]);
 
         // The total first, because it is the number somebody says out loud and
         // the one they are checking against a contract.
@@ -4977,6 +4981,21 @@ function pickBinsScreen(openOn?: string): HTMLElement {
           });
           const said = el("div", {});
 
+          // "It shouldn't be used in a calculation except to see the difference
+          // between my guesses and reality." This is that comparison, and it is
+          // the whole of what a percentage is for now.
+          const against =
+            b.said_pct !== null && b.pct_full !== null
+              ? el("p", {
+                  class: "field-hint",
+                  text:
+                    `Guessed ${b.said_pct}% full, came in at ${b.pct_full}%` +
+                    (Math.abs(Number(b.said_pct) - Number(b.pct_full)) <= 5
+                      ? ". Close."
+                      : "."),
+                })
+              : el("span", {});
+
           return el(
             "details",
             { class: "more" },
@@ -4987,15 +5006,34 @@ function pickBinsScreen(openOn?: string): HTMLElement {
                 text:
                   `${b.bin}: ` +
                   (b.lbs === null
-                    ? "nobody has said"
-                    : // Both numbers, always, because the whole defect was that
-                      // one of them alone does not say which one it is.
+                    ? // 0093. A percentage is a guess and never becomes a
+                      // weight, so a bin with only a guess has no pounds and
+                      // says so rather than reporting a plausible number.
+                      b.said_pct !== null
+                      ? `guessed ${b.said_pct}% full, never weighed`
+                      : "nobody has said"
+                    : // Both numbers, always, because one of them alone does
+                      // not say which one it is.
                       `${Number(b.lbs).toLocaleString()} lb of fruit, ` +
                       `${Number(b.tons ?? 0).toFixed(2)} ton, ` +
-                      `${Number(b.gross ?? 0).toLocaleString()} on the scale`),
+                      `${Number(b.gross ?? 0).toLocaleString()} on the scale` +
+                      (b.said_as === "weighed" ? ", weighed" : "")),
               }),
             ),
             rows(
+              against,
+              // A weighed bin is not corrected by typing over it. The scale's
+              // figure has a photograph and an author behind it, and replacing
+              // it belongs to the weighing, which already knows how to be
+              // superseded.
+              b.said_as === "weighed"
+                ? el("p", {
+                    class: "field-hint",
+                    text:
+                      "This came off the scale. To change it, correct the " +
+                      "weighing rather than typing over it here.",
+                  })
+                : el("span", {}),
               box.root,
               button(
                 "That is the fruit",
@@ -5058,6 +5096,49 @@ function pickBinsScreen(openOn?: string): HTMLElement {
                   ),
                 ),
             ...inBins.map(binRow),
+
+            // "So how do I see the pictures of the bins?" They were three taps
+            // away behind a button at the foot of this screen, under the bin
+            // list and the new bin form. A photograph is evidence about the
+            // thing above it, so the way to it belongs beside the thing.
+            el(
+              "ul",
+              { class: "vessel-list" },
+              (() => {
+                const row = el(
+                  "li",
+                  {
+                    class: "vessel-row vessel-row-tappable",
+                    role: "button",
+                    tabindex: "0",
+                  },
+                  el("span", {
+                    class: "vessel-name",
+                    text:
+                      shots.length === 0
+                        ? "No photographs yet"
+                        : `${shots.length} photograph${shots.length === 1 ? "" : "s"}`,
+                  }),
+                  el("span", {
+                    class: "vessel-detail",
+                    text:
+                      shots.length === 0
+                        ? "Of the scale, the fruit, the paperwork."
+                        : "Tap to look at them, or add another.",
+                  }),
+                );
+                const open = () => go({ at: "pick-photos", id });
+                on(row, "click", open);
+                on(row, "keydown", (ev) => {
+                  if (ev.key === "Enter" || ev.key === " ") {
+                    ev.preventDefault();
+                    open();
+                  }
+                });
+                return row;
+              })(),
+            ),
+
             el("p", {
               class: "lede",
               text:
