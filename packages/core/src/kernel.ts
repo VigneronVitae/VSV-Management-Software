@@ -1992,7 +1992,9 @@ export async function lotDetail(nodeId: Uuid): Promise<LotDetail[]> {
 export async function rooms(): Promise<RoomClimate[]> {
   const { data, error } = await kernel()
     .from("room_climate")
-    .select("id,name,kind,controlled,mode,ambient_c,vessels")
+    .select(
+      "id,name,kind,controlled,mode,ambient_c,vessels,room_temp_c,held,direction_was_told",
+    )
     .order("name");
   if (error) throw new KernelError(error);
   return (data ?? []) as RoomClimate[];

@@ -104,6 +104,13 @@ export type RoomClimate = {
   mode: "cooling" | "heating" | "off";
   ambient_c: number | null;
   vessels: number;
+  // What a room is here when nobody is doing anything to it: the average of
+  // the uncontrolled rooms, or 20C when none of them says.
+  room_temp_c: number;
+  // Which way it is actually held, derived from how far it sits from room
+  // temperature. `mode` is only what somebody said, and it wins where said.
+  held: "cooling" | "heating" | "off";
+  direction_was_told: boolean;
 };
 
 export type NodeStage = "bin" | "load" | "ferment" | "maturation" | "finished";

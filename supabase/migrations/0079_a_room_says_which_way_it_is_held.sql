@@ -5,7 +5,8 @@
 --           temperature can be read off."
 -- Depends on: [supabase/migrations/0006_vessel_thermal.sql,
 --              supabase/migrations/0057_the_contract.sql]
--- Depended on by: [tests/schema_assertions.sql]
+-- Depended on by: [tests/schema_assertions.sql,
+--                  supabase/migrations/0097_a_room_departs_from_room_temperature.sql]
 -- Axioms enforced: T0-4 (the direction is told by somebody who knows, never
 --                  inferred from a number), AR-E5 (the vocabulary already
 --                  exists: a room is held the same three ways a vessel is)

@@ -1915,7 +1915,10 @@ function cellarMapLayout(
       // temperature and no colour, because that is the honest picture of what
       // anybody knows about it.
       const air = roomClimate.get(room);
-      const holding = air && air.mode !== "off" ? air.mode : null;
+      // 0097. `held` is derived from how far the room sits from room
+      // temperature; `mode` is only what somebody said. Reading the told one
+      // meant a cold room looked like nothing until it was labelled by hand.
+      const holding = air && air.held !== "off" ? air.held : null;
       return el(
         "div",
         { class: `map-room${holding ? ` map-room-${holding}` : ""}` },
@@ -1937,13 +1940,13 @@ function cellarMapLayout(
               `${full} of ${here.length} holding wine` +
               (litres > 0 ? `, ${Math.round(litres).toLocaleString()} L` : ""),
           }),
-          // Controlled, and nobody has said which way. Worth a word rather than
-          // silence: the room is doing something and the map cannot draw it.
+          // Controlled and sitting at room temperature, which is a real state
+          // and not a gap: somebody is holding it where it would be anyway.
           ...(air?.controlled && !holding
             ? [
                 el("span", {
                   class: "map-room-note",
-                  text: `held at ${air.ambient_c ?? "an unrecorded temperature"}, direction not said`,
+                  text: `held at ${air.ambient_c ?? "an unrecorded temperature"}, which is room temperature here`,
                 }),
               ]
             : []),

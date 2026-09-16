@@ -1234,14 +1234,25 @@ body.practising {
    sit behind a map that is already carrying fill height, barrel colour and
    ownership, and a saturated ground would win against all three. The room tint
    is the negative space, so it goes on the floor rather than on the shapes. */
+/* 0097. The floor wash was a mistake: "I actually don't like the current tint on
+   the south room, it makes it hard to see." A ground behind the shapes competes
+   with the shapes, and the shapes are already carrying fill height, barrel
+   colour, ownership and their own thermal ring. So the room is marked at its
+   edge instead, where nothing is drawn on top of it. */
+.map-room-cooling .map-floor,
+.map-room-heating .map-floor {
+  background: transparent;
+  box-shadow: none;
+  border-left: 4px solid transparent;
+  padding-left: 0.5rem;
+}
+
 .map-room-cooling .map-floor {
-  background: #eef4f9;
-  box-shadow: inset 0 0 0 1px #cfe0ee;
+  border-left-color: #7fb0d4;
 }
 
 .map-room-heating .map-floor {
-  background: #faf1e6;
-  box-shadow: inset 0 0 0 1px #eedcc2;
+  border-left-color: #dcae6c;
 }
 
 /* And the vessel itself, which overrides whatever the room is doing: a jacket
@@ -1324,13 +1335,11 @@ body.practising {
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .map-room-cooling .map-floor {
-    background: #16222c;
-    box-shadow: inset 0 0 0 1px #24384a;
+    border-left-color: #4a7fa3;
   }
 
   :root:not([data-theme="light"]) .map-room-heating .map-floor {
-    background: #2a2117;
-    box-shadow: inset 0 0 0 1px #45341f;
+    border-left-color: #a07a3c;
   }
 
   :root:not([data-theme="light"]) .map-vessel.map-cooling {

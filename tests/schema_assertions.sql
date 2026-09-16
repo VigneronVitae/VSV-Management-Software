@@ -62,7 +62,8 @@
 --              supabase/migrations/0093_a_guess_is_not_a_weight.sql,
 --              supabase/migrations/0094_an_import_is_a_proposal.sql,
 --              supabase/migrations/0095_what_is_running.sql,
---              supabase/migrations/0096_what_you_are_watching.sql]
+--              supabase/migrations/0096_what_you_are_watching.sql,
+--              supabase/migrations/0097_a_room_departs_from_room_temperature.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh, scripts/rpc-args.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -10437,6 +10438,90 @@ begin
     if position('not a kind of thing' in sqlerrm) = 0 then raise; end if;
     perform test_ok('only a registered kind of thing can be watched, which is the subject registry doing the job it was built for');
   end;
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- a room departs from room temperature'; end $$;
+
+-- 0097. "I think a room is departure from room temperature not outside
+-- temperature."
+--
+-- 0079 asked somebody to tell it which way a room was held, reasoning that
+-- 15.5C is cooling in September and heating in January. That is true of the
+-- outside, and the outside is not what a cellar is measured against: a barrel
+-- room at 15.5 is below what a room is, in every month of the year.
+do $$
+declare
+  cold uuid := '00000000-0000-0000-0000-0000000f6001';
+  warm uuid := '00000000-0000-0000-0000-0000000f6002';
+  mid  uuid := '00000000-0000-0000-0000-0000000f6003';
+  told uuid := '00000000-0000-0000-0000-0000000f6004';
+  got  record;
+  base numeric;
+begin
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+
+  base := room_temperature();
+  if base is null or base <= 0 then
+    raise exception 'FAIL: room temperature is %, so nothing can be judged against it', base;
+  end if;
+  perform test_ok('there is a room temperature to judge a room against, measured from the rooms nobody is holding at anything or 20C when none of them says');
+
+  insert into location (id, name, controlled, ambient_c) values
+    (cold, 'CK cold store', true, base - 15),
+    (warm, 'CK warm room',  true, base + 6),
+    (mid,  'CK just a room', true, base),
+    (told, 'CK told otherwise', true, base - 15);
+
+  select * into got from room_climate where id = cold;
+  if got.held <> 'cooling' then
+    raise exception 'FAIL: a room % degrees below room temperature reads %', 15, got.held;
+  end if;
+  if got.direction_was_told then
+    raise exception 'FAIL: a derived direction claims somebody said it';
+  end if;
+  perform test_ok('a room held well below room temperature is cooling without anybody saying so, which is the chore 0079 created and this removes');
+
+  select * into got from room_climate where id = warm;
+  if got.held <> 'heating' then
+    raise exception 'FAIL: a room above room temperature reads %', got.held;
+  end if;
+  perform test_ok('a room held above room temperature is heating, by the same comparison in the other direction');
+
+  -- **The slack, which is the point of the whole thing.** A room at room
+  -- temperature is held at room temperature, and without this the map lights up
+  -- over nothing.
+  select * into got from room_climate where id = mid;
+  if got.held <> 'off' then
+    raise exception 'FAIL: a room sitting at room temperature reads %', got.held;
+  end if;
+  update location set ambient_c = base - 1.5 where id = mid;
+  select * into got from room_climate where id = mid;
+  if got.held <> 'off' then
+    raise exception 'FAIL: a room a degree and a half below room temperature reads %', got.held;
+  end if;
+  perform test_ok('a room within a couple of degrees of room temperature is held at room temperature rather than cooled, because a baseline with no slack calls every room a cold room');
+
+  -- The told direction still wins, because somebody standing in a room knows
+  -- something the number does not.
+  perform set_room_climate(told, 'heating');
+  select * into got from room_climate where id = told;
+  if got.held <> 'heating' then
+    raise exception 'FAIL: a room told it is heating reads % from its temperature', got.held;
+  end if;
+  if not got.direction_was_told then
+    raise exception 'FAIL: nothing says that direction was told rather than derived';
+  end if;
+  perform test_ok('a direction somebody said wins over the one derived from the temperature, and the row says which it is, because the two disagreeing is worth somebody looking at');
+
+  -- A room nobody has given a temperature is not guessed at.
+  insert into location (id, name, controlled) values
+    ('00000000-0000-0000-0000-0000000f6005', 'CK unmeasured', true);
+  select * into got from room_climate where id = '00000000-0000-0000-0000-0000000f6005';
+  if got.held <> 'off' then
+    raise exception 'FAIL: a room with no temperature reads %', got.held;
+  end if;
+  perform test_ok('a room nobody has measured is held no way at all, rather than being sorted into one by an absent number');
 end $$;
 
 do $$ begin raise notice '--- all assertions passed'; end $$;
