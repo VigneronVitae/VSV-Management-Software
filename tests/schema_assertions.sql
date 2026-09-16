@@ -63,7 +63,8 @@
 --              supabase/migrations/0094_an_import_is_a_proposal.sql,
 --              supabase/migrations/0095_what_is_running.sql,
 --              supabase/migrations/0096_what_you_are_watching.sql,
---              supabase/migrations/0097_a_room_departs_from_room_temperature.sql]
+--              supabase/migrations/0097_a_room_departs_from_room_temperature.sql,
+--              supabase/migrations/0098_a_vessel_arrives_in_a_number.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh, scripts/rpc-args.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -10522,6 +10523,158 @@ begin
     raise exception 'FAIL: a room with no temperature reads %', got.held;
   end if;
   perform test_ok('a room nobody has measured is held no way at all, rather than being sorted into one by an absent number');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- a vessel arrives in a number'; end $$;
+
+-- 0098. "Seems like all it needs to be is a number of vessel in the type. Then
+-- it defaults to 1 but you can change it to whatever you need for an action."
+-- And: "Picking bins on loan should have a different naming convention."
+do $$
+declare
+  out_js jsonb;
+  barrel uuid;
+  bin_t  uuid;
+  n      int;
+begin
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+
+  select id into barrel from term
+   where kind = 'vessel_type' and active
+     and not coalesce((attributes ->> 'intake_bin')::boolean, false)
+   limit 1;
+  select id into bin_t from term
+   where kind = 'vessel_type'
+     and coalesce((attributes ->> 'intake_bin')::boolean, false)
+   limit 1;
+
+  -- **One keeps the name it was given.** A single tank called Fermenter coming
+  -- back as "Fermenter 1" would be the count leaking into the case that has no
+  -- count, which is every case before today.
+  out_js := add_vessels(jsonb_build_object('type_id', barrel, 'name', 'CK Fermenter'));
+  if (out_js ->> 'to') <> 'CK Fermenter' then
+    raise exception 'FAIL: one vessel was named % rather than what was typed', out_js ->> 'to';
+  end if;
+  if (out_js ->> 'count')::int <> 1 then
+    raise exception 'FAIL: a count nobody gave came out as %', out_js ->> 'count';
+  end if;
+  perform test_ok('adding a vessel without saying how many adds one of them under the name that was typed, which is the answer to the question nobody should have to be asked');
+
+  -- The batch. Twelve barrels off a pallet was twelve trips through a form
+  -- whose answers were the same every time.
+  out_js := add_vessels(jsonb_build_object('type_id', barrel, 'name', 'CKB',
+                                           'capacity_l', 225), 5);
+  if (out_js ->> 'from') <> 'CKB1' or (out_js ->> 'to') <> 'CKB5' then
+    raise exception 'FAIL: five vessels came out as % to %', out_js ->> 'from', out_js ->> 'to';
+  end if;
+  select count(*) into n from vessel where name ~ '^CKB\d+$';
+  if n <> 5 then
+    raise exception 'FAIL: five were asked for and % exist', n;
+  end if;
+  perform test_ok('a count greater than one adds that many of the same kind, numbered from the name as a series, so a row of barrels is one act rather than twelve');
+
+  -- A name that already wears a number is the series it belongs to, not a new
+  -- one beside it. Typing CKB1 again is what somebody does when they are
+  -- reading the name off the last one they put down.
+  out_js := add_vessels(jsonb_build_object('type_id', barrel, 'name', 'CKB1'), 2);
+  if (out_js ->> 'from') <> 'CKB6' then
+    raise exception 'FAIL: continuing the series started at %', out_js ->> 'from';
+  end if;
+  perform test_ok('a name ending in a number is read as the series it belongs to and carries on from the highest already worn, rather than starting a second series under a name that already exists');
+
+  -- **The naming convention, which is the half he asked for.** PB4 to PB8 are
+  -- Pearlstaad's today and nothing about those names says so, which is fine
+  -- while there are five and useless on the day forty go back on a trailer.
+  out_js := add_vessels(jsonb_build_object(
+    'type_id', bin_t,
+    'attributes', jsonb_build_object('on_loan_from', 'Crowsfoot Vineyard')), 3);
+  if (out_js ->> 'prefix') <> 'CROW' then
+    raise exception 'FAIL: a borrowed stack was called % rather than after the lender', out_js ->> 'prefix';
+  end if;
+  if exists (select 1 from vessel where name ~ '^PB\d+$'
+              and attributes ->> 'on_loan_from' = 'Crowsfoot Vineyard') then
+    raise exception 'FAIL: a borrowed stack took numbers in this winery''s own series';
+  end if;
+  perform test_ok('a borrowed vessel nobody named is called after whoever lent it rather than taking the next numbers in this winery''s own series, which is what put five of Pearlstaad''s bins in the middle of ours');
+
+  -- Borrowed is still borrowed however it was named, because the name is a
+  -- convenience and the attribute is the fact.
+  if not exists (
+    select 1 from vessel_state
+     where name ~ '^CROW\d+$' and owner_name = 'Crowsfoot Vineyard' and not facility_owned
+  ) then
+    raise exception 'FAIL: a stack named after its lender still reads as ours';
+  end if;
+  perform test_ok('the name says whose a borrowed bin is and so does the row, because a naming convention somebody can type over is not a place to keep a fact');
+
+  -- Nothing is guessed at when there is nothing to guess from.
+  begin
+    perform add_vessels(jsonb_build_object('type_id', barrel), 2);
+    raise exception 'FAIL: two vessels were added with no name';
+  exception when others then
+    if position('needs something to be called' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a vessel nobody named and nobody lent is refused rather than given a name out of thin air, because a barrel called LOAN1 is a barrel nobody can find');
+  end;
+
+  begin
+    perform add_vessels(jsonb_build_object('name', 'CK Nameless'), 1);
+    raise exception 'FAIL: a vessel of no type was added';
+  exception when others then
+    if position('says none' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a vessel of no type is refused here rather than by a not-null constraint, so the sentence names the missing answer instead of the column');
+  end;
+
+  -- 0036's rule, now applying to a borrowed tank as well as a borrowed bin.
+  begin
+    perform add_vessels(jsonb_build_object(
+      'type_id', barrel, 'name', 'CKX',
+      'owner_id', (select id from party where kind = 'client' limit 1),
+      'attributes', jsonb_build_object('on_loan_from', 'Crowsfoot')), 1);
+    raise exception 'FAIL: a vessel was added as both on loan and party owned';
+  exception when others then
+    if position('says both' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a vessel cannot be both on loan from a grower and owned by a party here, which was a bin rule in 0036 and is now every vessel''s rule because a borrowed tank has the same two answers');
+  end;
+
+  begin
+    perform add_vessels(jsonb_build_object('type_id', barrel, 'name', 'CKZ'), 41);
+    raise exception 'FAIL: forty one vessels were added at once';
+  exception when others then
+    if position('is not a number of vessels' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a count past forty is refused, because it is a mistyped number rather than a delivery');
+  end;
+end $$;
+
+-- Somebody who does not work here does not add vessels, and the refusal says so
+-- rather than failing on a policy.
+do $$
+declare
+  client_user uuid;
+  barrel      uuid;
+begin
+  select id into barrel from term
+   where kind = 'vessel_type' and active
+     and not coalesce((attributes ->> 'intake_bin')::boolean, false)
+   limit 1;
+  -- A client sign-in is one with a client party against it, which is exactly
+  -- what is_facility_user() excludes.
+  select p.app_user_id into client_user from party p
+   where p.kind = 'client' and p.app_user_id is not null limit 1;
+
+  if client_user is null then
+    perform test_ok('no client sign-in exists in this fixture to refuse, so the refusal is covered by the register_bins case');
+  else
+    perform test_act_as(client_user);
+    begin
+      perform add_vessels(jsonb_build_object('type_id', barrel, 'name', 'CKQ'), 1);
+      raise exception 'FAIL: a client added a vessel to this winery';
+    exception when others then
+      if position('only somebody who works here' in sqlerrm) = 0 then raise; end if;
+      perform test_ok('somebody whose sign-in is a client''s does not add vessels to this winery, and is told that rather than shown a policy failure');
+    end;
+    perform test_act_as('00000000-0000-0000-0000-00000000a001');
+  end if;
 end $$;
 
 do $$ begin raise notice '--- all assertions passed'; end $$;

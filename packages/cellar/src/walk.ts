@@ -14,7 +14,7 @@ import {
   addSupply,
   addTerm,
   addToWine,
-  addVessel,
+  addVessels,
   addVesselTypeNote,
   addVineyard,
   appUsers,
@@ -2232,6 +2232,10 @@ type VesselForm = {
     attributes: Record<string, unknown>;
   };
   photoFile: () => File | null;
+  // The photo control itself. A screen adding twelve barrels at once takes it
+  // away, because a photograph is of one object and attaching it to twelve
+  // would be attaching it to none of them.
+  photoNode: HTMLElement;
   ready: () => string | null;
   // Renders every control this caller may not write as the value it holds.
   // `null` is no restriction. See 0030 and W-9 phase 6.
@@ -2804,6 +2808,7 @@ function vesselFields(partyRows: Party[]): VesselForm {
       detach();
     },
     photoFile: () => photo.file(),
+    photoNode: photoField,
     ready: () => {
       if (!type.value()) return "Pick a vessel type, or add one.";
       if (!name.value()) return "A vessel needs a name.";
@@ -4012,6 +4017,17 @@ function vesselScreen(): HTMLElement {
   const message = el("div", {});
   const holder = el("div", { class: "rows" });
   const capture = codeCapture({ label: "Codes on this vessel" });
+  // 0098. "Seems like all it needs to be is a number of vessel in the type.
+  // Then it defaults to 1 but you can change it to whatever you need." A row of
+  // twelve barrels off a pallet was twelve trips through this form, and the
+  // answers were the same every time.
+  const count = field({
+    label: "How many",
+    type: "number",
+    value: "1",
+    hint: "One unless you say otherwise. More than one and they are numbered on from the highest already used.",
+  });
+  const howMany = () => Math.max(1, Math.floor(Number(count.value() || "1")));
   const view = screen(
     "Add an empty vessel",
     lede("A vessel with nothing in it yet. Wine can go in later."),
@@ -4033,8 +4049,37 @@ function vesselScreen(): HTMLElement {
         }),
       );
     }
+    // A code is scanned off one object and a photograph is of one object, so
+    // both go away as soon as this is a batch. Left up, they would be asked for
+    // and then quietly attached to the first barrel of twelve, which is A13.
+    const batchNote = el("div", {});
+    const single = () => {
+      const many = howMany() > 1;
+      // Hidden only while there is nothing in it. Codes already scanned stay on
+      // screen, because the save refuses rather than throwing them away and a
+      // refusal about a list nobody can see is not one anybody can act on.
+      // There is no way to take one back off the list, so the refusal says the
+      // two things that do work: change the count, or leave.
+      capture.root.hidden = many && capture.codes().length === 0;
+      form.photoNode.hidden = many;
+      if (many) capture.stop();
+      batchNote.replaceChildren(
+        many
+          ? banner(
+              `${howMany()} of these, numbered on from the highest already used. ` +
+                "A code and a photograph belong to one vessel, so they are not asked " +
+                "for here: open a vessel afterwards to add them.",
+              "note",
+            )
+          : el("span", {}),
+      );
+    };
+    on(count.input, "input", single);
+
     holder.append(
       note,
+      count.root,
+      batchNote,
       ...form.nodes,
       capture.root,
       button("Save vessel", async () => {
@@ -4043,17 +4088,48 @@ function vesselScreen(): HTMLElement {
           message.replaceChildren(banner(problem, "error"));
           return;
         }
+        // Scanned and then abandoned by changing the count is the A13 shape: the
+        // list goes away with the control and the codes would be written
+        // nowhere, which reads as a save that worked.
+        if (howMany() > 1 && capture.codes().length > 0) {
+          message.replaceChildren(
+            banner(
+              `${capture.codes().length} scanned code(s) belong to one vessel and ` +
+                "would be thrown away by a batch. Set the count back to 1 to keep " +
+                "them, or go back and start this again without them.",
+              "error",
+            ),
+          );
+          return;
+        }
         try {
+          const many = howMany();
           const id = newId();
           const values = form.read();
-          const file = form.photoFile();
+          const file = many > 1 ? null : form.photoFile();
           const attributes = { ...values.attributes };
           if (file) attributes.photo_path = await uploadVesselPhoto(id, file);
 
-          await addVessel({ id, ...values, attributes });
-          for (const row of capture.codes()) await bindOne(id, row);
+          const made = await addVessels({ id, ...values, attributes }, many);
+          if (many === 1) {
+            for (const row of capture.codes()) await bindOne(id, row);
+          }
           capture.stop();
           form.draftDone();
+          if (many > 1) {
+            // Said rather than assumed. The names are worked out by the kernel,
+            // so the person who asked for twelve has no other way to learn what
+            // is now on the floor.
+            message.replaceChildren(
+              banner(
+                `${made.count} vessels added, ${made.from} to ${made.to}.`,
+                "good",
+              ),
+            );
+            count.input.value = "1";
+            single();
+            return;
+          }
           go(HOME);
         } catch (error) {
           message.replaceChildren(fail(error));
@@ -6174,6 +6250,7 @@ function capabilityRoute(key: string): Place | null {
     "cellar.set_vintage": { at: "vintages" },
     "cellar.set_colour": { at: "colours" },
     "cellar.register_bins": { at: "bins" },
+    "cellar.add_vessels": { at: "vessel-new" },
     "cellar.recondition_barrel": { at: "colours" },
     "cellar.declare_barrel_colour": { at: "colours" },
     "cellar.cancel_pick": { at: "intake" },
@@ -6435,7 +6512,12 @@ function binsScreen(): HTMLElement {
     const prefix = field({
       label: "Called",
       placeholder: "PB",
-      hint: "Numbering carries on from the highest already used, so nothing is reused.",
+      // 0098. Leaving this blank on a borrowed stack gives them the lender's
+      // name rather than the next numbers in our own series, which is what
+      // put five of Pearlstaad's bins in the middle of ours as PB4 to PB8.
+      hint:
+        "Blank means PB for ours and the lender's name for borrowed ones. " +
+        "Numbering carries on from the highest already used, so nothing is reused.",
     });
     const lender = field({
       label: "On loan from",
@@ -8384,7 +8466,7 @@ function pressScreen(): HTMLElement {
                   return;
                 }
                 try {
-                  await addVessel({
+                  await addVessels({
                     id: newId(),
                     type_id: pressTerm.id,
                     name: pressName.value().trim(),

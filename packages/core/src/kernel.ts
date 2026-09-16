@@ -2,6 +2,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { type Backend, currentBackend, readConfig, setBackend } from "./env.ts";
 import type {
   AdditionResult,
+  AddVesselsResult,
   AppUser,
   Attachment,
   BarrelColour,
@@ -549,9 +550,23 @@ export async function bindCode(
   if (error) throw new KernelError(error);
 }
 
-export async function addVessel(vessel: VesselPayload): Promise<void> {
-  const { error } = await kernel().from("vessel").insert(vessel);
+// One vessel, or a number of the same kind. The count is 1 unless somebody says
+// otherwise, which is the whole of what the winemaker asked for: "seems like all
+// it needs to be is a number of vessel in the type."
+//
+// This was a table insert until 0098. The numbering rule for a batch, and what a
+// borrowed vessel is called, are rules, so they are in the kernel and this is a
+// call rather than a row.
+export async function addVessels(
+  vessel: VesselPayload,
+  count = 1,
+): Promise<AddVesselsResult> {
+  const { data, error } = await kernel().rpc("add_vessels", {
+    p_vessel: vessel,
+    p_count: count,
+  });
   if (error) throw new KernelError(error);
+  return data as AddVesselsResult;
 }
 
 // Wine into a vessel that already exists. The inventory case: a new lot with no

@@ -6,7 +6,8 @@
 -- Depends on: [supabase/migrations/0036_bins_on_loan.sql,
 --              supabase/migrations/0081_a_borrowed_bin_is_not_ours.sql]
 -- Depended on by: [tests/schema_assertions.sql,
---                  supabase/migrations/0086_a_variable_named_like_a_column.sql]
+--                  supabase/migrations/0086_a_variable_named_like_a_column.sql,
+--                  supabase/migrations/0098_a_vessel_arrives_in_a_number.sql]
 -- Axioms enforced: T1-4 (intake fast before complete: registering the fleet
 --                  once is what keeps a pick down to choosing bins)
 -- Open sorries: none

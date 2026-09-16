@@ -198,6 +198,17 @@ export type VesselPayload = {
   attributes?: Record<string, unknown>;
 };
 
+// What add_vessels made. A batch reports every name it wrote, because the names
+// are the thing somebody has to go and find on the floor afterwards.
+export type AddVesselsResult = {
+  made: string[];
+  ids: Uuid[];
+  count: number;
+  from: string;
+  to: string;
+  prefix: string;
+};
+
 export type NodePayload = {
   id: Uuid;
   stage: NodeStage;

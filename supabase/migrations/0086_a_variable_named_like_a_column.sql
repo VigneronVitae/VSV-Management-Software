@@ -4,7 +4,8 @@
 --           is also a column on the table it queries and Postgres cannot tell
 --           which one was meant."
 -- Depends on: [supabase/migrations/0085_a_stack_of_bins_is_inventory.sql]
--- Depended on by: [tests/schema_assertions.sql]
+-- Depended on by: [tests/schema_assertions.sql,
+--                  supabase/migrations/0098_a_vessel_arrives_in_a_number.sql]
 -- Axioms enforced: none. This is a defect fix.
 -- Open sorries: none
 -- ---------------------------------------------------------------------------

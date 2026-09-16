@@ -1048,6 +1048,20 @@ this survivable** and is the reason it is filed rather than built: import there,
 throw the stack away. *Load-bearing:* not while every import is rehearsed in practice first,
 and immediately if anybody imports straight into the cellar.
 
+**S-87. Five bins carry the wrong naming convention and nothing renames them.**
+`0098` makes a borrowed vessel default to a prefix taken from the lender, so Pearlstaad's next
+stack arrives as PEAR1 onward instead of continuing this winery's PB series. The five that are
+already here were registered before that rule existed: PB4 through PB8 are Pearlstaad's, sitting
+in the middle of a series that is otherwise ours, and the thirty of his own that are coming will
+take PB9 onward and close the gap over them.
+Nothing in `0098` renames them, deliberately. Two of those bins are in a press log from this
+afternoon and all five are on the pad with numbers somebody has been reading off them all day,
+and a bin called one thing in the app and another in the yard is worse than a bin with an
+unhelpful name. *Resolves when:* the Pearlstaad bins go back empty, at which point renaming them
+costs nothing and can be done in one statement, or the winemaker asks for it sooner and accepts
+that the names change under a running pick. *Load-bearing:* no while there are five, and yes on
+the day somebody has to decide which of forty bins go back on a trailer.
+
 ## Discharged
 **S-78. Anybody who can sign up becomes staff.** *Discharged by `0068`.*
 `enable_signup = true`, and `claim_account` gave any authenticated identity that had not
