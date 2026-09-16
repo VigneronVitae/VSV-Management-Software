@@ -5,7 +5,10 @@
 --           half rather than the stored one."
 -- Depends on: [supabase/migrations/0040_block_variety_is_history.sql,
 --              supabase/migrations/0036_bins_on_loan.sql]
--- Depended on by: [tests/schema_assertions.sql]
+-- Depended on by: [tests/schema_assertions.sql,
+--                  supabase/migrations/0090_a_press_takes_bins.sql,
+--                  supabase/migrations/0091_a_bin_says_its_weight_everywhere.sql,
+--                  supabase/migrations/0089_correcting_one_bin.sql]
 -- Axioms enforced: T0-2 (whichever of pounds and percent was said is stored and
 --                  the other is derived, never both), A25 (a bin with no figure
 --                  reads as no figure rather than as empty)

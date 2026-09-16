@@ -1,47 +1,33 @@
 -- ---------------------------------------------------------------------------
 -- Type: migration
--- Purpose: "A bin on loan from a grower stops reading as facility owned, because
---           it is owed back and saying it is ours is the one thing that loses
---           it."
--- Depends on: [supabase/migrations/0032_vessel_maker_and_room_temperature.sql,
---              supabase/migrations/0036_bins_on_loan.sql]
--- Depended on by: [tests/schema_assertions.sql,
---                  supabase/migrations/0083_what_you_can_sample.sql,
---                  supabase/migrations/0085_a_stack_of_bins_is_inventory.sql,
---                  supabase/migrations/0091_a_bin_says_its_weight_everywhere.sql]
--- Axioms enforced: A13 (a negation indistinguishable from an affirmation: the
---                  form said not ours and every screen said ours)
--- Open sorries: S-82 (a client's own bins still cannot be recorded from the
---                bin screen)
+-- Purpose: "A picking bin carries its pounds of fruit on vessel_state, so the
+--           screen that lists every vessel can say what is in a bin instead of
+--           leaving it blank."
+-- Depends on: [supabase/migrations/0087_a_bin_holds_pounds.sql,
+--              supabase/migrations/0081_a_borrowed_bin_is_not_ours.sql]
+-- Depended on by: [tests/schema_assertions.sql]
+-- Axioms enforced: T0-2 (the pounds are resolved at read from whichever half
+--                  was said, and nothing is cached on the vessel)
+-- Open sorries: none
 -- ---------------------------------------------------------------------------
 --
--- The winemaker, having registered five bins on loan from Pearlstaad: *"it also
--- looks like the bins, when created, default to facility owned even when I
--- unclicked owned by us and put Pearlstaad."*
+-- The winemaker: *"I want weights of each bin to be presented in the vessel
+-- view."*
 --
--- **He is right, and what he typed was recorded correctly.** The bins carry
--- `borrowed: true` and `on_loan_from: Pearlstaad`, which is what `0036` built
--- and it works. What is wrong is everything downstream: `facility_owned` is
--- `owner_id is null`, a grower is not a party and never gets an `owner_id`, so
--- a bin that is emphatically not ours reads as ours on the vessel list, in the
--- map, and on its own screen.
+-- **The vessel list measures everything in litres.** `current_volume_l` comes
+-- off the placement, a bin's placement has no volume because fruit is not
+-- measured in litres, and so every picking bin in the cellar reads as holding
+-- nothing. The map draws them unfilled and the list shows a lot name with no
+-- quantity beside it, which is the same wrong answer `0087` fixed one screen
+-- deeper.
 --
--- **This is the A13 shape in its purest form.** The control said "not ours", the
--- database agreed, and every surface that displays it said "ours" anyway. The
--- unticked box and the ticked box produced the same visible result, which is a
--- control that does nothing as far as anybody can tell.
+-- So `vessel_state` gains the pounds. Derived, at read, from whichever half
+-- somebody said, exactly as `bin_fruit` does it: this adds a column to a view
+-- and nothing to a table.
 --
--- **Ownership here has two representations and only one was being read.** A
--- client's equipment is a party, because a client is a party. A grower's bins
--- are free text, because `0036` decided that a vineyard you buy fruit from is
--- not a party at this winery and it was right: making one would put a grower in
--- the client picker and in the privacy model. So "whose vessel" is the party or
--- the lender, and "is it ours" is neither of them being set.
---
--- Nothing here is a policy change. `facility_owned` is a display derivation and
--- no policy reads it: the policies read `owner_id`. The column order is
--- unchanged, deliberately, because this view reads `visible_node` through a
--- positional alias list and reordering silently rebinds it.
+-- **Appended, never inserted.** This view binds `visible_node` through a
+-- positional alias list, which `0081` already had to say out loud. New columns
+-- go on the end.
 
 begin;
 
@@ -52,10 +38,7 @@ create or replace view vessel_state with (security_invoker = true) as
     v.name,
     v.capacity_l,
     v.owner_id,
-    -- The party, or the grower it is on loan from. One question with two
-    -- places to look, and a screen should not have to know which.
     COALESCE(o.name, NULLIF(btrim(v.attributes ->> 'on_loan_from'), '')) AS owner_name,
-    -- Ours only if nobody else's: no party owns it and nobody lent it.
     v.owner_id IS NULL
       AND NOT COALESCE((v.attributes ->> 'borrowed')::boolean, false) AS facility_owned,
     v.has_glycol,
@@ -86,7 +69,18 @@ create or replace view vessel_state with (security_invoker = true) as
     n.owner_id IS NOT NULL AND n.owner_id = facility_party_id() AS lot_facility_owned,
     COALESCE(cardinality(n.hidden), 0) > 0 AND NOT may_see_all_of(n.owner_id, n.hidden) AS redacted,
     l.ambient_c AS location_ambient_c,
-    l.controlled AS location_controlled
+    l.controlled AS location_controlled,
+    -- 0091. Fruit is weighed, not measured in litres, so a picking bin's
+    -- quantity lives here and null everywhere else. Resolved from whichever
+    -- half somebody said, which is bin_fruit's job and not a second copy of
+    -- its arithmetic.
+    ( SELECT bf.lbs FROM bin_fruit bf WHERE bf.placement_id = p.id) AS fruit_lbs,
+    ( SELECT bf.tons FROM bin_fruit bf WHERE bf.placement_id = p.id) AS fruit_tons,
+    -- How full, so the map can draw a bin's fill height without the client
+    -- knowing what a full bin holds. A screen dividing pounds by 850 would be a
+    -- client holding a rule that lives on the vessel type, which is the one
+    -- thing this repository is most explicit about.
+    ( SELECT bf.pct_full FROM bin_fruit bf WHERE bf.placement_id = p.id) AS fruit_pct
    FROM vessel v
      JOIN term vt ON vt.id = v.type_id
      LEFT JOIN location l ON l.id = v.location_id
@@ -119,7 +113,8 @@ create or replace view vessel_state with (security_invoker = true) as
 
 comment on view vessel_state is
   'Every active vessel and what is in it. owner_name is the party that owns it '
-  'or the grower it is on loan from, and facility_owned means neither: a '
-  'borrowed bin is not ours. See 0081.';
+  'or the grower it is on loan from, and facility_owned means neither. '
+  'fruit_lbs is what is in a picking bin, because fruit is weighed and not '
+  'measured in litres. See 0081 and 0091.';
 
 commit;

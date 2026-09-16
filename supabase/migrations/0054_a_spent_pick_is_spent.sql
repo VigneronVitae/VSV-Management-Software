@@ -2,7 +2,8 @@
 -- Type: migration
 -- Purpose: "A pick whose fruit is in the press cannot be pressed a second time."
 -- Depends on: [supabase/migrations/0052_press_as_a_process.sql]
--- Depended on by: [tests/schema_assertions.sql]
+-- Depended on by: [tests/schema_assertions.sql,
+--                  supabase/migrations/0090_a_press_takes_bins.sql]
 -- Axioms enforced: none. This is a defect fix.
 -- ---------------------------------------------------------------------------
 --

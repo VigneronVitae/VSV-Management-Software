@@ -20,10 +20,12 @@ import {
   appUsers,
   attachmentsFor,
   type BarrelColour,
+  type BinFruit,
   type Block,
   barrelColours,
   barrelWarning,
   bindCode,
+  binFruit,
   binInventory,
   binsToReturn,
   blocks,
@@ -76,6 +78,7 @@ import {
   paperRecords,
   parties,
   photoUrl,
+  pickBins,
   pickById,
   pickWeighings,
   plantings,
@@ -100,6 +103,7 @@ import {
   type SupplyOnHand,
   samples,
   sampleTargets,
+  setBinFruit,
   setColour,
   setMakerMakes,
   setPaperRecordOperations,
@@ -1761,7 +1765,15 @@ function cellarMapLayout(
   function vesselShape(v: VesselState): HTMLElement {
     const cap = v.capacity_l === null ? null : Number(v.capacity_l);
     const held = v.current_volume_l === null ? 0 : Number(v.current_volume_l);
-    const fill = cap && cap > 0 ? Math.min(held / cap, 1) : 0;
+    // A bin's fill is how full of fruit it is, which bin_fruit already resolves
+    // from whichever half somebody said. Without this every bin draws empty,
+    // because a bin has no litres in it and never will.
+    const fill =
+      v.fruit_pct !== null
+        ? Math.min(Number(v.fruit_pct) / 100, 1)
+        : cap && cap > 0
+          ? Math.min(held / cap, 1)
+          : 0;
 
     // Sized by capacity, within limits, so a 2200 L tank reads as bigger than a
     // 228 L barrel without a 500 L one being invisible. The scale is a cube
@@ -1828,7 +1840,13 @@ function cellarMapLayout(
       // 400 litres will fit needs the figure.
       el("span", {
         class: "map-litres",
-        text: v.is_empty ? "" : `${Math.round(held)}`,
+        // Pounds on a bin, litres on everything else. The figure on a shape is
+        // whatever unit the thing in it is actually measured in.
+        text: v.is_empty
+          ? ""
+          : v.fruit_lbs !== null
+            ? `${Math.round(Number(v.fruit_lbs))} lb`
+            : `${Math.round(held)}`,
       }),
       // The setpoint rather than the room: a jacketed vessel overrides what the
       // room is doing, which is what `effective_temp_c` has meant since 0006.
@@ -1969,7 +1987,12 @@ function vesselList(kit: VesselState[], sel?: Selecting): HTMLElement {
           class: "vessel-detail",
           text: v.is_empty
             ? "empty"
-            : `${v.lot_name ?? "unnamed lot"}, ${v.current_volume_l ?? "?"} L`,
+            : // 0091. A bin holds pounds and everything else holds litres, and
+              // until now a bin read "? L", which is the app asking a question
+              // it had the answer to.
+              v.fruit_lbs !== null
+              ? `${v.lot_name ?? "unnamed lot"}, ${Number(v.fruit_lbs).toLocaleString()} lb, ${Number(v.fruit_tons ?? 0).toFixed(2)} ton`
+              : `${v.lot_name ?? "unnamed lot"}, ${v.current_volume_l ?? "?"} L`,
         }),
         // Only when it is somebody else's, because on most rows it is ours and
         // saying so on every line would bury the rows where it matters.
@@ -4867,16 +4890,93 @@ function pickBinsScreen(openOn?: string): HTMLElement {
       showConversion();
 
       async function refreshTally(id: string): Promise<void> {
-        const waiting = await unweighedBins(id);
+        const [waiting, inBins] = await Promise.all([unweighedBins(id), binFruit(id)]);
+
+        // The total first, because it is the number somebody says out loud and
+        // the one they are checking against a contract.
+        const lbs = inBins.reduce((n, b) => n + Number(b.lbs ?? 0), 0);
+        const unknown = inBins.filter((b) => b.lbs === null).length;
+
+        function binRow(b: BinFruit): HTMLElement {
+          const box = field({
+            label: `${b.bin}, lbs`,
+            type: "number",
+            value: b.lbs === null ? "" : String(b.lbs),
+            hint:
+              b.said_as === "pct"
+                ? `Said as ${b.said_pct}% full. Typing pounds here replaces that.`
+                : "What went in it.",
+          });
+          const said = el("div", {});
+
+          return el(
+            "details",
+            { class: "more" },
+            el(
+              "summary",
+              {},
+              el("span", {
+                text:
+                  `${b.bin}: ` +
+                  (b.lbs === null
+                    ? "nobody has said"
+                    : `${Number(b.lbs).toLocaleString()} lb, ${Number(b.tons ?? 0).toFixed(2)} ton`),
+              }),
+            ),
+            rows(
+              box.root,
+              button(
+                "That is what is in it",
+                async () => {
+                  if (!box.value()) {
+                    said.replaceChildren(banner("Type a weight.", "error"));
+                    return;
+                  }
+                  try {
+                    await setBinFruit(b.vessel_id, { lbs: Number(box.value()) });
+                    await refreshTally(id);
+                  } catch (error) {
+                    said.replaceChildren(fail(error));
+                  }
+                },
+                "secondary",
+              ),
+              said,
+            ),
+          );
+        }
+
         tally.replaceChildren(
-          el("p", {
-            class: "lede",
-            text:
-              waiting.length === 0
-                ? "Every bin on this pick has been weighed."
-                : `${waiting.length} bin${waiting.length === 1 ? "" : "s"} waiting for the scale: ` +
-                  waiting.map((w) => w.bin_name).join(", "),
-          }),
+          rows(
+            inBins.length === 0
+              ? empty("No bins on this pick yet.")
+              : el(
+                  "div",
+                  { class: "summary" },
+                  summaryRow(
+                    "Bins",
+                    `${inBins.length}, ${lbs.toLocaleString()} lb, ${(lbs / 2000).toFixed(2)} ton`,
+                  ),
+                  // An estimate and a weighing are different numbers and the
+                  // screen says which this is. S-84: nothing reconciles them.
+                  summaryRow(
+                    "This is",
+                    unknown > 0
+                      ? `an estimate, and ${unknown} bin${unknown === 1 ? " has" : "s have"} no figure at all`
+                      : "an estimate until the scale",
+                  ),
+                ),
+            ...inBins.map(binRow),
+            el("p", {
+              class: "lede",
+              text:
+                waiting.length === 0
+                  ? "Every bin on this pick has been weighed."
+                  : `${waiting.length} bin${waiting.length === 1 ? "" : "s"} waiting for the scale: ${waiting
+                      .map((w) => w.bin_name)
+                      .join(", ")}`,
+            }),
+          ),
         );
       }
 
@@ -7602,13 +7702,14 @@ function pressScreen(): HTMLElement {
   );
 
   async function load(): Promise<void> {
-    const [running, picks, kit, cuts, vesselTypes, draws] = await Promise.all([
+    const [running, picks, kit, cuts, vesselTypes, draws, allBins] = await Promise.all([
       pressesInProgress(),
       openPicks(),
       vessels(),
       terms("press_cut"),
       terms("vessel_type"),
       pressDraws(),
+      pickBins(),
     ]);
     const pressTerm = vesselTypes.find((t) => t.value === "press");
 
@@ -7692,15 +7793,49 @@ function pressScreen(): HTMLElement {
 
     function startBlock(): HTMLElement {
       const presses = kit.filter((v) => v.type === "Press" && v.is_empty);
-      const sourceBoxes = picks.map((p) => ({
-        pick: p,
+      // 0090. "Pressing just needs to click the Pearlstaad pick, then that
+      // brings up the 5 bins so I can select from them into the press." A pick
+      // is usually more than one press: five half tonne bins against a 1.2
+      // tonne press is two loads and a bit, and ticking the whole pick was the
+      // app assuming otherwise.
+      //
+      // So the pick is a heading rather than a checkbox, and the bins under it
+      // are what goes in. Expanded when there is one pick, because then the
+      // heading is a step with no decision in it.
+      const binBoxes = allBins.map((b) => ({
+        bin: b,
         box: checkbox(
-          p.quantity === null
-            ? `${p.name} (not weighed yet)`
-            : `${p.name} (${Number(p.quantity).toLocaleString()} lbs)`,
+          b.lbs === null
+            ? `${b.bin} (nobody has said what is in it)`
+            : `${b.bin}, ${Number(b.lbs).toLocaleString()} lb, ${Number(b.tons ?? 0).toFixed(2)} ton`,
           false,
         ),
       }));
+
+      function chosenBins(): typeof binBoxes {
+        return binBoxes.filter((b) => b.box.input.checked);
+      }
+
+      // What the press is being asked to hold, updated as boxes are ticked,
+      // because the whole reason for choosing bins is that the press has a
+      // capacity and the pick does not fit in it.
+      const loadSoFar = el("p", { class: "field-hint" });
+      function showRunning(): void {
+        const going = chosenBins();
+        if (going.length === 0) {
+          loadSoFar.textContent = "";
+          return;
+        }
+        const lbs = going.reduce((n, b) => n + Number(b.bin.lbs ?? 0), 0);
+        const blind = going.filter((b) => b.bin.lbs === null).length;
+        loadSoFar.textContent =
+          `${going.length} bin${going.length === 1 ? "" : "s"}, ` +
+          `${lbs.toLocaleString()} lb, ${(lbs / 2000).toFixed(2)} ton` +
+          (blind > 0
+            ? `, and ${blind} with no figure, so it is at least this much.`
+            : ".");
+      }
+      for (const b of binBoxes) on(b.box.input, "change", showRunning);
 
       const whichPress = el("select", { class: "input" });
       whichPress.replaceChildren(
@@ -7732,7 +7867,28 @@ function pressScreen(): HTMLElement {
           : el("span", {}),
         picks.length === 0
           ? empty("No open pick to press.")
-          : el("div", {}, ...sourceBoxes.map((b) => b.box.root)),
+          : el(
+              "div",
+              {},
+              // Grouped by pick, which is the shape he asked for: the pick is
+              // how somebody names what they are pressing, and the bins are
+              // what actually fits.
+              ...[...new Set(allBins.map((b) => b.node_id))].map((id) => {
+                const mine = binBoxes.filter((b) => b.bin.node_id === id);
+                const lbs = mine.reduce((n, b) => n + Number(b.bin.lbs ?? 0), 0);
+                return el(
+                  "details",
+                  { class: "more", ...(picks.length === 1 ? { open: "true" } : {}) },
+                  el("summary", {
+                    text:
+                      `${mine[0]?.bin.pick ?? "a pick"}: ${mine.length} bin` +
+                      `${mine.length === 1 ? "" : "s"} left, about ` +
+                      `${lbs.toLocaleString()} lb`,
+                  }),
+                  rows(...mine.map((b) => b.box.root)),
+                );
+              }),
+            ),
         el(
           "div",
           { class: "field" },
@@ -7743,12 +7899,11 @@ function pressScreen(): HTMLElement {
             text: "The bins empty as soon as you start, so they are free for the next pick.",
           }),
         ),
+        loadSoFar,
         button("Start pressing", async () => {
-          const chosen = sourceBoxes
-            .filter((b) => b.box.input.checked)
-            .map((b) => b.pick.id);
+          const chosen = chosenBins().map((b) => b.bin.vessel_id);
           if (chosen.length === 0) {
-            said.replaceChildren(banner("Tick what is going in.", "error"));
+            said.replaceChildren(banner("Tick which bins are going in.", "error"));
             return;
           }
           if (!whichPress.value) {
@@ -7762,11 +7917,26 @@ function pressScreen(): HTMLElement {
             });
             said.replaceChildren(
               banner(
-                `Pressing ${Number(out.lbs_in).toLocaleString()} lbs. ` +
-                  `${out.bins_emptied} bin${out.bins_emptied === 1 ? "" : "s"} are free again. ` +
+                `Pressing ${Number(out.lbs_in).toLocaleString()} lbs` +
+                  // A floor rather than a total when something went in with no
+                  // figure on it. Saying the number flat would be reporting a
+                  // weight that is missing a bin.
+                  (out.unmeasured > 0 ? " at least" : "") +
+                  `. ${out.bins_emptied} bin${out.bins_emptied === 1 ? "" : "s"} are free again. ` +
                   "Come back and record the litres as they come off.",
                 "good",
               ),
+              // The half of 0090 worth saying out loud: the pick is still open
+              // and still has fruit in it, which is the normal case now.
+              ...(out.picks_spent === 0
+                ? [
+                    banner(
+                      "The pick is still open, with the bins that did not go in. " +
+                        "Press them when this one is finished.",
+                      "note",
+                    ),
+                  ]
+                : []),
               // T1-4's cost, said out loud rather than refused.
               ...(out.unweighed_left > 0
                 ? [

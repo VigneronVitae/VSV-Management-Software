@@ -1020,6 +1020,19 @@ against the weighing per pick and a threshold worth flagging, and the threshold 
 winemaking judgement rather than an arithmetic one. *Load-bearing:* no. The weighing is
 authoritative and the estimate never overwrites it, which is the failure that would matter.
 
+**S-85. A part-pressed pick's weighed quantity still describes the whole pick.**
+`weigh_bins` puts the scale's figure on the pick, and `0090` lets some of that pick go into a
+press while the rest stays in bins. The pick's `quantity` still says what the whole pick
+weighed, which is correct as history and is not what is left.
+What is left is derivable and is not derived anywhere: it is the sum of `bin_fruit` over the
+pick's remaining open placements, which are estimates, against a weighed total that is not.
+Mixing a weighed number and an estimate to report a remainder would produce a figure that
+looks measured and is not. *Resolves when:* somebody needs to know what is still on the pad
+in pounds rather than in bins, at which point the honest answer is probably to report it as
+"three bins, about 2,100 lb by estimate" and never as a single number.
+*Load-bearing:* no, and it is the reason the press screen counts bins rather than pounds
+when it says what is left.
+
 ## Discharged
 **S-78. Anybody who can sign up becomes staff.** *Discharged by `0068`.*
 `enable_signup = true`, and `claim_account` gave any authenticated identity that had not

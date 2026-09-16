@@ -412,6 +412,19 @@ send_fruit_away:guard:3	send_fruit_away	guard	if nullif(btrim(coalesce(p_destina
 send_fruit_away:raise:3	send_fruit_away	raise	raise exception 'fruit does not leave to nowhere; say where it went';	raise notice 'fruit does not leave to nowhere; say where it went';	1
 send_fruit_away:silent:1	send_fruit_away	silent	where node_id = p_node_id and to_at is null;	where node_id = p_node_id and true;	1
 send_fruit_away:guard:4	send_fruit_away	guard	if not p_returning then	if false then	1
+set_bin_fruit:guard:1	set_bin_fruit	guard	if not is_facility_user() then	if false then	1
+set_bin_fruit:raise:1	set_bin_fruit	raise	raise exception 'only somebody who works here says what is in a bin'	raise notice 'only somebody who works here says what is in a bin'	1
+set_bin_fruit:guard:2	set_bin_fruit	guard	if p_fruit_lbs is not null and p_fill_pct is not null then	if false then	1
+set_bin_fruit:raise:2	set_bin_fruit	raise	raise exception	raise notice	2
+set_bin_fruit:guard:3	set_bin_fruit	guard	if p_fruit_lbs is null and p_fill_pct is null then	if false then	1
+set_bin_fruit:raise:3	set_bin_fruit	raise	raise exception 'say how much is in it';	raise notice 'say how much is in it';	1
+set_bin_fruit:guard:4	set_bin_fruit	guard	if p_fruit_lbs is not null and p_fruit_lbs <= 0 then	if false then	1
+set_bin_fruit:raise:4	set_bin_fruit	raise	raise exception 'a bin with no fruit in it is empty, and emptying a bin is a different act';	raise notice 'a bin with no fruit in it is empty, and emptying a bin is a different act';	1
+set_bin_fruit:guard:5	set_bin_fruit	guard	if p_fill_pct is not null and (p_fill_pct <= 0 or p_fill_pct > 100) then	if false then	1
+set_bin_fruit:raise:5	set_bin_fruit	raise	raise exception '% is not how full a bin is', p_fill_pct;	raise notice '% is not how full a bin is', p_fill_pct;	1
+set_bin_fruit:permissive:1	set_bin_fruit	permissive	and coalesce((vt.attributes ->> 'intake_bin')::boolean, false)	and coalesce((vt.attributes ->> 'intake_bin')::boolean, true)	1
+set_bin_fruit:guard:6	set_bin_fruit	guard	if pl.id is null then	if false then	1
+set_bin_fruit:raise:6	set_bin_fruit	raise	raise exception	raise notice	6
 set_colour:guard:1	set_colour	guard	if n.id is null then	if false then	1
 set_colour:raise:1	set_colour	raise	raise exception 'no lot with id %', p_node_id;	raise notice 'no lot with id %', p_node_id;	1
 set_colour:guard:2	set_colour	guard	if p_colour is null or btrim(p_colour) = '' then	if false then	1
@@ -456,17 +469,16 @@ start_press:guard:3	start_press	guard	if not exists (select 1 from vessel where 
 start_press:raise:3	start_press	raise	raise exception 'that press is not an active vessel';	raise notice 'that press is not an active vessel';	1
 start_press:head:1	start_press	head	if exists (select 1 from placement\n              where vessel_id = p_press_vessel_id and to_at is null) then	if false then	1
 start_press:raise:4	start_press	raise	raise exception	raise notice	4
-start_press:guard:4	start_press	guard	if n.id is null then	if false then	1
-start_press:raise:5	start_press	raise	raise exception 'no lot with id %', src;	raise notice 'no lot with id %', src;	1
-start_press:guard:5	start_press	guard	if n.status = 'closed' then	if false then	1
-start_press:raise:6	start_press	raise	raise exception '% is closed; its fruit has already gone somewhere', n.name;	raise notice '% is closed; its fruit has already gone somewhere', n.name;	1
-start_press:head:2	start_press	head	if not exists (select 1 from placement\n                    where node_id = src and to_at is null) then	if false then	1
-start_press:raise:7	start_press	raise	raise exception	raise notice	7
-start_press:guard:6	start_press	guard	if parent_stage is null then	if false then	1
-start_press:guard:7	start_press	guard	elsif parent_stage <> n.stage then	elsif false then	1
+start_press:guard:4	start_press	guard	if p_press_vessel_id = any(p_vessel_ids) then	if false then	1
+start_press:raise:5	start_press	raise	raise exception 'a press cannot be loaded from itself';	raise notice 'a press cannot be loaded from itself';	1
+start_press:guard:5	start_press	guard	if exists (select 1 from going_in where placement_id is null) then	if false then	1
+start_press:raise:6	start_press	raise	raise exception '% has nothing in it, so there is nothing of it to press',	raise notice '% has nothing in it, so there is nothing of it to press',	1
+start_press:guard:6	start_press	guard	if exists (select 1 from going_in where status = 'closed') then	if false then	1
+start_press:raise:7	start_press	raise	raise exception '% is closed; its fruit has already gone somewhere',	raise notice '% is closed; its fruit has already gone somewhere',	1
+start_press:guard:7	start_press	guard	if emptied > 1 then	if false then	1
 start_press:raise:8	start_press	raise	raise exception	raise notice	8
 start_press:guard:8	start_press	guard	if total_lbs > 0 then	if false then	1
-start_press:silent:1	start_press	silent	where node_id = src and to_at is null;	where node_id = src and true;	1
+start_press:silent:1	start_press	silent	and not exists (	and true	1
 start_procedure_session:guard:1	start_procedure_session	guard	if coalesce(array_length(p_vessel_ids, 1), 0) = 0 then	if false then	1
 start_procedure_session:raise:1	start_procedure_session	raise	raise exception 'a session needs at least one vessel';	raise notice 'a session needs at least one vessel';	1
 take_sample:guard:1	take_sample	guard	if not is_facility_user() then	if false then	1

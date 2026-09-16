@@ -149,6 +149,12 @@ export type VesselState = {
   location_ambient_c: number | null;
   location_controlled: boolean;
   effective_temp_c: number | null;
+  // What is in a picking bin. Fruit is weighed rather than measured in litres,
+  // so this is null for everything else and `current_volume_l` is null for a
+  // bin. Two quantities because there are two kinds of thing in a cellar.
+  fruit_lbs: number | null;
+  fruit_tons: number | null;
+  fruit_pct: number | null;
   node_id: Uuid | null;
   lot_name: string | null;
   variety: string | null;
@@ -385,6 +391,12 @@ export type PressStarted = {
   lbs_in: number;
   bins_emptied: number;
   unweighed_left: number;
+  // 0090. How many of the bins that went in had no figure at all, so a screen
+  // can say the load's weight is a floor rather than a total; and how many
+  // picks this emptied, which is now a question with an answer other than
+  // "all of them", because a press takes some of a pick.
+  unmeasured: number;
+  picks_spent: number;
 };
 
 export type CutDrawn = {
@@ -839,4 +851,19 @@ export type BinFruit = {
   pct_full: number | null;
   tons: number | null;
   said_as: "lbs" | "pct" | null;
+};
+
+// One bin still holding fruit, and which pick it belongs to. A pick is usually
+// more than one press, so this is what a press is loaded from.
+export type PickBin = {
+  node_id: Uuid;
+  pick: string;
+  status: string;
+  vessel_id: Uuid;
+  bin: string;
+  lbs: number | null;
+  tons: number | null;
+  said_as: "lbs" | "pct" | null;
+  pct_full: number | null;
+  from_at: string;
 };

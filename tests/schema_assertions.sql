@@ -54,7 +54,10 @@
 --              supabase/migrations/0085_a_stack_of_bins_is_inventory.sql,
 --              supabase/migrations/0086_a_variable_named_like_a_column.sql,
 --              supabase/migrations/0087_a_bin_holds_pounds.sql,
---              supabase/migrations/0088_moving_more_than_one.sql]
+--              supabase/migrations/0088_moving_more_than_one.sql,
+--              supabase/migrations/0090_a_press_takes_bins.sql,
+--              supabase/migrations/0091_a_bin_says_its_weight_everywhere.sql,
+--              supabase/migrations/0089_correcting_one_bin.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -7896,7 +7899,8 @@ begin
   -- **Starting.** The fruit leaves the bins and is in the press, and how much it
   -- will give is not known yet. That is T1-4's shape a second time: the thing
   -- exists before its quantity does, exactly as a bin does before a scale.
-  out_js := start_press(array[pick]::uuid[], press);
+  out_js := start_press(array(select vessel_id from placement
+                          where node_id = pick and to_at is null), press);
   load_id := (out_js ->> 'node_id')::uuid;
 
   select stage, quantity into st, q from node where id = load_id;
@@ -8053,13 +8057,32 @@ begin
   if st_text <> 'closed' then
     raise exception 'FAIL: a pick whose fruit is in the press is still %', st_text;
   end if;
+  -- 0090 changes what this looks like without changing what it proves. The
+  -- sources are vessels now, so a spent pick has no vessels to name: the second
+  -- press is refused because there is nothing to press rather than because the
+  -- lot is closed. Both are the same refusal wearing the shape of the argument
+  -- it was given, and the one that matters is that the fruit cannot go twice.
   begin
-    perform start_press(array[pick]::uuid[], press);
+    perform start_press(array(select vessel_id from placement
+                          where node_id = pick and to_at is null), press);
     raise exception 'FAIL: a spent pick was pressed a second time';
   exception when others then
     if position('is closed' in sqlerrm) = 0
-       and position('nothing of it left to press' in sqlerrm) = 0 then raise; end if;
+       and position('nothing of it left to press' in sqlerrm) = 0
+       and position('nothing was named to press' in sqlerrm) = 0 then raise; end if;
     perform test_ok('fruit that has already gone into a press cannot go into another one, which nothing refused until an assertion asked');
+  end;
+
+  -- And by the other route, which 0090 makes the reachable one: naming the bin
+  -- itself after it has been emptied.
+  begin
+    perform start_press(
+      array(select vessel_id from placement
+             where node_id = pick order by from_at limit 1), press);
+    raise exception 'FAIL: an emptied bin was pressed again';
+  exception when others then
+    if position('nothing in it' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a bin that has been emptied into a press cannot be pressed again by name, which is the route that exists now that the source is a vessel');
   end;
 
   -- Lineage holds a restrict at both ends, so it goes before the lots it links.
@@ -8094,7 +8117,8 @@ begin
                        'vintage', 2026),
     null, 1, term_id('vessel_type', 'picking_bin'), 'ASRTEMPTYPRESS', 100);
 
-  load_id := (start_press(array[pick]::uuid[], press) ->> 'node_id')::uuid;
+  load_id := (start_press(array(select vessel_id from placement
+                          where node_id = pick and to_at is null), press) ->> 'node_id')::uuid;
   begin
     perform finish_press(load_id);
     raise exception 'FAIL: a press that gave nothing was finished';
@@ -9762,6 +9786,127 @@ begin
     raise exception 'FAIL: move_bins is still callable, so there are two names for one act';
   end if;
   perform test_ok('there is one name for moving vessels, because a second name for one act is a call nobody can choose between');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- a press takes bins, not whole picks'; end $$;
+
+-- 0090. "For the press log it should be bins grouped by pick, not just
+-- selecting a whole pick. Like I can't fit all 5 bins into one press."
+--
+-- 0052 took whole lots and 0054 closed them, which was right while a pick was
+-- assumed to fit in a press. Five half tonne bins against a 1.2 tonne press is
+-- two loads and a bit, and closing the pick after the first would be the app
+-- saying the fruit is gone while it is standing on the pad.
+do $$
+declare
+  bin_t   uuid;
+  press_v uuid := '00000000-0000-0000-0000-0000000f2001';
+  b1      uuid := '00000000-0000-0000-0000-0000000f2101';
+  b2      uuid := '00000000-0000-0000-0000-0000000f2102';
+  b3      uuid := '00000000-0000-0000-0000-0000000f2103';
+  pick    jsonb;
+  pick_id uuid;
+  out_js  jsonb;
+  load_a  uuid;
+  n       int;
+  frac    numeric;
+begin
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+  select id into bin_t from term
+   where kind = 'vessel_type'
+     and coalesce((attributes ->> 'intake_bin')::boolean, false)
+   limit 1;
+
+  insert into vessel (id, type_id, name) values
+    (press_v, term_id('vessel_type','press'), 'CF press'),
+    (b1, bin_t, 'CF1'), (b2, bin_t, 'CF2'), (b3, bin_t, 'CF3');
+
+  pick := jsonb_build_object('id', gen_random_uuid(), 'vintage', 2026,
+                             'name', 'CF a pick');
+  pick_id := (add_bin_to_pick(pick, b1, null, 800) ->> 'node_id')::uuid;
+  perform add_bin_to_pick(jsonb_build_object('id', pick_id), b2, null, 800);
+  perform add_bin_to_pick(jsonb_build_object('id', pick_id), b3, null, 400);
+
+  -- The screen he described: open the pick, see its bins.
+  select count(*) into n from pick_bin where node_id = pick_id;
+  if n <> 3 then
+    raise exception 'FAIL: a pick with three bins offers % of them to a press', n;
+  end if;
+  if (select sum(lbs) from pick_bin where node_id = pick_id) <> 2000 then
+    raise exception 'FAIL: the bins on a pick do not add up to what went in them';
+  end if;
+  perform test_ok('a pick offers its bins with what is in each, which is what a press screen shows once somebody has chosen a pick');
+
+  -- **Two of the three.** The press takes what fits.
+  out_js := start_press(array[b1, b2], press_v);
+  load_a := (out_js ->> 'node_id')::uuid;
+  if (out_js ->> 'lbs_in')::numeric <> 1600 then
+    raise exception 'FAIL: pressing two 800 pound bins loaded % pounds', out_js ->> 'lbs_in';
+  end if;
+  if (out_js ->> 'bins_emptied')::int <> 2 then
+    raise exception 'FAIL: pressing two bins emptied %', out_js ->> 'bins_emptied';
+  end if;
+  perform test_ok('a press takes the bins it is given and weighs what those bins held, rather than the whole pick');
+
+  -- **The pick is still open, with fruit in it.** This is the one that matters:
+  -- 0054 closed the source outright, and doing that here would be the app
+  -- saying the fruit is gone while a bin of it is on the pad.
+  if (select status from node where id = pick_id) <> 'open' then
+    raise exception 'FAIL: a pick with a full bin left was closed by pressing the other two';
+  end if;
+  if (out_js ->> 'picks_spent')::int <> 0 then
+    raise exception 'FAIL: the press reported spending a pick that still has fruit';
+  end if;
+  select count(*) into n from pick_bin where node_id = pick_id;
+  if n <> 1 then
+    raise exception 'FAIL: % bins are left on the pick and one should be', n;
+  end if;
+  perform test_ok('a pick with bins still full stays open and still offers them, because the fruit that is left is still fruit that is left');
+
+  -- Shares by what went in, not by lot and not equally.
+  select fraction into frac from lineage
+   where parent_id = pick_id and child_id = load_a;
+  if frac <> 1.0 then
+    raise exception 'FAIL: a load from one pick is % of it rather than all of it', frac;
+  end if;
+  perform test_ok('a load from one pick is entirely that pick, whichever of its bins went in');
+
+  -- The rest of it, into the same press once it is free.
+  update placement set to_at = now() where vessel_id = press_v and to_at is null;
+  out_js := start_press(array[b3], press_v);
+  if (out_js ->> 'lbs_in')::numeric <> 400 then
+    raise exception 'FAIL: the second load is % pounds rather than the 400 left', out_js ->> 'lbs_in';
+  end if;
+  if (out_js ->> 'picks_spent')::int <> 1 then
+    raise exception 'FAIL: the last bin left the pick and it was not spent';
+  end if;
+  if (select status from node where id = pick_id) <> 'closed' then
+    raise exception 'FAIL: a pick with nothing in any vessel is still open';
+  end if;
+  perform test_ok('a pick is spent when its last bin empties and not before, which is the rule 0054 was reaching for in its true form');
+
+  -- And the hole 0054 found stays shut: nothing can press a spent pick again.
+  update placement set to_at = now() where vessel_id = press_v and to_at is null;
+  begin
+    perform start_press(array[b1], press_v);
+    raise exception 'FAIL: an empty bin was pressed';
+  exception when others then
+    if position('nothing in it' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('an empty bin cannot be pressed, which is the hole 0054 found arriving by the new route and still shut');
+  end;
+
+  -- A press cannot be loaded from itself, which the old signature could not
+  -- express because its sources were lots rather than vessels. The press has to
+  -- be empty to reach this: a full one is refused one check earlier, and that
+  -- ordering is itself the answer to which mistake is more likely.
+  begin
+    perform start_press(array[press_v], press_v);
+    raise exception 'FAIL: a press was loaded from itself';
+  exception when others then
+    if position('from itself' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a press cannot be loaded from itself, which only became sayable once the sources were vessels');
+  end;
 end $$;
 
 do $$ begin raise notice '--- all assertions passed'; end $$;

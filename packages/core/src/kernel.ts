@@ -30,6 +30,7 @@ import type {
   Party,
   PastWeighing,
   Pick,
+  PickBin,
   PlantingDetail,
   PressDraw,
   PressFinished,
@@ -2065,4 +2066,33 @@ export async function moveVessels(
   });
   if (error) throw new KernelError(error);
   return data as { moved: number; location_id: Uuid; location: string };
+}
+
+// One bin, corrected. The batch figure goes into every bin that went out
+// together, which is right until somebody walks the row and sees the last one
+// is half empty.
+export async function setBinFruit(
+  vesselId: Uuid,
+  args: { lbs?: number | null; pct?: number | null },
+): Promise<{ vessel: Uuid; bin: string; lbs: number | null; tons: number | null }> {
+  const { data, error } = await kernel().rpc("set_bin_fruit", {
+    p_vessel_id: vesselId,
+    p_fruit_lbs: args.lbs ?? null,
+    p_fill_pct: args.pct ?? null,
+  });
+  if (error) throw new KernelError(error);
+  return data as { vessel: Uuid; bin: string; lbs: number | null; tons: number | null };
+}
+
+// The bins still holding fruit, by pick. What the press screen offers once
+// somebody has chosen a pick: "click the Pearlstaad pick, then that brings up
+// the 5 bins so I can select from them into the press".
+export async function pickBins(nodeId?: Uuid): Promise<PickBin[]> {
+  let q = kernel()
+    .from("pick_bin")
+    .select("node_id,pick,status,vessel_id,bin,lbs,tons,said_as,pct_full,from_at");
+  if (nodeId) q = q.eq("node_id", nodeId);
+  const { data, error } = await q.order("bin");
+  if (error) throw new KernelError(error);
+  return (data ?? []) as PickBin[];
 }
