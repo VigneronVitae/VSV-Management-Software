@@ -6,7 +6,8 @@
 -- Depends on: [supabase/migrations/0033_intake.sql,
 --              supabase/migrations/0041_daily_log.sql]
 -- Depended on by: [tests/schema_assertions.sql, supabase/migrations/0043_record_propagation.sql,
---                  supabase/migrations/0047_attachments.sql, supabase/migrations/0048_pick_weighing.sql]
+--                  supabase/migrations/0047_attachments.sql, supabase/migrations/0048_pick_weighing.sql,
+--                  supabase/migrations/0092_gross_or_net_and_a_bulging_bin.sql]
 -- Axioms enforced: T0-3 (provenance: what a record is evidence of, and how
 --                  good that evidence is, travels with it)
 -- Open sorries: S-58 (nothing checks that the photograph is of this weighing)

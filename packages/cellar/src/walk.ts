@@ -4836,55 +4836,111 @@ function pickBinsScreen(openOn?: string): HTMLElement {
       // bulging" with the middle taken. It lives on the bin type, so the middle
       // moves without a release.
       const fullLbs = Number(binTypes[0]?.attributes?.full_lbs ?? 0) || null;
-      // No figure for a full bin means percent cannot be turned into anything,
-      // so it is not offered as if it could.
-      // Read once and never reassigned: the toggle writes the preference and
-      // redraws, rather than mutating this and leaving the field's own label
-      // saying the old unit.
-      const unit: "lbs" | "pct" = fullLbs && pref("bin_unit") === "pct" ? "pct" : "lbs";
+      const tare = Number(binTypes[0]?.attributes?.tare_lbs ?? 0) || 0;
+
+      // 0092. Three ways to say how much is in a bin, and the screen has to say
+      // which one it is asking for. "It should be very clear whether the
+      // measurement is the net weight or fruit weight": somebody at a pallet
+      // scale reads 923 and that is the bin as well as the fruit, and 923 and
+      // 831 are both plausible weights for a bin of Chardonnay.
+      //
+      // Read once and never reassigned: the buttons write the preference and
+      // redraw, rather than mutating this and leaving the label saying the old
+      // unit.
+      const saidUnit = pref("bin_unit");
+      const unit: "net" | "gross" | "pct" =
+        saidUnit === "gross" ? "gross" : saidUnit === "pct" && fullLbs ? "pct" : "net";
 
       const fill = field({
-        label: unit === "lbs" ? "Fruit in each bin, lbs" : "How full, percent",
+        label:
+          unit === "net"
+            ? "Fruit in each bin, lbs"
+            : unit === "gross"
+              ? "On the scale with the bin, lbs"
+              : "How full, percent",
         type: "number",
-        value: unit === "lbs" ? (fullLbs ? String(fullLbs) : "") : "100",
-        hint: "By eye. The scale replaces this with a real number when the bins are weighed.",
+        // Deliberately empty. It pre-filled 850, so five bins recorded without
+        // anybody typing a weight came out reading a weight. 0049 refused to
+        // prefill a vintage for this reason, in a field where being wrong costs
+        // less than it does here.
+        placeholder: unit === "pct" ? "100" : "900",
+        hint:
+          unit === "net"
+            ? "The fruit alone. Nothing is filled in for you."
+            : unit === "gross"
+              ? `What the scale reads with the bin on it. A bin is ${tare} lb and that comes off.`
+              : `Percent of a nominal bin, which this winery calls ${fullLbs ?? "?"} lb. Over a hundred is a bulging one.`,
       });
       const converted = el("p", { class: "field-hint" });
 
       const saidLbs = (): number | null => {
         const raw = fill.value();
-        if (!raw) return null;
-        return unit === "lbs" ? Number(raw) : null;
+        return raw && unit === "net" ? Number(raw) : null;
+      };
+      const saidGross = (): number | null => {
+        const raw = fill.value();
+        return raw && unit === "gross" ? Number(raw) : null;
       };
       const fillPct = (): number | null => {
         const raw = fill.value();
-        if (!raw) return null;
-        return unit === "pct" ? Number(raw) : null;
+        return raw && unit === "pct" ? Number(raw) : null;
       };
 
       function showConversion(): void {
         const raw = fill.value() ? Number(fill.value()) : null;
-        if (raw === null || !fullLbs) {
+        if (raw === null) {
           converted.textContent = "";
           return;
         }
         // The kernel does this arithmetic when the row is written. This repeats
-        // it to put a number in front of somebody before they commit to it,
+        // it to put the number in front of somebody before they commit to it,
         // which is the one thing a client may do with a rule it does not own.
-        const lbs = unit === "lbs" ? raw : Math.round((raw / 100) * fullLbs);
-        const pct = unit === "lbs" ? Math.round((raw / fullLbs) * 100) : raw;
+        const fruit =
+          unit === "net"
+            ? raw
+            : unit === "gross"
+              ? raw - tare
+              : fullLbs
+                ? Math.round((raw / 100) * fullLbs)
+                : null;
+        if (fruit === null) {
+          converted.textContent = "";
+          return;
+        }
+        if (unit === "gross" && fruit <= 0) {
+          converted.textContent = `A bin weighs ${tare} lb empty, so that reading has no fruit in it.`;
+          return;
+        }
+        const both = `${fruit.toLocaleString()} lb of fruit, ${(fruit / 2000).toFixed(2)} ton`;
         converted.textContent =
-          `About ${lbs.toLocaleString()} lb a bin, ${(lbs / 2000).toFixed(2)} ton, ` +
-          `${pct}% of a full one.`;
+          unit === "gross"
+            ? `${both}, with the ${tare} lb bin taken off.`
+            : unit === "net"
+              ? `${both}. On a scale with the bin that reads ${(fruit + tare).toLocaleString()}.`
+              : `About ${both}, assuming a bin holds ${fullLbs}. Weigh them and that is replaced.`;
       }
 
-      const unitToggle = button(
-        unit === "lbs" ? "Say it as percent instead" : "Say it as pounds instead",
-        () => {
-          setPref("bin_unit", unit === "lbs" ? "pct" : "lbs");
-          void route();
-        },
-        "quiet",
+      // Three buttons rather than a toggle, because a toggle between three
+      // things is a puzzle, and because which one is chosen has to be readable
+      // without tapping it.
+      const choices: Array<[string, string]> = [
+        ["net", "Fruit only"],
+        ["gross", "With the bin"],
+      ];
+      if (fullLbs) choices.push(["pct", "How full"]);
+      const unitToggle = el(
+        "div",
+        { class: "button-row" },
+        ...choices.map(([key, label]) =>
+          button(
+            label,
+            () => {
+              setPref("bin_unit", key);
+              void route();
+            },
+            unit === key ? "primary" : "quiet",
+          ),
+        ),
       );
       on(fill.input, "input", showConversion);
       showConversion();
@@ -4904,8 +4960,20 @@ function pickBinsScreen(openOn?: string): HTMLElement {
             value: b.lbs === null ? "" : String(b.lbs),
             hint:
               b.said_as === "pct"
-                ? `Said as ${b.said_pct}% full. Typing pounds here replaces that.`
-                : "What went in it.",
+                ? `Worked out from ${b.said_pct}% of a nominal bin. A weight typed here replaces that.`
+                : b.said_as === "gross"
+                  ? `From ${Number(b.said_gross).toLocaleString()} lb on the scale, less the ${b.tare_lbs} lb bin.`
+                  : "The fruit, the bin not counted.",
+          });
+          // 0092. The other way somebody has the number: what the scale showed
+          // with the bin on it. Two boxes rather than one with a mode, because
+          // this row is read at a glance and a mode you cannot see is how 923
+          // becomes 923 pounds of fruit.
+          const grossBox = field({
+            label: "Or on the scale with the bin, lbs",
+            type: "number",
+            placeholder: b.gross === null ? "923" : String(b.gross),
+            hint: `The ${b.tare_lbs} lb bin comes off.`,
           });
           const said = el("div", {});
 
@@ -4920,20 +4988,43 @@ function pickBinsScreen(openOn?: string): HTMLElement {
                   `${b.bin}: ` +
                   (b.lbs === null
                     ? "nobody has said"
-                    : `${Number(b.lbs).toLocaleString()} lb, ${Number(b.tons ?? 0).toFixed(2)} ton`),
+                    : // Both numbers, always, because the whole defect was that
+                      // one of them alone does not say which one it is.
+                      `${Number(b.lbs).toLocaleString()} lb of fruit, ` +
+                      `${Number(b.tons ?? 0).toFixed(2)} ton, ` +
+                      `${Number(b.gross ?? 0).toLocaleString()} on the scale`),
               }),
             ),
             rows(
               box.root,
               button(
-                "That is what is in it",
+                "That is the fruit",
                 async () => {
                   if (!box.value()) {
                     said.replaceChildren(banner("Type a weight.", "error"));
                     return;
                   }
                   try {
-                    await setBinFruit(b.vessel_id, { lbs: Number(box.value()) });
+                    await setBinFruit(b.vessel_id, { netLbs: Number(box.value()) });
+                    await refreshTally(id);
+                  } catch (error) {
+                    said.replaceChildren(fail(error));
+                  }
+                },
+                "secondary",
+              ),
+              grossBox.root,
+              button(
+                "That is what the scale said",
+                async () => {
+                  if (!grossBox.value()) {
+                    said.replaceChildren(banner("Type the scale reading.", "error"));
+                    return;
+                  }
+                  try {
+                    await setBinFruit(b.vessel_id, {
+                      grossLbs: Number(grossBox.value()),
+                    });
                     await refreshTally(id);
                   } catch (error) {
                     said.replaceChildren(fail(error));
@@ -5053,7 +5144,8 @@ function pickBinsScreen(openOn?: string): HTMLElement {
             pick,
             vesselIds: chosen,
             fillPct: fillPct(),
-            fruitLbs: saidLbs(),
+            netLbs: saidLbs(),
+            grossLbs: saidGross(),
           });
           for (const e of existing) {
             if (chosen.includes(e.vessel.id)) {
@@ -5135,7 +5227,8 @@ function pickBinsScreen(openOn?: string): HTMLElement {
             newTypeId: newType.value,
             namePrefix: prefix.value(),
             fillPct: fillPct(),
-            fruitLbs: saidLbs(),
+            netLbs: saidLbs(),
+            grossLbs: saidGross(),
             onLoanFrom: ours.input.checked ? null : lender.value(),
           });
           await landed(result, `Registered ${result.registered.join(", ")}.`);
@@ -5222,7 +5315,7 @@ function pickBinsScreen(openOn?: string): HTMLElement {
           converted,
           // Only where percent means something. With no figure for what a full
           // bin holds, a percent is a number with no second half.
-          ...(fullLbs ? [unitToggle] : []),
+          unitToggle,
           el("h2", { class: "section-head", text: "New bins" }),
           howMany.root,
           prefix.root,

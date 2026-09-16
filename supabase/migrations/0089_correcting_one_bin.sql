@@ -4,7 +4,8 @@
 --           because the figure is typed for a whole batch at once and bins
 --           differ once somebody looks at them."
 -- Depends on: [supabase/migrations/0087_a_bin_holds_pounds.sql]
--- Depended on by: [tests/schema_assertions.sql]
+-- Depended on by: [tests/schema_assertions.sql,
+--                  supabase/migrations/0092_gross_or_net_and_a_bulging_bin.sql]
 -- Axioms enforced: T0-2 (still one of pounds or percent, never both), T0-5 (a
 --                  correction is a new statement about the bin rather than a
 --                  quiet overwrite of a weighing)

@@ -57,7 +57,8 @@
 --              supabase/migrations/0088_moving_more_than_one.sql,
 --              supabase/migrations/0090_a_press_takes_bins.sql,
 --              supabase/migrations/0091_a_bin_says_its_weight_everywhere.sql,
---              supabase/migrations/0089_correcting_one_bin.sql]
+--              supabase/migrations/0089_correcting_one_bin.sql,
+--              supabase/migrations/0092_gross_or_net_and_a_bulging_bin.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -9638,7 +9639,9 @@ begin
   -- Pounds, which is what he asked for.
   pick_id := (add_bin_to_pick(pick, b1, null, 700) ->> 'node_id')::uuid;
   select * into got from bin_fruit where vessel_id = b1;
-  if got.said_as <> 'lbs' or got.lbs <> 700 then
+  -- 0092 renamed this: 'lbs' became 'net', because pounds alone never said
+  -- whether the bin was on the scale too.
+  if got.said_as <> 'net' or got.lbs <> 700 then
     raise exception 'FAIL: a bin told 700 pounds reads % as %', got.lbs, got.said_as;
   end if;
   if got.said_pct is not null then
@@ -9656,7 +9659,7 @@ begin
   perform test_ok('how full a bin is and what it is in tons are worked out from the pounds at read time, so neither can drift from the figure they came from');
 
   -- The other way round, for somebody who eyeballs it.
-  perform add_bin_to_pick(pick || jsonb_build_object('id', pick_id), b2, 50, null);
+  perform add_bin_to_pick(pick || jsonb_build_object('id', pick_id), b2, 50, null, null);
   select * into got from bin_fruit where vessel_id = b2;
   if got.said_as <> 'pct' then
     raise exception 'FAIL: a bin told half full reads as %', got.said_as;
@@ -9675,7 +9678,10 @@ begin
         limit 1), 50, 700);
     raise exception 'FAIL: a bin said both pounds and how full';
   exception when others then
-    if position('not both' in sqlerrm) = 0 then raise; end if;
+    -- 0092 widened this from two ways of saying it to three, so the wording
+    -- moved from "not both" to "say one of them".
+    if position('not both' in sqlerrm) = 0
+       and position('say one of them' in sqlerrm) = 0 then raise; end if;
     perform test_ok('a bin cannot say pounds and say how full at once, because one of the two would be a guess sitting beside a figure somebody gave');
   end;
 
@@ -9907,6 +9913,137 @@ begin
     if position('from itself' in sqlerrm) = 0 then raise; end if;
     perform test_ok('a press cannot be loaded from itself, which only became sayable once the sources were vessels');
   end;
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- gross or net, and a bulging bin'; end $$;
+
+-- 0092. "It should be very clear whether the measurement is the net weight or
+-- fruit weight." Somebody at a pallet scale reads 923 and types 923, and 923 is
+-- the bin as well as the fruit. A bin weighs 92. So the record would say a bin
+-- held 923 pounds of Chardonnay when it held 831, and nothing would notice,
+-- because both are plausible weights and only one was measured.
+do $$
+declare
+  bin_t uuid;
+  b1    uuid := '00000000-0000-0000-0000-0000000f3001';
+  b2    uuid := '00000000-0000-0000-0000-0000000f3002';
+  b3    uuid := '00000000-0000-0000-0000-0000000f3003';
+  pick  jsonb;
+  pid   uuid;
+  tare  numeric;
+  got   record;
+begin
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+  select id into bin_t from term
+   where kind = 'vessel_type'
+     and coalesce((attributes ->> 'intake_bin')::boolean, false)
+   limit 1;
+
+  -- Earlier blocks strip the tare from this type on purpose, to prove that a
+  -- weighing without one is refused. This one needs it, so it sets it: 92, the
+  -- figure the cellar carries, which makes 923 on a scale into 831 of fruit and
+  -- those are the two numbers this whole block is about.
+  update term set attributes = attributes || '{"tare_lbs": 92}'::jsonb
+   where kind = 'vessel_type' and value = 'picking_bin';
+
+  insert into vessel (id, type_id, name) values
+    (b1, bin_t, 'CG1'), (b2, bin_t, 'CG2'), (b3, bin_t, 'CG3');
+  tare := bin_tare_lbs(b1);
+  if coalesce(tare, 0) <= 0 then
+    raise exception 'FAIL: a picking bin has no tare, so no gross can become a net';
+  end if;
+
+  pick := jsonb_build_object('id', gen_random_uuid(), 'vintage', 2026,
+                             'name', 'CG a pick');
+
+  -- The fruit, said as the fruit.
+  pid := (add_bin_to_pick(pick, b1, null, 831, null) ->> 'node_id')::uuid;
+  select * into got from bin_fruit where vessel_id = b1;
+  if got.lbs <> 831 or got.said_as <> 'net' then
+    raise exception 'FAIL: a bin told 831 pounds of fruit reads % as %', got.lbs, got.said_as;
+  end if;
+  if got.gross <> 831 + tare then
+    raise exception 'FAIL: 831 pounds of fruit in a % pound bin weighs % on a scale',
+      tare, got.gross;
+  end if;
+  perform test_ok('a bin told the fruit reports what a scale would read with the bin on it, so somebody checking against a ticket has the number the ticket has');
+
+  -- **The same bin, said the other way.** This is the defect: 923 and 831 are
+  -- the same bin and only one of them is the fruit.
+  perform add_bin_to_pick(jsonb_build_object('id', pid), b2, null, null, 923);
+  select * into got from bin_fruit where vessel_id = b2;
+  if got.said_as <> 'gross' then
+    raise exception 'FAIL: a bin told a scale reading reads as %', got.said_as;
+  end if;
+  if got.lbs <> 923 - tare then
+    raise exception 'FAIL: 923 on the scale with a % pound bin is % pounds of fruit',
+      tare, got.lbs;
+  end if;
+  if got.gross <> 923 then
+    raise exception 'FAIL: a bin told 923 on the scale reads % on the scale', got.gross;
+  end if;
+  perform test_ok('a bin told what the scale showed has the bin taken off it, so 923 on a pallet scale is not recorded as 923 pounds of fruit');
+
+  -- Never two of them. Three ways to say how much, and no way to say which of
+  -- them somebody meant, is the whole defect.
+  begin
+    perform add_bin_to_pick(jsonb_build_object('id', pid), b3, 100, 800, null);
+    raise exception 'FAIL: a bin said how full it was and what was in it';
+  exception when others then
+    if position('say one of them' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a bin says one of the three and the rest are worked out, because a row carrying two of them cannot say which one a person actually measured');
+  end;
+
+  -- And the table, not only the function. A rule one function enforces is a
+  -- rule anything else walks past.
+  begin
+    update placement set gross_lbs = 900
+     where vessel_id = b1 and to_at is null;
+    raise exception 'FAIL: a placement carries a net and a gross at once';
+  exception when check_violation then
+    perform test_ok('the table refuses a bin carrying two of the three, so the rule does not depend on everything going through one function');
+  end;
+
+  -- A scale reading that does not clear the empty bin is a bin weighed empty or
+  -- a tare that is wrong, and either way the fruit is not negative.
+  begin
+    perform add_bin_to_pick(jsonb_build_object('id', pid), b3, null, null, tare - 1);
+    raise exception 'FAIL: a scale reading under the tare was accepted';
+  exception when others then
+    if position('has no fruit in it' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a scale reading that does not clear the empty bin is refused, because the fruit in it would be a negative number');
+  end;
+
+  -- **The bulging bin.** Capped at a hundred since 0033, which is right for a
+  -- tank and wrong for a bin: "that is why I said no cap".
+  perform add_bin_to_pick(jsonb_build_object('id', pid), b3, 115, null, null);
+  select * into got from bin_fruit where vessel_id = b3;
+  if got.pct_full <> 115 then
+    raise exception 'FAIL: a bin filled past its nominal reads %', got.pct_full;
+  end if;
+  perform test_ok('a bin can be filled past a nominal full one, because bins are filled bulging and a ceiling that refuses a true reading makes the record say something else');
+
+  -- The bound that is left is for a weight typed into a percent box.
+  begin
+    perform set_bin_fruit(b3, null, 900);
+    raise exception 'FAIL: 900 percent full was accepted';
+  exception when others then
+    if position('is not how full a bin is' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a percentage far past a bulging bin is refused and says so in pounds, because that is a weight typed into the wrong box rather than a very full bin');
+  end;
+
+  -- Correcting one, the way somebody standing at the scale would.
+  perform set_bin_fruit(b1, null, null, 1000);
+  select * into got from bin_fruit where vessel_id = b1;
+  if got.said_as <> 'gross' or got.lbs <> 1000 - tare then
+    raise exception 'FAIL: correcting a bin with a scale reading left it % as %',
+      got.lbs, got.said_as;
+  end if;
+  if got.said_net is not null then
+    raise exception 'FAIL: correcting a bin with a gross left the old net beside it';
+  end if;
+  perform test_ok('correcting a bin with what the scale said replaces the figure that was there rather than sitting beside it, so a bin never carries two answers');
 end $$;
 
 do $$ begin raise notice '--- all assertions passed'; end $$;

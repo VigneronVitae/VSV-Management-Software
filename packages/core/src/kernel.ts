@@ -1373,14 +1373,19 @@ export async function addBinToPick(args: {
   // One of the two, never both: the kernel refuses a bin that says pounds and
   // says how full, because one of them would be a guess written next to a
   // figure somebody actually gave.
+  // At most one of the three: the fruit, the scale reading with the bin on it,
+  // or how full. 923 on a pallet scale is the bin as well as the fruit, and the
+  // kernel refuses a row that says two of them.
   fillPct: number | null;
-  fruitLbs?: number | null;
+  netLbs?: number | null;
+  grossLbs?: number | null;
 }): Promise<{ node_id: Uuid; placement_id: Uuid; bins: number; unweighed: number }> {
   const { data, error } = await kernel().rpc("add_bin_to_pick", {
     p_pick: args.pick,
     p_vessel_id: args.vesselId,
     p_fill_pct: args.fillPct,
-    p_fruit_lbs: args.fruitLbs ?? null,
+    p_net_lbs: args.netLbs ?? null,
+    p_gross_lbs: args.grossLbs ?? null,
   });
   if (error) throw new KernelError(error);
   return data as { node_id: Uuid; placement_id: Uuid; bins: number; unweighed: number };
@@ -1479,7 +1484,8 @@ export async function addBinsToPick(args: {
   // once, because they are two different situations. See 0036.
   ownerId?: Uuid | null;
   onLoanFrom?: string | null;
-  fruitLbs?: number | null;
+  netLbs?: number | null;
+  grossLbs?: number | null;
 }): Promise<{ node_id: Uuid; registered: string[]; bins: number; unweighed: number }> {
   const { data, error } = await kernel().rpc("add_bins_to_pick", {
     p_pick: args.pick,
@@ -1490,7 +1496,8 @@ export async function addBinsToPick(args: {
     p_fill_pct: args.fillPct,
     p_owner_id: args.ownerId ?? null,
     p_on_loan_from: args.onLoanFrom ?? null,
-    p_fruit_lbs: args.fruitLbs ?? null,
+    p_net_lbs: args.netLbs ?? null,
+    p_gross_lbs: args.grossLbs ?? null,
   });
   if (error) throw new KernelError(error);
   return data as {
@@ -2044,7 +2051,7 @@ export async function binFruit(nodeId?: Uuid): Promise<BinFruit[]> {
   let q = kernel()
     .from("bin_fruit")
     .select(
-      "placement_id,vessel_id,bin,node_id,pick,from_at,said_lbs,said_pct,full_lbs,lbs,pct_full,tons,said_as",
+      "placement_id,vessel_id,bin,node_id,pick,from_at,said_net,said_gross,said_pct,full_lbs,tare_lbs,lbs,gross,pct_full,tons,said_as",
     );
   if (nodeId) q = q.eq("node_id", nodeId);
   const { data, error } = await q.order("bin");
@@ -2073,15 +2080,30 @@ export async function moveVessels(
 // is half empty.
 export async function setBinFruit(
   vesselId: Uuid,
-  args: { lbs?: number | null; pct?: number | null },
-): Promise<{ vessel: Uuid; bin: string; lbs: number | null; tons: number | null }> {
+  args: { netLbs?: number | null; grossLbs?: number | null; pct?: number | null },
+): Promise<{
+  vessel: Uuid;
+  bin: string;
+  lbs: number | null;
+  gross: number | null;
+  tare: number | null;
+  tons: number | null;
+}> {
   const { data, error } = await kernel().rpc("set_bin_fruit", {
     p_vessel_id: vesselId,
-    p_fruit_lbs: args.lbs ?? null,
+    p_net_lbs: args.netLbs ?? null,
     p_fill_pct: args.pct ?? null,
+    p_gross_lbs: args.grossLbs ?? null,
   });
   if (error) throw new KernelError(error);
-  return data as { vessel: Uuid; bin: string; lbs: number | null; tons: number | null };
+  return data as {
+    vessel: Uuid;
+    bin: string;
+    lbs: number | null;
+    gross: number | null;
+    tare: number | null;
+    tons: number | null;
+  };
 }
 
 // The bins still holding fruit, by pick. What the press screen offers once
@@ -2090,7 +2112,9 @@ export async function setBinFruit(
 export async function pickBins(nodeId?: Uuid): Promise<PickBin[]> {
   let q = kernel()
     .from("pick_bin")
-    .select("node_id,pick,status,vessel_id,bin,lbs,tons,said_as,pct_full,from_at");
+    .select(
+      "node_id,pick,status,vessel_id,bin,lbs,gross,tare_lbs,tons,said_as,pct_full,from_at",
+    );
   if (nodeId) q = q.eq("node_id", nodeId);
   const { data, error } = await q.order("bin");
   if (error) throw new KernelError(error);

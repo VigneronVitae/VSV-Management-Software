@@ -844,13 +844,21 @@ export type BinFruit = {
   node_id: Uuid | null;
   pick: string | null;
   from_at: string;
-  said_lbs: number | null;
+  // Which of the three somebody actually gave. The other two are worked out
+  // from the bin's tare, and a screen shows the one that was typed.
+  said_net: number | null;
+  said_gross: number | null;
   said_pct: number | null;
   full_lbs: number | null;
+  tare_lbs: number | null;
+  // The fruit, the bin itself not counted.
   lbs: number | null;
+  // What a scale would read with the bin on it, which is what somebody checks
+  // against a ticket.
+  gross: number | null;
   pct_full: number | null;
   tons: number | null;
-  said_as: "lbs" | "pct" | null;
+  said_as: "net" | "gross" | "pct" | null;
 };
 
 // One bin still holding fruit, and which pick it belongs to. A pick is usually
@@ -862,8 +870,10 @@ export type PickBin = {
   vessel_id: Uuid;
   bin: string;
   lbs: number | null;
+  gross: number | null;
+  tare_lbs: number | null;
   tons: number | null;
-  said_as: "lbs" | "pct" | null;
+  said_as: "net" | "gross" | "pct" | null;
   pct_full: number | null;
   from_at: string;
 };
