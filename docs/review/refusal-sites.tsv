@@ -220,12 +220,14 @@ generate_inferred_history:guard:2	generate_inferred_history	guard	if n.variety_i
 generate_inferred_history:guard:3	generate_inferred_history	guard	if tmpl is null then	if false then	1
 make_invite:guard:1	make_invite	guard	if not is_admin() then	if false then	1
 make_invite:raise:1	make_invite	raise	raise exception 'only an administrator lets somebody in';	raise notice 'only an administrator lets somebody in';	1
-move_bins:guard:1	move_bins	guard	if coalesce(array_length(p_vessel_ids, 1), 0) = 0 then	if false then	1
-move_bins:raise:1	move_bins	raise	raise exception 'no vessels were named, so there is nothing to move';	raise notice 'no vessels were named, so there is nothing to move';	1
-move_bins:guard:2	move_bins	guard	if not exists (select 1 from location where id = p_location_id) then	if false then	1
-move_bins:raise:2	move_bins	raise	raise exception 'there is no such location to move them to';	raise notice 'there is no such location to move them to';	1
-move_bins:notfound:1	move_bins	notfound	if not found then	if false then	1
-move_bins:raise:3	move_bins	raise	raise exception 'no active vessel with id %', v_id;	raise notice 'no active vessel with id %', v_id;	1
+move_vessels:guard:1	move_vessels	guard	if not is_facility_user() then	if false then	1
+move_vessels:raise:1	move_vessels	raise	raise exception 'only somebody who works here moves vessels'	raise notice 'only somebody who works here moves vessels'	1
+move_vessels:guard:2	move_vessels	guard	if coalesce(array_length(p_vessel_ids, 1), 0) = 0 then	if false then	1
+move_vessels:raise:2	move_vessels	raise	raise exception 'no vessels were named, so there is nothing to move';	raise notice 'no vessels were named, so there is nothing to move';	1
+move_vessels:guard:3	move_vessels	guard	if place is null then	if false then	1
+move_vessels:raise:3	move_vessels	raise	raise exception 'there is no such location to move them to';	raise notice 'there is no such location to move them to';	1
+move_vessels:notfound:1	move_vessels	notfound	if not found then	if false then	1
+move_vessels:raise:4	move_vessels	raise	raise exception 'no active vessel with id %', v_id;	raise notice 'no active vessel with id %', v_id;	1
 next_cap_action:guard:1	next_cap_action	guard	if array_length(seq, 1) is null then	if false then	1
 node_bin_shares:notfound:1	node_bin_shares	notfound	if not found then	if false then	1
 node_bin_shares:head:1	node_bin_shares	head	if not coalesce(is_admin() or n.owner_id = current_party_id()\n                  or is_facility_user(), false) then	if false then	1

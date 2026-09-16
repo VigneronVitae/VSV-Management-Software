@@ -2050,3 +2050,19 @@ export async function binFruit(nodeId?: Uuid): Promise<BinFruit[]> {
   if (error) throw new KernelError(error);
   return (data ?? []) as BinFruit[];
 }
+
+// "I'd love to be able to select 6 barrels to move to a new room, or put the 5
+// picking bins in the south bay, without doing it individually." One call, one
+// event per vessel, and the whole batch fails rather than part of it: six
+// selected and five moved is a state nobody asked for and nobody would notice.
+export async function moveVessels(
+  vesselIds: Uuid[],
+  locationId: Uuid,
+): Promise<{ moved: number; location_id: Uuid; location: string }> {
+  const { data, error } = await kernel().rpc("move_vessels", {
+    p_vessel_ids: vesselIds,
+    p_location_id: locationId,
+  });
+  if (error) throw new KernelError(error);
+  return data as { moved: number; location_id: Uuid; location: string };
+}

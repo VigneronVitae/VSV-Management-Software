@@ -1153,6 +1153,28 @@ body.practising {
   border-width: 3px;
 }
 
+/* A row somebody has chosen for a batch, 0088. A tick in the name as well as a
+   ground: a ground alone is a rumour on a phone in sunlight, which is the
+   condition this app is used in. */
+.vessel-row-chosen {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+/* The bar that says how many are chosen and where they are going. It sits under
+   the list rather than over it: a phone keyboard takes the bottom half of the
+   screen and a control pinned there is a control nobody can reach. */
+.batch-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  margin-top: 0.75rem;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--surface, transparent);
+}
+
 /* However short the label, a name longer than the shape has to stop rather than
    spill over the edge of it. Two lines, then an ellipsis. */
 .map-name {

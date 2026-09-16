@@ -53,7 +53,8 @@
 --              supabase/migrations/0084_a_bin_of_fruit_is_not_juice.sql,
 --              supabase/migrations/0085_a_stack_of_bins_is_inventory.sql,
 --              supabase/migrations/0086_a_variable_named_like_a_column.sql,
---              supabase/migrations/0087_a_bin_holds_pounds.sql]
+--              supabase/migrations/0087_a_bin_holds_pounds.sql,
+--              supabase/migrations/0088_moving_more_than_one.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -6730,7 +6731,7 @@ begin
 
   -- Cold storage is a location, so going cold is a move, and the event is what
   -- answers how long fruit sat rather than only where it is now.
-  perform move_bins(bins, cold);
+  perform move_vessels(bins, cold);
   select count(*) into n from vessel where id = any(bins) and location_id = cold;
   if n <> 2 then
     raise exception 'FAIL: % of 2 bins reached the cold store', n;
@@ -6744,7 +6745,7 @@ begin
   perform test_ok('moving bins records where they went and when, which is what answers how long fruit sat');
 
   begin
-    perform move_bins(bins, '00000000-0000-0000-0000-0000000000ff');
+    perform move_vessels(bins, '00000000-0000-0000-0000-0000000000ff');
     raise exception 'FAIL: bins were moved to a location that does not exist';
   exception when others then
     if position('no such location' in sqlerrm) = 0 then raise; end if;
@@ -9668,6 +9669,99 @@ begin
     raise exception 'FAIL: estimates in the bins gave the pick a weight before anybody weighed it';
   end if;
   perform test_ok('estimates in the bins do not give the pick a weight, because a pick reading a number nobody weighed is the A13 shape at the moment T1-4 exists to protect');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- moving more than one'; end $$;
+
+-- 0088. "There should also be a batch option for things like moving barrels.
+-- Like I'd love to be able to select 6 barrels to move to a new room, or put
+-- the 5 picking bins in the south bay, etc, without doing it individually."
+--
+-- The kernel has done this since 0044 and nothing ever called it: `move_bins`
+-- took an array, never checked that a vessel was a bin, and sat with no screen
+-- above it and an exemption reading "not yet declared". So what 0088 adds is a
+-- name that does not lie and a declaration, and what these assert is the batch
+-- behaviour nothing had ever exercised.
+do $$
+declare
+  room_a uuid := '00000000-0000-0000-0000-0000000f1001';
+  room_b uuid := '00000000-0000-0000-0000-0000000f1002';
+  v1     uuid := '00000000-0000-0000-0000-0000000f1101';
+  v2     uuid := '00000000-0000-0000-0000-0000000f1102';
+  v3     uuid := '00000000-0000-0000-0000-0000000f1103';
+  ghost  uuid := '00000000-0000-0000-0000-0000000f1199';
+  out_js jsonb;
+  n      int;
+begin
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+
+  insert into location (id, name) values
+    (room_a, 'CE the shed'), (room_b, 'CE the south bay');
+  insert into vessel (id, type_id, name, location_id) values
+    (v1, term_id('vessel_type','barrel'), 'CE1', room_a),
+    (v2, term_id('vessel_type','barrel'), 'CE2', room_a),
+    (v3, term_id('vessel_type','barrel'), 'CE3', room_a);
+
+  out_js := move_vessels(array[v1, v2, v3], room_b);
+  if (out_js ->> 'moved')::int <> 3 then
+    raise exception 'FAIL: moving three vessels moved %', out_js ->> 'moved';
+  end if;
+  select count(*) into n from vessel
+   where id in (v1, v2, v3) and location_id = room_b;
+  if n <> 3 then
+    raise exception 'FAIL: % of three vessels are in the new room', n;
+  end if;
+  perform test_ok('any number of vessels move to a room in one act, which is six barrels to a new room rather than six trips through a form');
+
+  -- The column says where it is and the event says when it got there, which is
+  -- the half that answers how long fruit sat in the cold.
+  select count(*) into n from event
+   where subject_type = 'vessel' and subject_id in (v1, v2, v3)
+     and operation_id = term_id('operation', 'move_vessel');
+  if n <> 3 then
+    raise exception 'FAIL: three vessels moved and % events were written', n;
+  end if;
+  perform test_ok('a move writes an event for each vessel, so where a vessel is and when it got there are two different questions with two answers');
+
+  -- **All or none.** Six selected and five moved is a state nobody asked for
+  -- and nobody would notice: the screen would say it worked and one barrel
+  -- would be in the wrong room.
+  begin
+    perform move_vessels(array[v1, ghost], room_a);
+    raise exception 'FAIL: a batch with an unknown vessel in it moved anyway';
+  exception when others then
+    if position('no active vessel' in sqlerrm) = 0 then raise; end if;
+  end;
+  if (select location_id from vessel where id = v1) <> room_b then
+    raise exception 'FAIL: a batch that failed still moved one of its vessels';
+  end if;
+  perform test_ok('a batch naming a vessel that is not there moves none of them, because half a move is a state nobody asked for and nobody would notice');
+
+  begin
+    perform move_vessels(array[]::uuid[], room_a);
+    raise exception 'FAIL: an empty batch was accepted';
+  exception when others then
+    if position('nothing to move' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('moving nothing is refused rather than reported as success, because a screen saying it moved zero vessels is a screen that did nothing and said it worked');
+  end;
+
+  begin
+    perform move_vessels(array[v1], '00000000-0000-0000-0000-0000000f1198');
+    raise exception 'FAIL: vessels were moved to a room that does not exist';
+  exception when others then
+    if position('no such location' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a move to a room that is not there is refused, so a vessel is never filed somewhere nobody can walk to');
+  end;
+
+  -- The old name is gone rather than kept beside the new one.
+  if exists (
+    select 1 from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace
+     where ns.nspname = 'public' and p.proname = 'move_bins'
+  ) then
+    raise exception 'FAIL: move_bins is still callable, so there are two names for one act';
+  end if;
+  perform test_ok('there is one name for moving vessels, because a second name for one act is a call nobody can choose between');
 end $$;
 
 do $$ begin raise notice '--- all assertions passed'; end $$;

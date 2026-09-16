@@ -61,6 +61,7 @@ import {
   markBought,
   markPropagated,
   moveSupply,
+  moveVessels,
   type NodePayload,
   newId,
   nodeHistory,
@@ -1368,12 +1369,23 @@ function vesselListScreen(
 ): HTMLElement {
   const body = el("div", {});
   const count = el("p", { class: "lede" });
+  // Outside the bar on purpose: the bar is rebuilt on every draw, and a
+  // confirmation written into it disappears in the same tick it is created.
+  const notice = el("div", {});
 
   // Types present, from the vessels themselves rather than from the vocabulary,
   // so a type nobody owns one of does not appear as a filter that empties the
   // list.
   const types = [...new Set(kit.map((v) => v.type))].sort();
   const excluded = prefSet("vessel_filter_out");
+  // 0088. "I'd love to be able to select 6 barrels to move to a new room, or
+  // put the 5 picking bins in the south bay, without doing it individually."
+  //
+  // Not sticky, unlike the filters: a selection is about the next thirty
+  // seconds, and a device that reopened the vessels screen holding six barrels
+  // somebody chose yesterday would be holding a loaded gun.
+  const picked = new Set<string>();
+  let selecting = false;
   let order: VesselOrder = (pref("vessel_order") as VesselOrder) || "name";
   let onlyFull = pref("vessel_only") === "full";
   let onlyEmpty = pref("vessel_only") === "empty";
@@ -1413,7 +1425,16 @@ function vesselListScreen(
       key: "list",
       label: "List",
       note: "Sortable, filterable, and it tells you the numbers exactly.",
-      render: () => vesselList(shown()),
+      render: () =>
+        vesselList(shown(), {
+          on: selecting,
+          has: (id) => picked.has(id),
+          toggle: (id) => {
+            if (picked.has(id)) picked.delete(id);
+            else picked.add(id);
+            draw();
+          },
+        }),
     },
     {
       key: "map",
@@ -1422,6 +1443,95 @@ function vesselListScreen(
       render: () => cellarMapLayout(shown(), places, barrels),
     },
   ];
+
+  // Everything the batch bar needs, rebuilt on every draw because the count in
+  // it is the whole point of it.
+  function batchBar(list: VesselState[]): HTMLElement {
+    if (!selecting) {
+      return el(
+        "div",
+        { class: "button-row" },
+        button(
+          "Select several",
+          () => {
+            selecting = true;
+            draw();
+          },
+          "quiet",
+        ),
+      );
+    }
+
+    const here = list.filter((v) => picked.has(v.id)).length;
+    const hidden = picked.size - here;
+    const where = el("select", { class: "input" });
+    where.replaceChildren(
+      el("option", { value: "", text: "Which room" }),
+      ...places.map((pl) => el("option", { value: pl.id, text: pl.name })),
+    );
+    const said = el("div", {});
+
+    return el(
+      "div",
+      { class: "batch-bar" },
+      el("span", {
+        class: "field-label",
+        text:
+          picked.size === 0
+            ? "Tap vessels to choose them."
+            : `${picked.size} chosen` +
+              // A selection the filters are hiding is the one way a batch
+              // surprises somebody: they see two ticks and move six.
+              (hidden > 0 ? `, ${hidden} of them hidden by the filters` : ""),
+      }),
+      where,
+      el(
+        "div",
+        { class: "button-row" },
+        button("Move them", async () => {
+          if (picked.size === 0) {
+            said.replaceChildren(banner("Nothing is chosen.", "error"));
+            return;
+          }
+          if (!where.value) {
+            said.replaceChildren(banner("Say which room.", "error"));
+            return;
+          }
+          try {
+            const going = [...picked];
+            const out = await moveVessels(going, where.value);
+            // The rows this screen is holding are now stale in one field. Told
+            // rather than refetched: a reload here would throw away the sort,
+            // the filters and the place in the list somebody had scrolled to.
+            for (const v of kit) {
+              if (going.includes(v.id)) v.location_name = out.location;
+            }
+            picked.clear();
+            selecting = false;
+            notice.replaceChildren(
+              banner(
+                `Moved ${out.moved} ${out.moved === 1 ? "vessel" : "vessels"} to ${out.location}.`,
+                "good",
+              ),
+            );
+            draw();
+          } catch (error) {
+            said.replaceChildren(fail(error));
+          }
+        }),
+        button(
+          "Done",
+          () => {
+            selecting = false;
+            picked.clear();
+            draw();
+          },
+          "quiet",
+        ),
+      ),
+      said,
+    );
+  }
 
   function draw(): void {
     const list = shown();
@@ -1440,6 +1550,9 @@ function vesselListScreen(
         setPref("vessel_view", key);
         draw();
       }),
+      // Only over the list. The map has no rows to tick and a selection you
+      // cannot see is worse than one you cannot make.
+      ...(chosen === "list" ? [batchBar(list)] : []),
     );
   }
 
@@ -1490,6 +1603,7 @@ function vesselListScreen(
   return screen(
     "Vessels",
     kit.length === 0 ? lede("Nothing yet.") : count,
+    notice,
     kit.length === 0
       ? empty(
           // W-9 phase 4. "No vessels yet" is only true for somebody who can see
@@ -1771,7 +1885,16 @@ function sameOwner(v: VesselState): boolean {
   return v.owner_id === v.lot_owner_id;
 }
 
-function vesselList(kit: VesselState[]): HTMLElement {
+// How a row behaves when the screen is choosing rather than browsing. Passed
+// in rather than reached for, because this list is also rendered from the scan
+// screen and from the palette, where there is nothing to select into.
+type Selecting = {
+  on: boolean;
+  has: (id: string) => boolean;
+  toggle: (id: string) => void;
+};
+
+function vesselList(kit: VesselState[], sel?: Selecting): HTMLElement {
   return el(
     "ul",
     { class: "vessel-list" },
@@ -1787,15 +1910,22 @@ function vesselList(kit: VesselState[]): HTMLElement {
         v.capacity_l !== null && v.current_volume_l !== null
           ? Number(v.current_volume_l) / Number(v.capacity_l)
           : null;
+      const chosen = sel?.on === true && sel.has(v.id);
       const row = el(
         "li",
         {
-          class: `vessel-row vessel-row-tappable${fill !== null && fill > 1 ? " over" : ""}`,
-          role: "button",
+          class:
+            `vessel-row vessel-row-tappable${fill !== null && fill > 1 ? " over" : ""}` +
+            (chosen ? " vessel-row-chosen" : ""),
+          role: sel?.on ? "checkbox" : "button",
+          "aria-checked": sel?.on ? (chosen ? "true" : "false") : undefined,
           tabindex: "0",
           ...(fill === null ? {} : { style: `--fill:${Math.min(fill, 1).toFixed(3)}` }),
         },
-        el("span", { class: "vessel-name", text: `${v.name} (${v.type})` }),
+        el("span", {
+          class: "vessel-name",
+          text: `${chosen ? "\u2713 " : ""}${v.name} (${v.type})`,
+        }),
         el("span", {
           class: "vessel-detail",
           text: v.is_empty
@@ -1835,7 +1965,13 @@ function vesselList(kit: VesselState[]): HTMLElement {
       // intake: "I also need a way to edit (add/append only is fine) wine in
       // vessels, like to add the color." The wine and the vessel are two things
       // and the row cannot know which one you meant.
-      const openRow = () => go({ at: "vessel", id: v.id });
+      // In selection mode a tap chooses rather than opens. One gesture doing
+      // two things is how somebody ends up on a vessel screen when they meant
+      // to tick it, and back is not free on a phone in a barn.
+      const openRow = () => {
+        if (sel?.on) sel.toggle(v.id);
+        else go({ at: "vessel", id: v.id });
+      };
       on(row, "click", openRow);
       on(row, "keydown", (ev) => {
         if (ev.key === "Enter" || ev.key === " ") {

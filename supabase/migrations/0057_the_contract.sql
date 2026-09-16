@@ -12,7 +12,8 @@
 --                  supabase/migrations/0069_the_contract_hears_about_the_invite.sql,
 --                  supabase/migrations/0073_the_contract_hears_about_colour.sql,
 --                  supabase/migrations/0079_a_room_says_which_way_it_is_held.sql,
---                  supabase/migrations/0080_whose_wine_it_is_can_be_corrected.sql]
+--                  supabase/migrations/0080_whose_wine_it_is_can_be_corrected.sql,
+--                  supabase/migrations/0088_moving_more_than_one.sql]
 -- Axioms enforced: AR-Q8 (an interface is a periphery over a read and write
 --                  contract), AR-E6 (the declaration is registry rows, so
 --                  another winery's contract is data), R-4 (a client that
