@@ -18,6 +18,8 @@ import type {
   DayEntry,
   DayNote,
   EventRow,
+  GlycolConflict,
+  GlycolMachineLoad,
   HistoryRow,
   Invite,
   LevelDrawn,
@@ -55,6 +57,7 @@ import type {
   TypedFact,
   UnweighedBin,
   Uuid,
+  VesselGlycol,
   VesselPayload,
   VesselRow,
   VesselState,
@@ -505,6 +508,72 @@ export async function resolveVesselTypeNote(noteId: Uuid): Promise<void> {
     })
     .eq("id", noteId);
   if (error) throw new KernelError(error);
+}
+
+// --- glycol ---------------------------------------------------------------
+
+// 0100. "The glycol jackets should be linked to a glycol pump and
+// chiller/cooler." Read from either end, which is the request: the machine's
+// load, and every jacket with the machine it is on.
+
+export async function glycolMachines(): Promise<GlycolMachineLoad[]> {
+  const { data, error } = await kernel()
+    .from("glycol_machine_load")
+    .select("*")
+    .order("name");
+  if (error) throw new KernelError(error);
+  return (data ?? []) as GlycolMachineLoad[];
+}
+
+export async function jackets(): Promise<VesselGlycol[]> {
+  const { data, error } = await kernel()
+    .from("vessel_glycol")
+    .select("*")
+    .order("vessel");
+  if (error) throw new KernelError(error);
+  return (data ?? []) as VesselGlycol[];
+}
+
+export async function glycolConflicts(): Promise<GlycolConflict[]> {
+  const { data, error } = await kernel().from("glycol_conflict").select("*");
+  if (error) throw new KernelError(error);
+  return (data ?? []) as GlycolConflict[];
+}
+
+export async function registerGlycolMachine(args: {
+  name: string;
+  canHeat: boolean;
+  locationId?: Uuid | null;
+}): Promise<{ id: Uuid; name: string; can_heat: boolean }> {
+  const { data, error } = await kernel().rpc("register_glycol_machine", {
+    p_name: args.name,
+    p_can_heat: args.canHeat,
+    p_location_id: args.locationId ?? null,
+  });
+  if (error) throw new KernelError(error);
+  return data as { id: Uuid; name: string; can_heat: boolean };
+}
+
+export async function hookUpGlycol(
+  vesselId: Uuid,
+  machineId: Uuid,
+): Promise<{ vessel: string; machine: string; hooked: boolean; already: boolean }> {
+  const { data, error } = await kernel().rpc("hook_up_glycol", {
+    p_vessel_id: vesselId,
+    p_machine_id: machineId,
+  });
+  if (error) throw new KernelError(error);
+  return data as { vessel: string; machine: string; hooked: boolean; already: boolean };
+}
+
+export async function unhookGlycol(
+  vesselId: Uuid,
+): Promise<{ vessel: string; unhooked: boolean; was_on_nothing: boolean }> {
+  const { data, error } = await kernel().rpc("unhook_glycol", {
+    p_vessel_id: vesselId,
+  });
+  if (error) throw new KernelError(error);
+  return data as { vessel: string; unhooked: boolean; was_on_nothing: boolean };
 }
 
 // --- vessels --------------------------------------------------------------

@@ -5,7 +5,8 @@
 -- Depends on: [supabase/migrations/0001_core_schema.sql,
 --              supabase/migrations/0033_intake.sql]
 -- Depended on by: [tests/schema_assertions.sql,
---                  supabase/migrations/0071_a_wine_says_its_colour.sql]
+--                  supabase/migrations/0071_a_wine_says_its_colour.sql,
+--                  supabase/migrations/0099_a_vessel_says_which_vintage.sql]
 -- Axioms enforced: A25 (a null that permits is the class this closes: blank
 --                  meant both "non-vintage" and "nobody got round to it")
 -- Open sorries: S-69 (the constraint is not valid, so rows older than it are

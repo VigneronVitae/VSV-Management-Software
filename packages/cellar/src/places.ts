@@ -86,7 +86,9 @@ export type Place =
   // Picking bins, counted rather than listed.
   | { at: "bins" }
   // Everything started and not finished.
-  | { at: "running" };
+  | { at: "running" }
+  // The glycol machines and what is hooked to them.
+  | { at: "glycol" };
 
 export const HOME: Place = { at: "home" };
 
@@ -127,6 +129,7 @@ const WITHOUT_ID = new Set([
   "colours",
   "bins",
   "running",
+  "glycol",
 ]);
 
 // A calendar day, which is what the day log is addressed by.

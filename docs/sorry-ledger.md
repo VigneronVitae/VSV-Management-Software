@@ -1062,6 +1062,20 @@ costs nothing and can be done in one statement, or the winemaker asks for it soo
 that the names change under a running pick. *Load-bearing:* no while there are five, and yes on
 the day somebody has to decide which of forty bins go back on a trailer.
 
+**S-88. A machine being asked to cool is not a machine that is cooling.**
+`0100` derives `running` on a glycol machine from the jackets hooked to it, which is right in the
+sense that it cannot go stale and wrong in the sense that nothing in this app has ever touched the
+machine. A unit switched off at the wall, low on glycol, or with a tripped compressor reads as
+cooling for as long as a tank on it is set to cooling, and the screen will say so confidently.
+That is the honest limit of a schema whose only sensor is a person, and it matters most in exactly
+the case the feature was asked for: the machine is struggling and somebody wants to know why.
+*Resolves when:* either somebody records the machine's own state as a told fact with a time on it,
+which is a second thing to maintain and was deliberately not built, or a probe reports its supply
+temperature, at which point `running` becomes measured and the derived version becomes the
+expectation to compare it against, which is the shape `0096` already uses for yield.
+*Load-bearing:* no while two machines sit in one room and a person can hear them, and immediately
+if this app is ever used to decide that a tank is fine unattended.
+
 ## Discharged
 **S-78. Anybody who can sign up becomes staff.** *Discharged by `0068`.*
 `enable_signup = true`, and `claim_account` gave any authenticated identity that had not

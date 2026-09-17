@@ -239,6 +239,28 @@ generate_inferred_history:guard:1	generate_inferred_history	guard	if n.id is nul
 generate_inferred_history:raise:1	generate_inferred_history	raise	raise exception 'no such node %', p_node_id;	raise notice 'no such node %', p_node_id;	1
 generate_inferred_history:guard:2	generate_inferred_history	guard	if n.variety_id is null then	if false then	1
 generate_inferred_history:guard:3	generate_inferred_history	guard	if tmpl is null then	if false then	1
+glycol_mode_fits_machine:guard:1	glycol_mode_fits_machine	guard	if new.mode <> 'heating' then	if false then	1
+glycol_mode_fits_machine:earlyreturn:1	glycol_mode_fits_machine	earlyreturn	return new;	null;	1
+glycol_mode_fits_machine:guard:2	glycol_mode_fits_machine	guard	if old.mode = 'heating' then	if false then	1
+glycol_mode_fits_machine:earlyreturn:2	glycol_mode_fits_machine	earlyreturn	return new;	null;	2
+glycol_mode_fits_machine:guard:3	glycol_mode_fits_machine	guard	if m.id is not null and not m.can_heat then	if false then	1
+glycol_mode_fits_machine:raise:1	glycol_mode_fits_machine	raise	raise exception '% is hooked to %, which cannot heat. Move the hose first, or take it off.',	raise notice '% is hooked to %, which cannot heat. Move the hose first, or take it off.',	1
+hook_up_glycol:guard:1	hook_up_glycol	guard	if not is_facility_user() then	if false then	1
+hook_up_glycol:raise:1	hook_up_glycol	raise	raise exception 'only somebody who works here moves a glycol hose'	raise notice 'only somebody who works here moves a glycol hose'	1
+hook_up_glycol:guard:2	hook_up_glycol	guard	if v.id is null then	if false then	1
+hook_up_glycol:raise:2	hook_up_glycol	raise	raise exception 'no vessel with id %', p_vessel_id;	raise notice 'no vessel with id %', p_vessel_id;	1
+hook_up_glycol:guard:3	hook_up_glycol	guard	if not v.has_glycol then	if false then	1
+hook_up_glycol:raise:3	hook_up_glycol	raise	raise exception '% has no jacket, so there is nothing to hook glycol to', v.name;	raise notice '% has no jacket, so there is nothing to hook glycol to', v.name;	1
+hook_up_glycol:guard:4	hook_up_glycol	guard	if m.id is null then	if false then	1
+hook_up_glycol:raise:4	hook_up_glycol	raise	raise exception 'no glycol machine with id %', p_machine_id;	raise notice 'no glycol machine with id %', p_machine_id;	1
+hook_up_glycol:guard:5	hook_up_glycol	guard	if not m.active then	if false then	1
+hook_up_glycol:raise:5	hook_up_glycol	raise	raise exception '% is not in service', m.name;	raise notice '% is not in service', m.name;	1
+hook_up_glycol:guard:6	hook_up_glycol	guard	if v.mode = 'heating' and not m.can_heat then	if false then	1
+hook_up_glycol:raise:6	hook_up_glycol	raise	raise exception '% is being held warm and % cannot heat', v.name, m.name;	raise notice '% is being held warm and % cannot heat', v.name, m.name;	1
+hook_up_glycol:guard:7	hook_up_glycol	guard	if open_machine = p_machine_id then	if false then	1
+hook_up_glycol:guard:8	hook_up_glycol	guard	if open_id is not null then	if false then	1
+hook_up_glycol:guard:9	hook_up_glycol	guard	if when_ < open_from then	if false then	1
+hook_up_glycol:raise:7	hook_up_glycol	raise	raise exception	raise notice	7
 make_invite:guard:1	make_invite	guard	if not is_admin() then	if false then	1
 make_invite:raise:1	make_invite	raise	raise exception 'only an administrator lets somebody in';	raise notice 'only an administrator lets somebody in';	1
 move_vessels:guard:1	move_vessels	guard	if not is_facility_user() then	if false then	1
@@ -409,6 +431,14 @@ register_bins:permissive:3	register_bins	permissive	and coalesce((attributes ->>
 register_bins:raise:6	register_bins	raise	raise exception 'that is not a picking bin type, so fruit is not weighed in it';	raise notice 'that is not a picking bin type, so fruit is not weighed in it';	1
 register_bins:guard:6	register_bins	guard	if prefix is null then	if false then	1
 register_bins:guard:7	register_bins	guard	if lender is not null then	if false then	1
+register_glycol_machine:guard:1	register_glycol_machine	guard	if not is_facility_user() then	if false then	1
+register_glycol_machine:raise:1	register_glycol_machine	raise	raise exception 'only somebody who works here registers a glycol machine'	raise notice 'only somebody who works here registers a glycol machine'	1
+register_glycol_machine:guard:2	register_glycol_machine	guard	if nm is null then	if false then	1
+register_glycol_machine:raise:2	register_glycol_machine	raise	raise exception 'a glycol machine needs something to be called';	raise notice 'a glycol machine needs something to be called';	1
+register_glycol_machine:guard:3	register_glycol_machine	guard	if exists (select 1 from glycol_machine where active and lower(name) = lower(nm)) then	if false then	1
+register_glycol_machine:raise:3	register_glycol_machine	raise	raise exception 'there is already a glycol machine called %', nm;	raise notice 'there is already a glycol machine called %', nm;	1
+register_glycol_machine:permissive:1	register_glycol_machine	permissive	values (nm, coalesce(p_can_heat, false), p_location_id, auth.uid())	values (nm, coalesce(p_can_heat, true), p_location_id, auth.uid())	1
+register_glycol_machine:permissive:2	register_glycol_machine	permissive	return jsonb_build_object('id', one, 'name', nm, 'can_heat', coalesce(p_can_heat, false));	return jsonb_build_object('id', one, 'name', nm, 'can_heat', coalesce(p_can_heat, true));	1
 register_subject_resolver:guard:1	register_subject_resolver	guard	if not is_admin() then	if false then	1
 register_subject_resolver:raise:1	register_subject_resolver	raise	raise exception 'only an administrator may register a resolver'	raise notice 'only an administrator may register a resolver'	1
 remove_pick:guard:1	remove_pick	guard	if n.id is null then	if false then	1
@@ -533,6 +563,13 @@ type_note:guard:1	type_note	guard	if n.id is null then	if false then	1
 type_note:raise:1	type_note	raise	raise exception 'there is no note with id %', p_note_id;	raise notice 'there is no note with id %', p_note_id;	1
 type_note:guard:2	type_note	guard	if k.id is null then	if false then	1
 type_note:raise:2	type_note	raise	raise exception	raise notice	2
+unhook_glycol:guard:1	unhook_glycol	guard	if not is_facility_user() then	if false then	1
+unhook_glycol:raise:1	unhook_glycol	raise	raise exception 'only somebody who works here moves a glycol hose'	raise notice 'only somebody who works here moves a glycol hose'	1
+unhook_glycol:guard:2	unhook_glycol	guard	if v.id is null then	if false then	1
+unhook_glycol:raise:2	unhook_glycol	raise	raise exception 'no vessel with id %', p_vessel_id;	raise notice 'no vessel with id %', p_vessel_id;	1
+unhook_glycol:guard:3	unhook_glycol	guard	if open_id is not null and coalesce(p_at, now()) < started then	if false then	1
+unhook_glycol:raise:3	unhook_glycol	raise	raise exception	raise notice	3
+unhook_glycol:guard:4	unhook_glycol	guard	if open_id is null then	if false then	1
 unwatch_subject:guard:1	unwatch_subject	guard	if not is_facility_user() then	if false then	1
 unwatch_subject:raise:1	unwatch_subject	raise	raise exception 'only somebody who works here decides what is worth watching'	raise notice 'only somebody who works here decides what is worth watching'	1
 unwatch_subject:head:1	unwatch_subject	head	if not exists (\n    select 1 from event\n     where subject_type = p_subject_type and subject_id = p_subject_id\n       and operation_id = term_id('operation', 'watch')\n  ) then	if false then	1

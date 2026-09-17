@@ -64,7 +64,9 @@
 --              supabase/migrations/0095_what_is_running.sql,
 --              supabase/migrations/0096_what_you_are_watching.sql,
 --              supabase/migrations/0097_a_room_departs_from_room_temperature.sql,
---              supabase/migrations/0098_a_vessel_arrives_in_a_number.sql]
+--              supabase/migrations/0098_a_vessel_arrives_in_a_number.sql,
+--              supabase/migrations/0099_a_vessel_says_which_vintage.sql,
+--              supabase/migrations/0100_a_jacket_is_on_a_machine.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh, scripts/rpc-args.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -2594,7 +2596,12 @@ begin
   -- a write on each, both scoped to `is_facility_user()`. None reads blanket
   -- true. A batch names a document, who read it and who let it in, which is
   -- exactly the kind of thing a custom crush client has no business seeing.
-  want := '102';
+  -- 102 before 0100, which added four across glycol_machine and glycol_hookup:
+  -- a read and a write on each, both scoped to `is_facility_user()`. None reads
+  -- blanket true. Which machine is cooling which tank is this winery's plumbing
+  -- and says nothing about whose wine is in the tank, but a client has no use
+  -- for it either, and the narrower answer is the one that needs no argument.
+  want := '106';
   if have <> want then
     raise exception
       'FAIL: there are % policies in public and this suite was written against %. If that is deliberate, update this number, and judge the new policy in the disposition list below if it reads or writes blanket true', have, want;
@@ -2926,7 +2933,14 @@ begin
   -- status and on a step not claiming to have applied with nothing behind it,
   -- three keys for the batch it belongs to, the capability it names and who
   -- decided it.
-  want := 'c=47 f=77 p=41 u=21';
+  -- c=47 f=77 p=41 u=21 before 0100, which added two tables. `glycol_machine`
+  -- brings a primary key and two nullable keys, into the room it stands in and
+  -- into whoever registered it. `glycol_hookup` brings a primary key, three
+  -- keys for the vessel, the machine and the author, and one check that a
+  -- period does not end before it starts. No unique constraint, because one
+  -- open hookup per vessel is a partial index and a constraint cannot be
+  -- partial.
+  want := 'c=48 f=82 p=43 u=21';
   if have <> want then
     raise exception
       E'FAIL: the constraint inventory changed.\nnow:  %\nwas:  %\nIf that is deliberate, update this line in the same commit that changed the schema.', have, want;
@@ -3151,12 +3165,19 @@ begin
   -- can account for. One new restrict, a step to the capability it names: a
   -- capability that has been removed leaves steps naming something that cannot
   -- run, and that is worth a refusal rather than a dangling key.
-  want := 'a=45 c=15 n=2 r=15';
+  -- a=45 c=15 n=2 r=15 before 0100. Two new no-actions, who registered a
+  -- machine and who moved a hose, which outlive those accounts. Two new
+  -- cascades, a hookup to its vessel and to its machine: a period recording
+  -- that something was plumbed to something is meaningless once either end is
+  -- gone, and in practice neither is ever deleted, because a vessel is retired
+  -- by `active` and a machine the same way. One new set null, the room a
+  -- machine stands in, because a machine outlives a room being renamed away.
+  want := 'a=47 c=17 n=3 r=15';
   if have <> want then
     raise exception
       E'FAIL: foreign key delete behaviour changed.\nnow:  %\nwas:  %\na is no action, c is cascade, n is set null, r is restrict.', have, want;
   end if;
-  perform test_ok('foreign key delete behaviour is unchanged: 27 no action, 8 cascade, 1 set null, 4 restrict');
+  perform test_ok('foreign key delete behaviour is what this suite was written against: ' || have);
 end $$;
 
 -- The restrict ones by name, because those four are the ones A20 is about and a
@@ -4034,7 +4055,17 @@ declare
     -- which is null for a field carrying no kind, so the whole picker block
     -- including the registry lookup is skipped. That is X-2-1 and it is a
     -- fourth instance of A25. Filed, not fixed: section A is out of scope.
-    'validate_vessel_attributes'
+    'validate_vessel_attributes',
+    -- `glycol_mode_fits_machine` has exactly one null that permits, and it is
+    -- the right one: `select ... into m` finds no row when the vessel is hooked
+    -- to nothing, leaving `m.id` null, and the guard is `m.id is not null and
+    -- not m.can_heat` rather than a bare `not m.can_heat`, which would be null
+    -- and fall through by accident rather than on purpose. A jacket on no
+    -- machine may be set to heating, because there is no machine to contradict.
+    -- Exercised in the glycol block below in both directions: a tank on a
+    -- cooler-only machine is refused, and the same tank once unhooked is
+    -- allowed through.
+    'glycol_mode_fits_machine'
   ];
 begin
   for r in
@@ -10675,6 +10706,297 @@ begin
     end;
     perform test_act_as('00000000-0000-0000-0000-00000000a001');
   end if;
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- a vessel says which vintage'; end $$;
+
+-- 0099. "Another thing to add for sorting vessels, by vintage. Maybe just
+-- 2024/2025/2026/NV?" The years were already here. NV was not, and it arrived
+-- as the same null as an empty vessel.
+do $$
+declare
+  barrel uuid;
+  tank_a uuid := '00000000-0000-0000-0000-0000000f9001';
+  tank_b uuid := '00000000-0000-0000-0000-0000000f9002';
+  tank_c uuid := '00000000-0000-0000-0000-0000000f9003';
+  lot_a  uuid := '00000000-0000-0000-0000-0000000f9011';
+  lot_b  uuid := '00000000-0000-0000-0000-0000000f9012';
+  got    record;
+begin
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+
+  select id into barrel from term
+   where kind = 'vessel_type' and active
+     and not coalesce((attributes ->> 'intake_bin')::boolean, false)
+   limit 1;
+
+  insert into vessel (id, type_id, name) values
+    (tank_a, barrel, 'CV vintage tank'),
+    (tank_b, barrel, 'CV non vintage tank'),
+    (tank_c, barrel, 'CV empty tank');
+
+  insert into node (id, stage, status, name, vintage, non_vintage, unit, created_by) values
+    (lot_a, 'maturation', 'open', 'CV a year', 2025, false, 'L',
+     '00000000-0000-0000-0000-00000000a001'),
+    (lot_b, 'maturation', 'open', 'CV no year', null, true, 'L',
+     '00000000-0000-0000-0000-00000000a001');
+
+  insert into placement (id, node_id, vessel_id, volume_l) values
+    (gen_random_uuid(), lot_a, tank_a, 200),
+    (gen_random_uuid(), lot_b, tank_b, 200);
+
+  select * into got from vessel_state where id = tank_a;
+  if got.vintage_label <> '2025' then
+    raise exception 'FAIL: a vessel holding 2025 wine says %', got.vintage_label;
+  end if;
+  if got.non_vintage then
+    raise exception 'FAIL: a lot with a year reads as non vintage';
+  end if;
+  perform test_ok('a vessel says the vintage of the wine standing in it, which is what a screen sorts and filters by and is not a fact about the vessel');
+
+  -- **The whole reason for the migration.** NV was the same null as an empty
+  -- tank, so a barrel of sparkling base and a barrel of nothing were one answer.
+  select * into got from vessel_state where id = tank_b;
+  if got.vintage_label <> 'NV' then
+    raise exception 'FAIL: a vessel holding non vintage wine says %', coalesce(got.vintage_label, 'nothing');
+  end if;
+  if not got.non_vintage then
+    raise exception 'FAIL: a deliberately non vintage lot does not say so';
+  end if;
+  perform test_ok('a vessel holding deliberately non vintage wine says NV rather than nothing, which 0049 made a separate answer from no year and this view could not repeat');
+
+  select * into got from vessel_state where id = tank_c;
+  if got.vintage_label is not null then
+    raise exception 'FAIL: an empty vessel claims vintage %', got.vintage_label;
+  end if;
+  if got.non_vintage is not null then
+    raise exception 'FAIL: an empty vessel answers a question about wine it does not have';
+  end if;
+  perform test_ok('an empty vessel says nothing about vintage rather than saying NV, because having no wine and having wine of no year are different and were the same null before this');
+
+  -- **The third case cannot be made any more, and that is worth pinning.**
+  -- vintage_label has a branch for a lot with neither a year nor NV, because
+  -- 0049's constraint is not valid and a lot predating it can be in that state.
+  -- Nothing can arrive there now, so the branch covers history rather than
+  -- input, and if that ever stops being true this assertion is where it shows.
+  begin
+    update node set non_vintage = false, vintage = null where id = lot_b;
+    raise exception 'FAIL: a lot was left with neither a year nor NV';
+  exception when check_violation then
+    perform test_ok('a lot cannot be put into the state where it has neither a year nor NV, so the null branch of vintage_label is about rows older than 0049 and not about anything a person can type today');
+  end;
+
+  -- The function that returns this row type still resolves. 0092 lost
+  -- resolve_vessel_code to a cascade and this view is the one it returns.
+  if not exists (
+    select 1 from pg_proc where proname = 'resolve_vessel_code'
+  ) then
+    raise exception 'FAIL: replacing vessel_state took resolve_vessel_code with it';
+  end if;
+  perform test_ok('the function returning a vessel_state row survives the view gaining columns, which a drop and recreate would not have and did not in 0092');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- a jacket is on a machine'; end $$;
+
+-- 0100. "The glycol jackets should be linked to a glycol pump and
+-- chiller/cooler", and the winery: "two glycol machines, both have pumps and
+-- coolers, one can also heat (the bigger one, but can only cool or heat at
+-- once)."
+do $$
+declare
+  tank_t uuid;
+  cold   uuid := '00000000-0000-0000-0000-0000000fa001';
+  bigone   uuid := '00000000-0000-0000-0000-0000000fa002';
+  jacket uuid := '00000000-0000-0000-0000-0000000fa011';
+  bare   uuid := '00000000-0000-0000-0000-0000000fa012';
+  warm   uuid := '00000000-0000-0000-0000-0000000fa013';
+  got    record;
+  out_js jsonb;
+  n      int;
+begin
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+
+  select id into tank_t from term
+   where kind = 'vessel_type' and active
+     and not coalesce((attributes ->> 'intake_bin')::boolean, false)
+   limit 1;
+
+  out_js := register_glycol_machine('CG small', false);
+  update glycol_machine set id = cold where id = (out_js ->> 'id')::uuid;
+  out_js := register_glycol_machine('CG big', true);
+  update glycol_machine set id = bigone where id = (out_js ->> 'id')::uuid;
+
+  -- A machine registered twice under one name is somebody who could not see the
+  -- first one, which is a screen problem rather than a second machine.
+  begin
+    perform register_glycol_machine('CG small', false);
+    raise exception 'FAIL: two machines were registered under one name';
+  exception when others then
+    if position('already a glycol machine' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a second machine cannot be registered under a name already in service, because two rows under one name is how a hose gets moved to the wrong one');
+  end;
+
+  insert into vessel (id, type_id, name, has_glycol, mode, setpoint_c) values
+    (jacket, tank_t, 'CG jacketed tank', true, 'cooling', 1),
+    (bare,   tank_t, 'CG plain tank',    false, 'off', null),
+    (warm,   tank_t, 'CG warm tank',     true, 'heating', 20);
+
+  -- **The link, and it reads from both ends.** That is the whole request.
+  perform hook_up_glycol(jacket, cold);
+
+  select * into got from vessel_glycol where vessel_id = jacket;
+  if got.machine <> 'CG small' then
+    raise exception 'FAIL: the vessel says it is on %', coalesce(got.machine, 'nothing');
+  end if;
+  select * into got from glycol_machine_load where id = cold;
+  if got.vessels <> 1 then
+    raise exception 'FAIL: the machine says % vessels are on it', got.vessels;
+  end if;
+  perform test_ok('a jacket hooked to a machine is readable from the vessel and from the machine, which is the request: it should go both ways, and one hookup answers both');
+
+  -- Derived, not told. A machine is cooling because something on it is calling
+  -- for cold, which cannot go stale the way a direction set by hand does.
+  if got.running <> 'cooling' then
+    raise exception 'FAIL: a machine with a tank calling for cold on it reads %', got.running;
+  end if;
+  if got.coldest_c <> 1 then
+    raise exception 'FAIL: the coldest thing asked of it reads %', got.coldest_c;
+  end if;
+  perform test_ok('which way a machine is running is derived from the jackets hanging off it rather than set on the machine, so it cannot disagree with the tanks it is serving');
+
+  -- The vessel's own row carries it, because that is the screen somebody is
+  -- already looking at.
+  select * into got from vessel_state where id = jacket;
+  if got.glycol_machine <> 'CG small' then
+    raise exception 'FAIL: the vessel row says its machine is %', coalesce(got.glycol_machine, 'nothing');
+  end if;
+  perform test_ok('the vessel row says which machine its jacket is on, so the answer is where somebody is standing rather than one screen away');
+
+  -- A hose to nothing.
+  begin
+    perform hook_up_glycol(bare, cold);
+    raise exception 'FAIL: a vessel with no jacket was hooked to glycol';
+  exception when others then
+    if position('has no jacket' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a vessel with no jacket cannot be hooked to a machine, because there is nothing at the other end of the hose and its load would count a vessel it cannot affect');
+  end;
+
+  -- **The hardware refusal.** The small machine has no heater.
+  begin
+    perform hook_up_glycol(warm, cold);
+    raise exception 'FAIL: a vessel being held warm went onto a machine that cannot heat';
+  exception when others then
+    if position('cannot heat' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a vessel being held warm cannot be hooked to a machine with no heater, which is a fact about the machine rather than an opinion about good practice');
+  end;
+
+  -- And the other order, which is the common one: the hose has been on for a
+  -- month and somebody changes the mode today.
+  begin
+    update vessel set mode = 'heating', setpoint_c = 20 where id = jacket;
+    raise exception 'FAIL: a tank on a cooler was set to heating';
+  exception when others then
+    if position('cannot heat' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a tank already hooked to a machine that cannot heat cannot be set to heating either, so the rule does not depend on doing the two things in one particular order');
+  end;
+
+  -- Moving the hose keeps what was there. This is the half he asked for when he
+  -- said it may as well keep the history.
+  perform hook_up_glycol(jacket, bigone, now() + interval '1 hour');
+  select count(*) into n from glycol_hookup where vessel_id = jacket;
+  if n <> 2 then
+    raise exception 'FAIL: moving a hose left % periods', n;
+  end if;
+  if exists (select 1 from glycol_hookup
+              where vessel_id = jacket and machine_id = cold and to_at is null) then
+    raise exception 'FAIL: the machine it came off is still open';
+  end if;
+  select * into got from vessel_glycol where vessel_id = jacket;
+  if got.machine <> 'CG big' then
+    raise exception 'FAIL: after moving, the vessel says it is on %', got.machine;
+  end if;
+  perform test_ok('moving a hose closes the period on the old machine and opens one on the new, so what was on which machine in October survives rather than being overwritten by where it is today');
+
+  -- Hooking it where it already is. A second period starting the instant the
+  -- first ends would read as somebody having moved a hose they did not touch.
+  out_js := hook_up_glycol(jacket, bigone);
+  if (out_js ->> 'already')::boolean is not true then
+    raise exception 'FAIL: hooking a vessel to the machine it is on did not say so';
+  end if;
+  select count(*) into n from glycol_hookup where vessel_id = jacket;
+  if n <> 2 then
+    raise exception 'FAIL: hooking it where it already was wrote a % period', n;
+  end if;
+  perform test_ok('hooking a jacket to the machine it is already on says so and writes nothing, because a period starting where the last one ended is a history saying somebody moved a hose they never touched');
+
+  -- **The conflict, surfaced rather than refused.** The big machine can do
+  -- either and never both.
+  perform hook_up_glycol(warm, bigone);
+  select * into got from glycol_machine_load where id = bigone;
+  if got.running <> 'both' then
+    raise exception 'FAIL: a machine asked to cool and heat at once reads %', got.running;
+  end if;
+  if not exists (select 1 from glycol_conflict where machine_id = bigone) then
+    raise exception 'FAIL: nothing surfaces a machine asked for both at once';
+  end if;
+  perform test_ok('a machine asked to cool one tank and heat another is let through and listed as a conflict, because somebody can move a hose before telling the app and an app that refuses to record what happened is one people stop telling');
+
+  select * into got from glycol_conflict where machine_id = bigone;
+  if got.cold_side is null or got.warm_side is null then
+    raise exception 'FAIL: the conflict does not say which vessels are on which side';
+  end if;
+  perform test_ok('the conflict names the vessels on each side, because the thing somebody has to decide is which of the two to move and a count does not tell them');
+
+  -- One hose per jacket, held by the index rather than by every writer
+  -- remembering to close the old one.
+  begin
+    insert into glycol_hookup (vessel_id, machine_id) values (jacket, cold);
+    raise exception 'FAIL: a vessel was hooked to two machines at once';
+  exception when unique_violation then
+    perform test_ok('a jacket cannot be open on two machines at once even by a direct insert, because the rule is an index rather than something each writer has to remember');
+  end;
+
+  -- A hose cannot come off before it went on. Said in words rather than left to
+  -- the check constraint, which would tell somebody holding a hose that they
+  -- violated glycol_hookup_ends_after_it_starts.
+  begin
+    perform unhook_glycol(jacket, now());
+    raise exception 'FAIL: a hose came off before it went on';
+  exception when others then
+    if position('cannot come off before' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a hose cannot be taken off before the moment it went on, and the refusal says that rather than naming a check constraint at somebody standing in a barrel room');
+  end;
+
+  -- Taking it off, and taking off what is not on.
+  out_js := unhook_glycol(jacket, now() + interval '2 hours');
+  if (out_js ->> 'unhooked')::boolean is not true then
+    raise exception 'FAIL: unhooking a hooked vessel says it did nothing';
+  end if;
+  out_js := unhook_glycol(jacket, now() + interval '2 hours');
+  if (out_js ->> 'was_on_nothing')::boolean is not true then
+    raise exception 'FAIL: unhooking a vessel on nothing claims it took a hose off';
+  end if;
+  perform test_ok('taking a jacket off a machine it is not on says so rather than reporting success, which is A13 in the one place somebody would believe the hose had been moved');
+
+  -- A jacket on nothing is listed, because that is the worklist half.
+  select * into got from vessel_glycol where vessel_id = jacket;
+  if not got.on_nothing then
+    raise exception 'FAIL: a vessel on no machine does not say so';
+  end if;
+  perform test_ok('a jacketed vessel hooked to nothing still appears with the jackets, because a jacket on no machine is either fine or forgotten and the only way to tell is to see it listed');
+
+  -- A25, the other direction. The trigger finds no machine for an unhooked
+  -- vessel, and the guard is written so that no machine permits rather than
+  -- falling through on a null comparison. This is the assertion the validator
+  -- census points at.
+  update vessel set mode = 'heating', setpoint_c = 20 where id = jacket;
+  select * into got from vessel_glycol where vessel_id = jacket;
+  if got.mode <> 'heating' then
+    raise exception 'FAIL: a jacket on no machine could not be set to heating';
+  end if;
+  perform test_ok('a jacket hooked to no machine can be held warm, because there is no machine to contradict it, and that permission is written as a test on the machine rather than left to a null comparison falling through');
 end $$;
 
 do $$ begin raise notice '--- all assertions passed'; end $$;

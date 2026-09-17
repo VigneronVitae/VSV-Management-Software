@@ -5,7 +5,8 @@
 --           leaving it blank."
 -- Depends on: [supabase/migrations/0087_a_bin_holds_pounds.sql,
 --              supabase/migrations/0081_a_borrowed_bin_is_not_ours.sql]
--- Depended on by: [tests/schema_assertions.sql]
+-- Depended on by: [tests/schema_assertions.sql,
+--                  supabase/migrations/0099_a_vessel_says_which_vintage.sql]
 -- Axioms enforced: T0-2 (the pounds are resolved at read from whichever half
 --                  was said, and nothing is cached on the vessel)
 -- Open sorries: none

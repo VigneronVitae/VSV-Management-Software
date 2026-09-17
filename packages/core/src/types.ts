@@ -166,6 +166,13 @@ export type VesselState = {
   lot_name: string | null;
   variety: string | null;
   vintage: number | null;
+  // Deliberately non-vintage, which 0049 made a different answer from "no year
+  // yet" and 0099 finally carries here. Null when the vessel is empty.
+  non_vintage: boolean | null;
+  // The year, or NV, or null when there is nothing in the vessel and null again
+  // when there is wine nobody has answered for. The kernel chooses between
+  // those three so two screens cannot choose differently.
+  vintage_label: string | null;
   product_type: string | null;
   current_volume_l: number | null;
   // When the wine currently in it went in. Null for an empty vessel, which
@@ -207,6 +214,49 @@ export type AddVesselsResult = {
   from: string;
   to: string;
   prefix: string;
+};
+
+// 0100. A glycol machine and what is hanging off it. `running` is derived from
+// the jackets, so it says what the machine is being asked for rather than what
+// it is doing, which is S-88.
+export type GlycolMachineLoad = {
+  id: Uuid;
+  name: string;
+  can_heat: boolean;
+  active: boolean;
+  location_name: string | null;
+  vessels: number;
+  cooling: number;
+  heating: number;
+  idle: number;
+  running: "cooling" | "heating" | "both" | "off";
+  coldest_c: number | null;
+  warmest_c: number | null;
+};
+
+// Every jacketed vessel, including the ones on no machine at all.
+export type VesselGlycol = {
+  vessel_id: Uuid;
+  vessel: string;
+  type: string;
+  mode: ThermalMode;
+  setpoint_c: number | null;
+  location_name: string | null;
+  machine_id: Uuid | null;
+  machine: string | null;
+  can_heat: boolean | null;
+  hooked_at: string | null;
+  on_nothing: boolean;
+};
+
+// A machine asked to cool and heat at once, which none of them can do.
+export type GlycolConflict = {
+  machine_id: Uuid;
+  machine: string;
+  cooling: number;
+  heating: number;
+  cold_side: string | null;
+  warm_side: string | null;
 };
 
 export type NodePayload = {

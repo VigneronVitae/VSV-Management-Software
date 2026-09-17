@@ -50,7 +50,12 @@ import {
   facilityParty,
   fillVessel,
   finishPress,
+  type GlycolMachineLoad,
+  glycolConflicts,
+  glycolMachines,
+  hookUpGlycol,
   invites,
+  jackets,
   type Location,
   type LotWithoutColour,
   type LotWithoutVintage,
@@ -91,6 +96,7 @@ import {
   rackTransfer,
   reconditionBarrel,
   registerBins,
+  registerGlycolMachine,
   removeDayNote,
   removePick,
   removePlanting,
@@ -136,6 +142,7 @@ import {
   typedFacts,
   typeNote,
   type UnweighedBin,
+  unhookGlycol,
   unwatchSubject,
   unweighedBins,
   updateBlock,
@@ -143,6 +150,7 @@ import {
   updateVessel,
   uploadPhoto,
   uploadVesselPhoto,
+  type VesselGlycol,
   type VesselRow,
   type VesselState,
   type ViewerScope,
@@ -380,6 +388,8 @@ async function screenFor(place: Place): Promise<HTMLElement> {
       return coloursScreen();
     case "bins":
       return binsScreen();
+    case "glycol":
+      return glycolScreen();
     case "running":
       return runningScreen();
     case "wine":
@@ -1183,6 +1193,11 @@ async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> 
       go: () => go({ at: "bins" }),
     },
     {
+      name: "Glycol",
+      note: "Each machine and the jackets hanging off it. Move a hose, see what is on what.",
+      go: () => go({ at: "glycol" }),
+    },
+    {
       name: "Clients",
       note: "Custom crush clients, and which login sees their wine.",
       go: () => go({ at: "clients" }),
@@ -1388,7 +1403,7 @@ function installBlock(): HTMLElement {
 // first, which is in memory and pin-gated, so every control worked and every
 // choice was thrown away on reload with nothing to show for it. See prefs.ts for
 // why there are three stores now and what each is for.
-type VesselOrder = "name" | "fullest" | "emptiest" | "type" | "recent";
+type VesselOrder = "name" | "fullest" | "emptiest" | "type" | "recent" | "vintage";
 
 function vesselListScreen(
   kit: VesselState[],
@@ -1407,6 +1422,38 @@ function vesselListScreen(
   // list.
   const types = [...new Set(kit.map((v) => v.type))].sort();
   const excluded = prefSet("vessel_filter_out");
+  // 0099. "Another thing to add for sorting vessels, by vintage. Maybe just
+  // 2024/2025/2026/NV?"
+  //
+  // Those are this cellar's years today and they are not written down anywhere,
+  // because a list of years in the client is a list somebody has to edit every
+  // September. It is what the vessels are actually holding, newest first, with
+  // NV after the years because it belongs to no year rather than to the oldest
+  // one. `vintage_label` is the kernel's answer, so a screen never decides
+  // whether a blank means NV.
+  const years = [
+    ...new Set(
+      kit
+        .map((v) => v.vintage_label)
+        .filter((x): x is string => x !== null && x !== "NV"),
+    ),
+  ].sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+  const vintages = [
+    ...years,
+    ...(kit.some((v) => v.vintage_label === "NV") ? ["NV"] : []),
+    // Only offered when there is one, because a filter that can only ever empty
+    // the list is a control that teaches somebody the screen is broken.
+    ...(kit.some((v) => !v.is_empty && v.vintage_label === null) ? ["said"] : []),
+  ];
+  let vintage = pref("vessel_vintage") || "";
+  // A vintage this device chose last month that nothing is holding any more.
+  // Left standing it hides every vessel while the control beside the empty list
+  // reads blank, because the value is not one of its options: a filter that is
+  // on, invisible, and unexplained.
+  if (vintage && !vintages.includes(vintage)) {
+    vintage = "";
+    setPref("vessel_vintage", "");
+  }
   // 0088. "I'd love to be able to select 6 barrels to move to a new room, or
   // put the 5 picking bins in the south bay, without doing it individually."
   //
@@ -1443,6 +1490,14 @@ function vesselListScreen(
     let out = kit.filter((v) => !excluded.has(v.type));
     if (onlyFull) out = out.filter((v) => !v.is_empty);
     if (onlyEmpty) out = out.filter((v) => v.is_empty);
+    // An empty vessel is in no vintage, so choosing one drops the empties. That
+    // is the point of choosing one: "show me the 2025" is asked by somebody
+    // looking for wine, and the Show control above is where empties come back.
+    if (vintage === "said") {
+      out = out.filter((v) => !v.is_empty && v.vintage_label === null);
+    } else if (vintage) {
+      out = out.filter((v) => v.vintage_label === vintage);
+    }
 
     const fullness = (v: VesselState): number =>
       v.capacity_l !== null && v.current_volume_l !== null && Number(v.capacity_l) > 0
@@ -1465,6 +1520,21 @@ function vesselListScreen(
       recent: (a, b) =>
         (b.filled_at ?? "").localeCompare(a.filled_at ?? "") ||
         a.name.localeCompare(b.name, undefined, { numeric: true }),
+      // Newest vintage first, NV after the years, and the empties last. An
+      // empty vessel has no vintage rather than an early one, so it sorts to
+      // the end instead of ahead of 2024.
+      vintage: (a, b) => {
+        const rank = (v: VesselState): string =>
+          v.vintage_label === null
+            ? "0"
+            : v.vintage_label === "NV"
+              ? "1"
+              : `2${v.vintage_label}`;
+        return (
+          rank(b).localeCompare(rank(a), undefined, { numeric: true }) ||
+          a.name.localeCompare(b.name, undefined, { numeric: true })
+        );
+      },
     };
     return out.sort(by[order]);
   }
@@ -1607,6 +1677,7 @@ function vesselListScreen(
     el("option", { value: "fullest", text: "Fullest first" }),
     el("option", { value: "emptiest", text: "Emptiest first" }),
     el("option", { value: "recent", text: "Most recently filled" }),
+    el("option", { value: "vintage", text: "Vintage, newest first" }),
   );
   sort.value = order;
   on(sort, "change", () => {
@@ -1626,6 +1697,26 @@ function vesselListScreen(
     onlyFull = status.value === "full";
     onlyEmpty = status.value === "empty";
     setPref("vessel_only", status.value);
+    draw();
+  });
+
+  // One at a time rather than ticks, unlike the types. Types are a "these three
+  // kinds of thing" question and vintage is a "show me the 2025" one, which is
+  // one tap here and four unticks the other way.
+  const which = el("select", { class: "input" });
+  which.replaceChildren(
+    el("option", { value: "", text: "Every vintage" }),
+    ...vintages.map((y) =>
+      el("option", {
+        value: y,
+        text: y === "NV" ? "NV" : y === "said" ? "No vintage said" : y,
+      }),
+    ),
+  );
+  which.value = vintage;
+  on(which, "change", () => {
+    vintage = which.value;
+    setPref("vessel_vintage", vintage);
     draw();
   });
 
@@ -1674,6 +1765,18 @@ function vesselListScreen(
                 el("span", { class: "field-label", text: "Show" }),
                 status,
               ),
+              // Only when there is more than one, so a cellar holding a single
+              // vintage does not carry a control with one answer.
+              ...(vintages.length > 1
+                ? [
+                    el(
+                      "div",
+                      { class: "field" },
+                      el("span", { class: "field-label", text: "Vintage" }),
+                      which,
+                    ),
+                  ]
+                : []),
               ...(types.length > 1
                 ? [el("span", { class: "field-label", text: "Types" }), ...typeBoxes]
                 : []),
@@ -6126,6 +6229,12 @@ function paletteScreen(): HTMLElement {
           go: () => go({ at: "running" }),
         },
         {
+          label: "Glycol",
+          note: "Machines, and the jackets hooked to them.",
+          hay: "glycol chiller cooler pump jacket hose cooling heating machine",
+          go: () => go({ at: "glycol" }),
+        },
+        {
           label: "Take a copy",
           note: "Everything you can read, as one file.",
           hay: "export backup copy",
@@ -6250,6 +6359,9 @@ function capabilityRoute(key: string): Place | null {
     "cellar.set_vintage": { at: "vintages" },
     "cellar.set_colour": { at: "colours" },
     "cellar.register_bins": { at: "bins" },
+    "cellar.register_glycol_machine": { at: "glycol" },
+    "cellar.hook_up_glycol": { at: "glycol" },
+    "cellar.unhook_glycol": { at: "glycol" },
     "cellar.add_vessels": { at: "vessel-new" },
     "cellar.recondition_barrel": { at: "colours" },
     "cellar.declare_barrel_colour": { at: "colours" },
@@ -6302,6 +6414,231 @@ function capabilityRoute(key: string): Place | null {
 // Grouped by heading rather than flat, because "a press is going" and "a pick
 // has fruit on the pad" are different kinds of worry, and oldest first inside
 // each, because the press started four hours ago is the one worth asking about.
+// --- glycol ----------------------------------------------------------------
+
+// "The glycol jackets should be linked to a glycol pump and chiller/cooler",
+// and then: "we have two glycol machines, both have pumps and coolers, one can
+// also heat (the bigger one, but can only cool or heat at once)."
+//
+// Read from both ends on one screen, because that is the request: each machine
+// with what is hanging off it, and underneath, the jackets on nothing. A vessel
+// also carries its machine on its own row, which is the other direction.
+function glycolScreen(): HTMLElement {
+  const body = el("div", {}, empty("Loading."));
+  const notice = el("div", {});
+  const view = screen(
+    "Glycol",
+    lede("Each machine, and the jackets hanging off it."),
+    notice,
+    body,
+  );
+
+  function openVessel(label: string, id: string): HTMLElement {
+    const link = el("button", { class: "link", text: label });
+    on(link, "click", () => go({ at: "vessel", id }));
+    return link;
+  }
+
+  function direction(running: GlycolMachineLoad["running"]): string {
+    return running === "both"
+      ? "cooling and heating at once"
+      : running === "off"
+        ? "nothing on it is calling"
+        : running;
+  }
+
+  async function load(): Promise<void> {
+    const [machines, all, clashes] = await Promise.all([
+      glycolMachines(),
+      jackets(),
+      glycolConflicts(),
+    ]);
+
+    // Somewhere to put a hose. Rebuilt per jacket, because a select is a
+    // control and two rows cannot share one.
+    function machinePicker(j: VesselGlycol): HTMLElement {
+      const pick = el("select", { class: "input" });
+      pick.replaceChildren(
+        el("option", { value: "", text: j.machine ? "Move to" : "Hook to" }),
+        ...machines
+          .filter((m) => m.active && m.id !== j.machine_id)
+          .map((m) =>
+            el("option", {
+              value: m.id,
+              // Said on the option rather than found out by being refused. A
+              // tank held warm on a machine with no heater is a refusal the
+              // kernel makes, and a person should see it coming.
+              text:
+                j.mode === "heating" && !m.can_heat
+                  ? `${m.name} (cannot heat)`
+                  : m.name,
+            }),
+          ),
+      );
+      on(pick, "change", async () => {
+        if (!pick.value) return;
+        try {
+          const out = await hookUpGlycol(j.vessel_id, pick.value);
+          notice.replaceChildren(
+            banner(
+              out.already
+                ? `${out.vessel} was already on ${out.machine}.`
+                : `${out.vessel} is on ${out.machine}.`,
+              out.already ? "note" : "good",
+            ),
+          );
+          await load();
+        } catch (error) {
+          notice.replaceChildren(fail(error));
+        }
+      });
+      return pick;
+    }
+
+    function jacketRow(j: VesselGlycol): HTMLElement {
+      const held =
+        j.mode === "off"
+          ? "not being held"
+          : `${j.mode}${j.setpoint_c !== null ? ` to ${j.setpoint_c}C` : ""}`;
+      return el(
+        "div",
+        { class: "row" },
+        el(
+          "div",
+          { class: "row-main" },
+          // Wired rather than given as an attribute: el() sets anything it does
+          // not know with setAttribute, so an onclick here would be stored as a
+          // string and never fire, which is a link that looks like a link.
+          openVessel(j.vessel, j.vessel_id),
+          el("span", { class: "row-note", text: `${j.type}, ${held}` }),
+        ),
+        el(
+          "div",
+          { class: "button-row" },
+          machinePicker(j),
+          ...(j.machine_id
+            ? [
+                button(
+                  "Take off",
+                  async () => {
+                    try {
+                      const out = await unhookGlycol(j.vessel_id);
+                      notice.replaceChildren(
+                        banner(
+                          out.unhooked
+                            ? `${out.vessel} is on no machine.`
+                            : `${out.vessel} was already on nothing.`,
+                          out.unhooked ? "good" : "note",
+                        ),
+                      );
+                      await load();
+                    } catch (error) {
+                      notice.replaceChildren(fail(error));
+                    }
+                  },
+                  "quiet",
+                ),
+              ]
+            : []),
+        ),
+      );
+    }
+
+    const loose = all.filter((j) => j.on_nothing);
+
+    body.replaceChildren(
+      // The conflicts first, and they name both sides, because the thing to
+      // decide is which of the two to move.
+      ...clashes.map((c) =>
+        banner(
+          `${c.machine} is being asked to cool ${c.cold_side} and heat ${c.warm_side} ` +
+            "at the same time, which it cannot do. Move one of them, or change a mode.",
+          "error",
+        ),
+      ),
+      ...(machines.length === 0
+        ? [empty("No glycol machines yet. Add the first one below.")]
+        : machines.map((m) => {
+            const on = all.filter((j) => j.machine_id === m.id);
+            return el(
+              "div",
+              { class: "card" },
+              el(
+                "h2",
+                { class: "section-head" },
+                el("span", { text: m.name }),
+                el("span", {
+                  class: "row-note",
+                  text: m.can_heat ? " cools or heats" : " cools only",
+                }),
+              ),
+              el("p", {
+                class: "lede",
+                // Derived, and said as derived. S-88: this is what the jackets
+                // are asking for, not what the machine is doing, and nothing in
+                // this app has ever touched the machine.
+                text:
+                  `${m.vessels} hooked up, ${direction(m.running)}` +
+                  (m.coldest_c !== null ? `, coldest ${m.coldest_c}C` : "") +
+                  (m.location_name ? `. Stands in ${m.location_name}` : ""),
+              }),
+              on.length === 0
+                ? empty("Nothing on it.")
+                : el("div", { class: "rows" }, ...on.map(jacketRow)),
+            );
+          })),
+      ...(loose.length > 0
+        ? [
+            el("h2", { class: "section-head", text: "Jackets on no machine" }),
+            el("p", {
+              class: "lede",
+              text: "Either fine or forgotten. Listed so it can be one or the other on purpose.",
+            }),
+            el("div", { class: "rows" }, ...loose.map(jacketRow)),
+          ]
+        : []),
+      addMachine(),
+      button("Back", () => goBack(), "quiet"),
+    );
+  }
+
+  function addMachine(): HTMLElement {
+    const name = field({ label: "Called", placeholder: "Big glycol" });
+    const heats = checkbox("Can heat as well as cool", false);
+    const said = el("div", {});
+    return el(
+      "details",
+      { class: "more" },
+      el("summary", { text: "Add a glycol machine" }),
+      rows(
+        name.root,
+        heats.root,
+        button("Add it", async () => {
+          if (!name.value().trim()) {
+            said.replaceChildren(banner("Give it a name.", "error"));
+            return;
+          }
+          try {
+            await registerGlycolMachine({
+              name: name.value().trim(),
+              canHeat: heats.input.checked,
+            });
+            name.input.value = "";
+            heats.input.checked = false;
+            await load();
+          } catch (error) {
+            said.replaceChildren(fail(error));
+          }
+        }),
+        said,
+      ),
+    );
+  }
+
+  void load();
+  return view;
+}
+
 function runningScreen(): HTMLElement {
   const body = el("div", {}, empty("Loading."));
   const view = screen("Running", lede("Everything started and not finished."), body);
