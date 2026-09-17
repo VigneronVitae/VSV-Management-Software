@@ -6,7 +6,8 @@
 -- Depends on: [supabase/migrations/0014_rack.sql,
 --              supabase/migrations/0052_press_as_a_process.sql,
 --              supabase/migrations/0101_a_note_can_be_about_a_screen.sql]
--- Depended on by: [tests/schema_assertions.sql]
+-- Depended on by: [tests/schema_assertions.sql,
+--                  supabase/migrations/0103_racking_keeps_what_was_already_there.sql]
 -- Axioms enforced: T0-2 (what a lot is made of is its lineage, recomputed from
 --                  the volumes that went in, never a second stored fact), A13
 --                  (a refusal in the middle of a press is a number nobody

@@ -5,7 +5,8 @@
 --           the next number in this winery's own series."
 -- Depends on: [supabase/migrations/0085_a_stack_of_bins_is_inventory.sql,
 --              supabase/migrations/0086_a_variable_named_like_a_column.sql]
--- Depended on by: [tests/schema_assertions.sql]
+-- Depended on by: [tests/schema_assertions.sql,
+--                  supabase/migrations/0104_a_pressed_bin_leaves_the_room.sql]
 -- Axioms enforced: T0-2 (the number a new vessel wears follows from the ones
 --                  already worn and is never typed in beside them), R-4 (a
 --                  count of one is the answer to a question nobody should be

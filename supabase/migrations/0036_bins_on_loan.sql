@@ -8,7 +8,8 @@
 -- Depended on by: [tests/schema_assertions.sql, supabase/migrations/0037_export.sql,
 --                  supabase/migrations/0081_a_borrowed_bin_is_not_ours.sql,
 --                  supabase/migrations/0085_a_stack_of_bins_is_inventory.sql,
---                  supabase/migrations/0087_a_bin_holds_pounds.sql]
+--                  supabase/migrations/0087_a_bin_holds_pounds.sql,
+--                  supabase/migrations/0104_a_pressed_bin_leaves_the_room.sql]
 -- Axioms enforced: T1-4 (intake must be fast before it is complete)
 -- Open sorries: S-53 (a grower is a string in two places and nothing joins
 --               them)

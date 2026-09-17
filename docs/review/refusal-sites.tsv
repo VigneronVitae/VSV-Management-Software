@@ -67,15 +67,16 @@ add_vessels:guard:4	add_vessels	guard	if (p_vessel ->> 'type_id') is null then	i
 add_vessels:raise:4	add_vessels	raise	raise exception 'a vessel is of some type, and this one says none';	raise notice 'a vessel is of some type, and this one says none';	1
 add_vessels:guard:5	add_vessels	guard	if lender is not null and owner is not null then	if false then	1
 add_vessels:raise:5	add_vessels	raise	raise exception	raise notice	5
+add_vessels:permissive:1	add_vessels	permissive	select coalesce((t.attributes ->> 'intake_bin')::boolean, false) into is_bin	select coalesce((t.attributes ->> 'intake_bin')::boolean, true) into is_bin	1
 add_vessels:guard:6	add_vessels	guard	if lender is not null then	if false then	1
-add_vessels:guard:7	add_vessels	guard	elsif owner is not null and owner is distinct from facility_party_id() then	elsif false then	1
+add_vessels:guard:7	add_vessels	guard	elsif is_bin and owner is not null and owner is distinct from facility_party_id() then	elsif false then	1
 add_vessels:guard:8	add_vessels	guard	if given = '' then	if false then	1
 add_vessels:guard:9	add_vessels	guard	if lender is null then	if false then	1
 add_vessels:raise:6	add_vessels	raise	raise exception 'a new vessel needs something to be called';	raise notice 'a new vessel needs something to be called';	1
 add_vessels:guard:10	add_vessels	guard	if prefix = '' then	if false then	1
 add_vessels:guard:11	add_vessels	guard	if want = 1 and given <> '' then	if false then	1
-add_vessels:permissive:1	add_vessels	permissive	coalesce((p_vessel ->> 'has_glycol')::boolean, false),	coalesce((p_vessel ->> 'has_glycol')::boolean, true),	1
-add_vessels:permissive:2	add_vessels	permissive	coalesce((p_vessel ->> 'has_glycol')::boolean, false),	coalesce((p_vessel ->> 'has_glycol')::boolean, true),	2
+add_vessels:permissive:2	add_vessels	permissive	coalesce((p_vessel ->> 'has_glycol')::boolean, false),	coalesce((p_vessel ->> 'has_glycol')::boolean, true),	1
+add_vessels:permissive:3	add_vessels	permissive	coalesce((p_vessel ->> 'has_glycol')::boolean, false),	coalesce((p_vessel ->> 'has_glycol')::boolean, true),	2
 apply_owner_privacy:guard:1	apply_owner_privacy	guard	if new.hidden = '{}' and new.owner_id is not null then	if false then	1
 attach_photo:guard:1	attach_photo	guard	if not is_facility_user() then	if false then	1
 attach_photo:raise:1	attach_photo	raise	raise exception 'photographs are attached by people who work here';	raise notice 'photographs are attached by people who work here';	1
@@ -375,7 +376,8 @@ rack:silent:5	rack	silent	where id = p_node_id and quantity is not null;	where i
 rack:guard:7	rack	guard	if remaining = 0 then	if false then	1
 rack:guard:8	rack	guard	if held is not null then	if false then	1
 rack:silent:6	rack	silent	where vessel_id = v_id and to_at is null and node_id = target;	where vessel_id = v_id and true;	1
-rack:guard:9	rack	guard	if plan ->> 'kind' = 'move' then	if false then	2
+rack:guard:9	rack	guard	if plan ->> 'kind' = 'blend' and absorbed_l > 0 then	if false then	1
+rack:guard:10	rack	guard	if plan ->> 'kind' = 'move' then	if false then	2
 rack:silent:7	rack	silent	where id = target and quantity is not null;	where id = target and true;	1
 rack_plan:guard:1	rack_plan	guard	if jsonb_array_length(coalesce(p_sources, '[]'::jsonb)) = 0 then	if false then	1
 rack_plan:raise:1	rack_plan	raise	raise exception 'a rack needs somewhere to come from';	raise notice 'a rack needs somewhere to come from';	1
@@ -545,6 +547,7 @@ start_press:raise:7	start_press	raise	raise exception '% is closed; its fruit ha
 start_press:guard:7	start_press	guard	if emptied > 1 then	if false then	1
 start_press:raise:8	start_press	raise	raise exception	raise notice	8
 start_press:guard:8	start_press	guard	if total_lbs > 0 then	if false then	1
+start_press:guard:9	start_press	guard	if press_room is not null then	if false then	1
 start_press:silent:1	start_press	silent	and not exists (	and true	1
 start_procedure_session:guard:1	start_procedure_session	guard	if coalesce(array_length(p_vessel_ids, 1), 0) = 0 then	if false then	1
 start_procedure_session:raise:1	start_procedure_session	raise	raise exception 'a session needs at least one vessel';	raise notice 'a session needs at least one vessel';	1

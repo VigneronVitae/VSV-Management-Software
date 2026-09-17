@@ -1,58 +1,212 @@
 -- ---------------------------------------------------------------------------
 -- Type: migration
--- Purpose: "A press is loaded with bins rather than with whole picks, because a
---           pick does not fit in a press and the fruit that is left is still
---           fruit that is left."
--- Depends on: [supabase/migrations/0054_a_spent_pick_is_spent.sql,
---              supabase/migrations/0087_a_bin_holds_pounds.sql]
--- Depended on by: [tests/schema_assertions.sql,
---                  supabase/migrations/0104_a_pressed_bin_leaves_the_room.sql]
--- Axioms enforced: T0-2 (a pick is spent when its last bin leaves, which is a
---                  fact about its placements rather than a flag somebody sets),
---                  A13 (a pick closed with fruit still in bins would be fruit
---                  the app says is gone)
--- Open sorries: S-85 (a part-pressed pick's weighed quantity still describes
---                the whole pick)
+-- Purpose: "Three things the winemaker found in one message: a client's tank is
+--           not a bin to return, the bins to return list is about bins, and
+--           bins that go into a press leave the room they were standing in."
+-- Depends on: [supabase/migrations/0036_bins_on_loan.sql,
+--              supabase/migrations/0090_a_press_takes_bins.sql,
+--              supabase/migrations/0098_a_vessel_arrives_in_a_number.sql,
+--              supabase/migrations/0103_racking_keeps_what_was_already_there.sql]
+-- Depended on by: [tests/schema_assertions.sql]
+-- Axioms enforced: T0-2 (where a bin is follows from what was done with it),
+--                  AR-E7 (a rule about picking bins does not become a rule about
+--                  every vessel by being moved into a general function)
+-- Open sorries: none
 -- ---------------------------------------------------------------------------
 --
--- The winemaker, with five bins of Chardonnay and a 1.2 tonne press: *"for the
--- press log it should be bins grouped by pick, not just selecting a whole pick.
--- Like I can't fit all 5 bins into one press."* And on the shape of it:
--- *"pressing just needs to click the Pearlstaad pick, then that brings up the 5
--- bins so I can select from them into the press."*
+-- *"I added 4 grundies for Domain Publique but they're showing up in bins to
+-- return. Also when I pressed the Pearlstad bins it should have taken the
+-- picking bins out of the cold room and emptied them."*
 --
--- **`0052` took whole lots and `0054` closed them.** Starting a press emptied
--- every placement a source lot had and marked the lot spent, which was right
--- when a pick was assumed to go into a press in one go. It is wrong the moment
--- a pick is bigger than the press, which is most picks: five half tonne bins
--- against a 1.2 tonne press is two loads and a bit.
+-- **The first one is mine, from `0098`.** `register_bins` in `0085` marked a bin
+-- borrowed when a party other than this winery owned it, which is right for a
+-- picking bin: somebody else's bin goes back. `0098` generalised that function
+-- into `add_vessels` and carried the rule with it, so every vessel a client owns
+-- became a thing to return. Four Grundy tanks belonging to Domain Publique were
+-- the first to arrive through the new path and went straight onto the list.
 --
--- **So the source is a set of vessels, not a set of lots.** Somebody points at
--- three bins. The lots come from the bins rather than the other way round,
--- which is also how the screen he described works: open the pick, see its bins,
--- choose some.
+-- A lender still marks anything borrowed, because naming a lender is a statement
+-- that the thing goes back. Party ownership no longer does, except for bins,
+-- where it is `0036`'s rule and stays.
 --
--- **A pick is now spent when its last bin empties, and not before.** `0054`
--- closed the sources outright, and repeating that here would close a pick with
--- two bins still full of fruit, which is A13 with fruit in it: the app would
--- say the fruit is gone and it would be standing on the pad. The rule `0054`
--- was reaching for survives, in its true form: a pick with nothing in any
--- vessel is spent.
+-- **The second one was waiting to happen.** `bin_to_return` selects any active
+-- vessel flagged borrowed and empty, with nothing about it being a bin, on a
+-- screen called Bins to return. Even with `add_vessels` fixed, one tank marked
+-- on loan would have appeared there. It is now typed, which is what the name
+-- always claimed.
 --
--- **Shares are by what went in.** A load made of two bins at 850 and one at 400
--- is not three equal thirds of anything, and `bin_fruit` has known what is in
--- each bin since `0087`. Where nothing is known the fallback is the one `0052`
--- already chose, equal shares, and the caller is told how many bins were guessed
--- at rather than measured.
+-- **The third is a fact the app had and did not use.** `start_press` empties the
+-- bins that go into it, which is `0090` and which worked: the five Pearlstad
+-- bins hold nothing. What it did not do is move them, so they stayed on the map
+-- in the cold room they had been wheeled out of. They now go to where the press
+-- stands, through `move_vessels`, so a bin moved by a press and a bin moved by
+-- hand are moved by the same code.
+--
+-- Where the press has no room of its own, nothing moves: an unassigned vessel is
+-- one nobody can find, and that is worse than one in the wrong room.
 
 begin;
 
--- Dropped rather than replaced. The first parameter meant lots and now means
--- the vessels holding them, and `create or replace` cannot rename a parameter,
--- so the old signature would have survived beside the new one, taking lot ids
--- into a list of vessels and finding nothing. Every caller is revisited because
--- the call stops working, which is the only reliable way to move a meaning.
-drop function if exists start_press(uuid[], uuid, jsonb, jsonb);
+-- ---------------------------------------------------------------------------
+-- A client's tank is not on loan
+-- ---------------------------------------------------------------------------
+
+create or replace function add_vessels(
+  p_vessel jsonb,
+  p_count  int default 1
+)
+returns jsonb
+language plpgsql
+set search_path to 'public', 'pg_temp'
+as $$
+declare
+  want    int    := coalesce(p_count, 1);
+  lender  text   := nullif(btrim(coalesce(p_vessel -> 'attributes' ->> 'on_loan_from', '')), '');
+  owner   uuid   := (p_vessel ->> 'owner_id')::uuid;
+  given   text   := btrim(coalesce(p_vessel ->> 'name', ''));
+  bag     jsonb  := coalesce(p_vessel -> 'attributes', '{}'::jsonb);
+  is_bin  boolean;
+  prefix  text;
+  next_n  int;
+  made    text[] := '{}';
+  ids     uuid[] := '{}';
+  one     uuid;
+  nm      text;
+  i       int;
+begin
+  if not is_facility_user() then
+    raise exception 'only somebody who works here adds a vessel'
+      using errcode = 'insufficient_privilege';
+  end if;
+
+  if want <= 0 then
+    raise exception 'how many vessels?';
+  end if;
+  if want > 40 then
+    raise exception '% is not a number of vessels to add at once', want;
+  end if;
+
+  if (p_vessel ->> 'type_id') is null then
+    raise exception 'a vessel is of some type, and this one says none';
+  end if;
+
+  if lender is not null and owner is not null then
+    raise exception
+      'a vessel is either on loan from % or owned by a party here, and this says both', lender;
+  end if;
+
+  select coalesce((t.attributes ->> 'intake_bin')::boolean, false) into is_bin
+    from term t where t.id = (p_vessel ->> 'type_id')::uuid;
+
+  if lender is not null then
+    -- Naming a lender says it goes back, whatever kind of thing it is.
+    bag := bag || jsonb_build_object('borrowed', true, 'on_loan_from', lender);
+  elsif is_bin and owner is not null and owner is distinct from facility_party_id() then
+    -- 0036's rule, and it is about bins. A client's tank standing in this
+    -- winery is theirs and is not a thing on the returns list, which is what
+    -- 0098 accidentally said by carrying this line out of register_bins.
+    bag := bag || jsonb_build_object('borrowed', true);
+  end if;
+
+  if given = '' then
+    if lender is null then
+      raise exception 'a new vessel needs something to be called';
+    end if;
+    prefix := lender_prefix(lender);
+  else
+    prefix := btrim(regexp_replace(given, '\s*\d+$', ''));
+    if prefix = '' then
+      prefix := given;
+    end if;
+  end if;
+
+  if want = 1 and given <> '' then
+    one := coalesce((p_vessel ->> 'id')::uuid, gen_random_uuid());
+    insert into vessel
+      (id, type_id, name, capacity_l, location_id, owner_id, attributes,
+       has_glycol, setpoint_c, mode)
+    values
+      (one, (p_vessel ->> 'type_id')::uuid, given,
+       (p_vessel ->> 'capacity_l')::numeric,
+       (p_vessel ->> 'location_id')::uuid,
+       owner, bag,
+       coalesce((p_vessel ->> 'has_glycol')::boolean, false),
+       (p_vessel ->> 'setpoint_c')::numeric,
+       coalesce((p_vessel ->> 'mode')::thermal_mode, 'off'));
+    return jsonb_build_object(
+      'made', to_jsonb(array[given]), 'ids', to_jsonb(array[one]),
+      'count', 1, 'from', given, 'to', given, 'prefix', prefix);
+  end if;
+
+  select coalesce(max((regexp_match(v.name, '^' || prefix || '\s*(\d+)$'))[1]::int), 0) + 1
+    into next_n
+    from vessel v
+   where v.name ~ ('^' || prefix || '\s*\d+$');
+
+  for i in 0 .. want - 1
+  loop
+    nm  := prefix || (next_n + i)::text;
+    one := gen_random_uuid();
+    insert into vessel
+      (id, type_id, name, capacity_l, location_id, owner_id, attributes,
+       has_glycol, setpoint_c, mode)
+    values
+      (one, (p_vessel ->> 'type_id')::uuid, nm,
+       (p_vessel ->> 'capacity_l')::numeric,
+       (p_vessel ->> 'location_id')::uuid,
+       owner, bag,
+       coalesce((p_vessel ->> 'has_glycol')::boolean, false),
+       (p_vessel ->> 'setpoint_c')::numeric,
+       coalesce((p_vessel ->> 'mode')::thermal_mode, 'off'));
+    made := made || nm;
+    ids  := ids || one;
+  end loop;
+
+  return jsonb_build_object(
+    'made',   to_jsonb(made),
+    'ids',    to_jsonb(ids),
+    'count',  want,
+    'from',   made[1],
+    'to',     made[array_length(made, 1)],
+    'prefix', prefix);
+end;
+$$;
+
+revoke all on function add_vessels(jsonb, int) from public;
+grant execute on function add_vessels(jsonb, int) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- The bins to return list is about bins
+-- ---------------------------------------------------------------------------
+
+create or replace view bin_to_return with (security_invoker = true) as
+select
+  v.id      as vessel_id,
+  v.name    as bin_name,
+  vt.label  as bin_type,
+  v.owner_id,
+  coalesce(nullif(btrim(v.attributes ->> 'on_loan_from'), ''), p.name) as owed_to,
+  v.location_id
+from vessel v
+join term vt on vt.id = v.type_id and vt.kind = 'vessel_type'
+  -- 0104. What the screen has always been called. Without this, anything
+  -- flagged borrowed lands on it, which is how four tanks belonging to a
+  -- client appeared on a list of bins.
+  and coalesce((vt.attributes ->> 'intake_bin')::boolean, false)
+left join party p on p.id = v.owner_id
+where v.active
+  and coalesce((v.attributes ->> 'borrowed')::boolean, false)
+  and not exists (
+    select 1 from placement pl where pl.vessel_id = v.id and pl.to_at is null);
+
+comment on view bin_to_return is
+  'Picking bins that belong to somebody else and are empty. Bins only: a '
+  'borrowed tank is somebody else''s tank and is not on a returns list. See '
+  '0036 and 0104.';
+
+-- ---------------------------------------------------------------------------
+-- Bins that go into a press leave the room they were in
+-- ---------------------------------------------------------------------------
 
 create or replace function start_press(
   p_vessel_ids      uuid[],
@@ -65,6 +219,8 @@ language plpgsql
 set search_path to 'public', 'pg_temp'
 as $$
 declare
+  -- 0104. Where the press stands, which is where its bins end up.
+  press_room uuid;
   n_src        int := coalesce(array_length(p_vessel_ids, 1), 0);
   parent_stage node_stage;
   child_stage  node_stage;
@@ -262,6 +418,20 @@ begin
    where id in (select placement_id from going_in);
   get diagnostics emptied = row_count;
 
+  -- 0104. "When I pressed the Pearlstad bins it should have taken the picking
+  -- bins out of the cold room and emptied them." The emptying worked; the room
+  -- did not, so five bins stayed on the map in a cold room they had been
+  -- wheeled out of.
+  --
+  -- They go where the press is, because that is where somebody just carried
+  -- them and it is a fact the app already has. Through move_vessels rather than
+  -- an update here, so a bin moved by a press and a bin moved by hand are moved
+  -- by the same code and recorded the same way.
+  select v.location_id into press_room from vessel v where v.id = p_press_vessel_id;
+  if press_room is not null then
+    perform move_vessels(array(select g.vessel_id from going_in g), press_room);
+  end if;
+
   -- 0090. A pick is spent when its last bin empties, not when some of it is
   -- pressed. Closing it here with two bins still full would be the app saying
   -- the fruit is gone while it is standing in front of somebody.
@@ -308,65 +478,5 @@ begin
 end;
 $$;
 
-revoke all on function start_press(uuid[], uuid, jsonb, jsonb) from public;
-grant execute on function start_press(uuid[], uuid, jsonb, jsonb) to authenticated;
-
-comment on function start_press(uuid[], uuid, jsonb, jsonb) is
-  'Loads a press from a set of vessels, which for a pick means some of its bins. '
-  'The lots come from the vessels. A pick is closed only when its last bin '
-  'empties. See 0052, 0054 and 0090.';
-
--- ---------------------------------------------------------------------------
--- What is still on the pad
--- ---------------------------------------------------------------------------
-
--- The screen he described: click the pick, see its bins. A pick with bins still
--- full is a pick with fruit left, whether or not some of it is already juice.
-create or replace view pick_bin with (security_invoker = true) as
-select
-  n.id            as node_id,
-  n.name          as pick,
-  n.status::text  as status,
-  v.id            as vessel_id,
-  v.name          as bin,
-  bf.lbs,
-  bf.tons,
-  bf.said_as,
-  bf.pct_full,
-  p.from_at
-from node n
-join placement p on p.node_id = n.id and p.to_at is null
-join vessel v on v.id = p.vessel_id
-join term vt on vt.id = v.type_id
-  and coalesce((vt.attributes ->> 'intake_bin')::boolean, false)
-left join bin_fruit bf on bf.placement_id = p.id
-where n.stage = 'bin';
-
-comment on view pick_bin is
-  'The bins still holding fruit, by pick, with what is in each. What a press '
-  'screen offers once somebody has chosen a pick. See 0090.';
-
-grant select on pick_bin to authenticated;
-
-insert into readable (key, module, label, note, relation, id_column, label_column, sort_order) values
-  ('cellar.pick_bins', 'cellar', 'Bins on a pick',
-   'The bins still holding fruit, with what is in each. Choose from these to '
-   'load a press.',
-   'pick_bin', 'vessel_id', 'bin', 168)
-
-on conflict (key) do update set
-  module = excluded.module, label = excluded.label, note = excluded.note,
-  relation = excluded.relation, id_column = excluded.id_column,
-  label_column = excluded.label_column, sort_order = excluded.sort_order;
-
-update capability
-   set note = 'Loads a press from bins. A pick is usually more than one press, '
-              'so choose which bins are going in.',
-       fields = '[{"key":"vessels","param":"p_vessel_ids","type":"uuid[]","required":true,
-                   "label":"Which bins",
-                   "source":{"readable":"cellar.pick_bins"}},
-                  {"key":"press","param":"p_press_vessel_id","type":"uuid","required":true,
-                   "label":"Which press"}]'::jsonb
- where key = 'cellar.start_press';
 
 commit;

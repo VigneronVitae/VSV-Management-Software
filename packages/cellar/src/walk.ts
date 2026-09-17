@@ -1416,7 +1416,25 @@ function installBlock(): HTMLElement {
 // first, which is in memory and pin-gated, so every control worked and every
 // choice was thrown away on reload with nothing to show for it. See prefs.ts for
 // why there are three stores now and what each is for.
-type VesselOrder = "name" | "fullest" | "emptiest" | "type" | "recent" | "vintage";
+type VesselOrder =
+  | "name"
+  | "fullest"
+  | "emptiest"
+  | "type"
+  | "recent"
+  | "vintage"
+  // Two different questions, and at a custom crush winery they routinely
+  // have different answers: a client's wine in our barrel, our wine in a
+  // client's tank. "Another thing to sort by in vessels: owners" is
+  // ambiguous between them, so both are offered rather than guessed at.
+  | "wine-owner"
+  | "vessel-owner";
+
+// What to call a vessel's owner. owner_name is null for a vessel this winery
+// owns outright, which is a name in the list rather than a blank.
+function vesselOwner(v: VesselState): string {
+  return v.owner_name ?? "Ours";
+}
 
 function vesselListScreen(
   kit: VesselState[],
@@ -1458,6 +1476,22 @@ function vesselListScreen(
     // the list is a control that teaches somebody the screen is broken.
     ...(kit.some((v) => !v.is_empty && v.vintage_label === null) ? ["said"] : []),
   ];
+  // Whose wine, from the vessels themselves. Same reason the vintages are not
+  // written down: a client list in the client goes stale the first time
+  // somebody new brings fruit in.
+  const wineOwners = [
+    ...new Set(
+      kit
+        .filter((v) => !v.is_empty)
+        .map((v) => v.lot_owner_name)
+        .filter((x): x is string => !!x),
+    ),
+  ].sort();
+  let owner = pref("vessel_owner") || "";
+  if (owner && !wineOwners.includes(owner)) {
+    owner = "";
+    setPref("vessel_owner", "");
+  }
   let vintage = pref("vessel_vintage") || "";
   // A vintage this device chose last month that nothing is holding any more.
   // Left standing it hides every vessel while the control beside the empty list
@@ -1506,6 +1540,9 @@ function vesselListScreen(
     // An empty vessel is in no vintage, so choosing one drops the empties. That
     // is the point of choosing one: "show me the 2025" is asked by somebody
     // looking for wine, and the Show control above is where empties come back.
+    // Whose wine, so an empty vessel is not an answer to it. The Show control
+    // above is where the empties come back.
+    if (owner) out = out.filter((v) => v.lot_owner_name === owner);
     if (vintage === "said") {
       out = out.filter((v) => !v.is_empty && v.vintage_label === null);
     } else if (vintage) {
@@ -1532,6 +1569,16 @@ function vesselListScreen(
       // standing in the barrel room.
       recent: (a, b) =>
         (b.filled_at ?? "").localeCompare(a.filled_at ?? "") ||
+        a.name.localeCompare(b.name, undefined, { numeric: true }),
+      // Whose wine, with the empty vessels last: a vessel with nothing in it
+      // has no owner rather than an owner whose name sorts early.
+      "wine-owner": (a, b) =>
+        (a.is_empty ? 1 : 0) - (b.is_empty ? 1 : 0) ||
+        (a.lot_owner_name ?? "").localeCompare(b.lot_owner_name ?? "") ||
+        a.name.localeCompare(b.name, undefined, { numeric: true }),
+      // Whose vessel. Every vessel has an answer, because facility owned is one.
+      "vessel-owner": (a, b) =>
+        vesselOwner(a).localeCompare(vesselOwner(b)) ||
         a.name.localeCompare(b.name, undefined, { numeric: true }),
       // Newest vintage first, NV after the years, and the empties last. An
       // empty vessel has no vintage rather than an early one, so it sorts to
@@ -1691,6 +1738,8 @@ function vesselListScreen(
     el("option", { value: "emptiest", text: "Emptiest first" }),
     el("option", { value: "recent", text: "Most recently filled" }),
     el("option", { value: "vintage", text: "Vintage, newest first" }),
+    el("option", { value: "wine-owner", text: "Whose wine, then name" }),
+    el("option", { value: "vessel-owner", text: "Whose vessel, then name" }),
   );
   sort.value = order;
   on(sort, "change", () => {
@@ -1710,6 +1759,18 @@ function vesselListScreen(
     onlyFull = status.value === "full";
     onlyEmpty = status.value === "empty";
     setPref("vessel_only", status.value);
+    draw();
+  });
+
+  const whose = el("select", { class: "input" });
+  whose.replaceChildren(
+    el("option", { value: "", text: "Anybody's wine" }),
+    ...wineOwners.map((o) => el("option", { value: o, text: o })),
+  );
+  whose.value = owner;
+  on(whose, "change", () => {
+    owner = whose.value;
+    setPref("vessel_owner", owner);
     draw();
   });
 
@@ -1787,6 +1848,18 @@ function vesselListScreen(
                       { class: "field" },
                       el("span", { class: "field-label", text: "Vintage" }),
                       which,
+                    ),
+                  ]
+                : []),
+              // Same rule. A winery with no custom crush clients sees no
+              // control, because every answer would be its own name.
+              ...(wineOwners.length > 1
+                ? [
+                    el(
+                      "div",
+                      { class: "field" },
+                      el("span", { class: "field-label", text: "Whose wine" }),
+                      whose,
                     ),
                   ]
                 : []),

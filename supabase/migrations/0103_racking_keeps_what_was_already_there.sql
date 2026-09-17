@@ -1,192 +1,68 @@
 -- ---------------------------------------------------------------------------
 -- Type: migration
--- Purpose: "Racking, as one operation. The cellar does not distinguish moving
---           wine from combining wine: somebody puts a hose between vessels. So
---           the caller says which vessels wine came out of and which it went
---           into, and the kernel works out whether that preserved a lot or made
---           a new one."
--- Depends on: [supabase/migrations/0001_core_schema.sql,
---              supabase/migrations/0004_terms_and_effects.sql,
---              supabase/migrations/0013_close_on_empty.sql,
---              packages/cellar/docs/spec.md]
--- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql, supabase/migrations/0015_fork_and_history.sql, supabase/migrations/0021_cellar_write_paths.sql, supabase/migrations/0034_press.sql, supabase/migrations/0050_additions.sql,
---                  supabase/migrations/0072_a_barrel_remembers.sql,
---                  supabase/migrations/0102_a_tank_takes_more_than_one_pressing.sql,
---                  supabase/migrations/0103_racking_keeps_what_was_already_there.sql]
--- Axioms enforced: T0-2 (loss is derived, never stored), T0-3 (provenance on
---                  every event), T0-5 (append only)
--- Open sorries: S-21 (quantity stored and derivable), S-22 (a blend across
---               owners keeps one owner_id), S-23 (lees are recorded as a
---               quantity and are not yet material)
+-- Purpose: "Racking into a vessel that already holds wine keeps that wine. The
+--           blend absorbed it as a parent and then recorded only what arrived,
+--           so the litres already in the vessel left the record while staying
+--           in the vessel."
+-- Depends on: [supabase/migrations/0014_rack.sql,
+--              supabase/migrations/0049_every_lot_says_its_vintage.sql,
+--              supabase/migrations/0102_a_tank_takes_more_than_one_pressing.sql]
+-- Depended on by: [tests/schema_assertions.sql,
+--                  supabase/migrations/0104_a_pressed_bin_leaves_the_room.sql]
+-- Axioms enforced: T0-2 (a lot's quantity and the placements holding it are one
+--                  fact and cannot disagree)
+-- Open sorries: none
 -- ---------------------------------------------------------------------------
-
--- Why one function rather than two.
 --
--- Moving a lot and blending lots have different consequences: one adds
--- placements, the other mints a node and writes lineage. But they are the same
--- act in the cellar, and a client that decided which one was happening would be
--- a client deciding a business rule, which is the thing CLAUDE.md forbids. So
--- the caller describes the physical transfer and the kernel reads the shape:
+-- The winemaker, an hour after the press fix: *"I added 50 L to a barrel from
+-- the press, then 150 L from a tank I pressed into (via racking). Now it's just
+-- showing the 150 L in that barrel."*
 --
---   every source holds the same lot, destinations empty  ->  the lot moves
---   sources hold different lots                          ->  a new lot
---   a destination already holds a different lot          ->  a new lot
+-- **He is right and the wine was in the barrel the whole time.** VS2610 held
+-- 50 L of the Sep 15 Chardonnay cut. The rack at 05:13 closed that placement,
+-- made that lot a parent of a new blend, and gave the blend a placement of
+-- 150 L, which is what came down the hose.
 --
--- The operator never picks a mode, and never has to know they crossed from one
--- to the other. Which is precisely why rack_plan exists: the same rule, run
--- without writing anything, so a screen can say what is about to happen while
--- it is still cheap to change your mind.
+-- **The plan knew.** `rack_plan` counted the resident lot's 50 L as a
+-- contribution, and the lineage it produced says 0.75 and 0.25, which is 150 and
+-- 50 out of 200. Every share was right. Only the two numbers that say how much
+-- wine there is were wrong, and they were wrong by exactly the amount that was
+-- already in the barrel.
+--
+-- So this is not a change of behaviour. `0014` has said since the beginning that
+-- a destination holding another lot is absorbed into the blend; it absorbed it
+-- everywhere except in the volume.
+--
+-- Two numbers move: the placement in each destination gains what that vessel
+-- already held, and the blend's quantity gains the total, because a lot whose
+-- quantity disagrees with the placements holding it is the thing T0-2 is for.
+--
+-- **This replaces `0049`'s rack, not `0014`'s.** `0049` redefined the whole
+-- function in upper case as `CREATE OR REPLACE FUNCTION public.rack`, which is
+-- why a search for the lower case form finds only `0014`. Rebuilding from
+-- `0014` would have quietly reverted the vintage handling `0049` added, and did,
+-- for about four minutes: the assertion suite refused the next blend it tried to
+-- write because the node violated `node_says_its_vintage`. The lesson is that
+-- the source for a function is the latest definition or the live catalog, never
+-- the migration that first created it.
+--
+-- `in_l`, `out_l` and `loss_l` are untouched and still describe the transfer:
+-- 150 L left the tank and 150 L arrived. The 50 L never moved, so counting it as
+-- arriving would make the loss read as negative.
+--
+-- **This is not retroactive.** Any rack already recorded into an occupied vessel
+-- is still short by what was there, and no migration can find them reliably,
+-- because a placement that is simply low looks exactly like one somebody
+-- measured. VS2610 was corrected by hand with an event recording what changed
+-- and why.
 
--- ---------------------------------------------------------------------------
--- What this transfer would do
--- ---------------------------------------------------------------------------
+begin;
 
-create or replace function rack_plan(
-  p_sources      jsonb,
-  p_destinations jsonb
-)
-returns jsonb
-language plpgsql
-stable
-as $$
-declare
-  src        jsonb;
-  dst        jsonb;
-  parents    jsonb := '[]'::jsonb;
-  overfill   jsonb := '[]'::jsonb;
-  out_total  numeric := 0;
-  in_total   numeric := 0;
-  node_ids   uuid[] := '{}';
-  owners     uuid[] := '{}';
-  v_id       uuid;
-  n_id       uuid;
-  vol        numeric;
-  held       numeric;
-  cap        numeric;
-  v_name     text;
-  n_name     text;
-  n_owner    uuid;
-begin
-  if jsonb_array_length(coalesce(p_sources, '[]'::jsonb)) = 0 then
-    raise exception 'a rack needs somewhere to come from';
-  end if;
-  if jsonb_array_length(coalesce(p_destinations, '[]'::jsonb)) = 0 then
-    raise exception 'a rack needs somewhere to go';
-  end if;
-
-  -- Sources. Each must currently hold something, because wine cannot come out
-  -- of a vessel the app believes is empty.
-  for src in select value from jsonb_array_elements(p_sources)
-  loop
-    v_id := (src ->> 'vessel_id')::uuid;
-    vol  := (src ->> 'volume_l')::numeric;
-
-    select p.node_id, p.volume_l, v.name, n.name, n.owner_id
-      into n_id, held, v_name, n_name, n_owner
-      from placement p
-      join vessel v on v.id = p.vessel_id
-      join node n on n.id = p.node_id
-     where p.vessel_id = v_id and p.to_at is null;
-
-    if n_id is null then
-      select name into v_name from vessel where id = v_id;
-      raise exception '% is empty, so nothing can be racked out of it',
-        coalesce(v_name, v_id::text);
-    end if;
-
-    if vol is null or vol <= 0 then
-      raise exception 'how much came out of % is not recorded', v_name;
-    end if;
-    if held is not null and vol > held then
-      raise exception '% holds % L and this takes % L out of it', v_name, held, vol;
-    end if;
-
-    out_total := out_total + vol;
-    if not (n_id = any(node_ids)) then
-      node_ids := node_ids || n_id;
-      owners   := owners || n_owner;
-      parents  := parents || jsonb_build_object(
-        'node_id', n_id, 'name', n_name, 'owner_id', n_owner, 'volume_l', vol);
-    else
-      -- the same lot drawn from more than one of its vessels
-      parents := (
-        select jsonb_agg(
-          case when (e ->> 'node_id')::uuid = n_id
-               then jsonb_set(e, '{volume_l}',
-                    to_jsonb((e ->> 'volume_l')::numeric + vol))
-               else e end)
-        from jsonb_array_elements(parents) e);
-    end if;
-  end loop;
-
-  -- Destinations. A destination that already holds a different lot is not an
-  -- error, it is a blend, and the lot already in there is another parent.
-  for dst in select value from jsonb_array_elements(p_destinations)
-  loop
-    v_id := (dst ->> 'vessel_id')::uuid;
-    vol  := (dst ->> 'volume_l')::numeric;
-
-    select v.name, v.capacity_l into v_name, cap from vessel v where v.id = v_id;
-    if v_name is null then
-      raise exception 'no vessel with id %', v_id;
-    end if;
-    if vol is null or vol <= 0 then
-      raise exception 'how much went into % is not recorded', v_name;
-    end if;
-
-    select p.node_id, p.volume_l, n.name, n.owner_id
-      into n_id, held, n_name, n_owner
-      from placement p join node n on n.id = p.node_id
-     where p.vessel_id = v_id and p.to_at is null;
-
-    if n_id is not null and not (n_id = any(node_ids)) then
-      node_ids := node_ids || n_id;
-      owners   := owners || n_owner;
-      parents  := parents || jsonb_build_object(
-        'node_id', n_id, 'name', n_name, 'owner_id', n_owner,
-        'volume_l', coalesce(held, 0));
-    end if;
-
-    in_total := in_total + vol;
-
-    -- Capacity is the one physical impossibility worth refusing. Nominal and
-    -- actual differ, so this is a question rather than a wall: the caller can
-    -- say it meant it, and that saying so is recorded.
-    if cap is not null and (coalesce(held, 0) + vol) > cap then
-      overfill := overfill || jsonb_build_object(
-        'vessel_id', v_id, 'name', v_name, 'capacity_l', cap,
-        'would_hold', coalesce(held, 0) + vol);
-    end if;
-  end loop;
-
-  return jsonb_build_object(
-    'kind',        case when array_length(node_ids, 1) = 1 then 'move' else 'blend' end,
-    'node_id',     case when array_length(node_ids, 1) = 1 then node_ids[1] end,
-    'parents',     parents,
-    'out_l',       out_total,
-    'in_l',        in_total,
-    -- Derived, never stored. T0-2.
-    'loss_l',      out_total - in_total,
-    'overfill',    overfill,
-    'mixed_owners',(select count(distinct o) > 1 from unnest(owners) o where o is not null)
-  );
-end;
-$$;
-
--- ---------------------------------------------------------------------------
--- Do it
--- ---------------------------------------------------------------------------
-
-create or replace function rack(
-  p_sources        jsonb,
-  p_destinations   jsonb,
-  p_data           jsonb   default '{}'::jsonb,
-  p_allow_overfill boolean default false,
-  p_node           jsonb   default '{}'::jsonb
-)
-returns jsonb
-language plpgsql
-as $$
+CREATE OR REPLACE FUNCTION public.rack(p_sources jsonb, p_destinations jsonb, p_data jsonb DEFAULT '{}'::jsonb, p_allow_overfill boolean DEFAULT false, p_node jsonb DEFAULT '{}'::jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
 declare
   plan      jsonb;
   src       jsonb;
@@ -202,6 +78,11 @@ declare
   contributed numeric;
   remaining int;
   ev_id     uuid := gen_random_uuid();
+  -- 0103. What each destination already held, by vessel. It is part of the
+  -- blend and it is still in the vessel afterwards, which is the fact this
+  -- function used to lose.
+  absorbed   jsonb := '{}'::jsonb;
+  absorbed_l numeric := 0;
 begin
   plan := rack_plan(p_sources, p_destinations);
 
@@ -220,7 +101,7 @@ begin
     -- composition is derived from lineage rather than copied onto the child.
     new_id := coalesce((p_node ->> 'id')::uuid, gen_random_uuid());
     insert into node (id, stage, status, name, quantity, unit,
-                      variety_id, vintage, product_type_id, owner_id, created_by,
+                      variety_id, vintage, non_vintage, product_type_id, owner_id, created_by,
                       attributes)
     select
       new_id,
@@ -233,8 +114,14 @@ begin
                    then (array_agg(distinct n.variety_id))[1] end
          from node n where n.id = any(
            select (e ->> 'node_id')::uuid from jsonb_array_elements(plan -> 'parents') e)),
-      (select case when count(distinct n.vintage) = 1
+      -- 0049. A blend of two vintages is a non-vintage wine, which is a
+      -- thing this schema could not say before and recorded as a blank.
+      (select case when count(distinct n.vintage) = 1 and bool_and(not n.non_vintage)
                    then min(n.vintage) end
+         from node n where n.id = any(
+           select (e ->> 'node_id')::uuid from jsonb_array_elements(plan -> 'parents') e)),
+      (select case when count(distinct n.vintage) = 1 and bool_and(not n.non_vintage)
+                   then false else true end
          from node n where n.id = any(
            select (e ->> 'node_id')::uuid from jsonb_array_elements(plan -> 'parents') e)),
       (select case when count(distinct n.product_type_id) = 1
@@ -316,6 +203,13 @@ begin
           from placement p
          where p.vessel_id = (dst ->> 'vessel_id')::uuid and p.to_at is null;
 
+        -- 0103. Remembered per vessel, because it goes back into that same
+        -- vessel below. rack_plan already counts it as a parent's contribution,
+        -- which is why the shares were right while the volume was not.
+        absorbed := absorbed || jsonb_build_object(
+          dst ->> 'vessel_id', coalesce(held, 0));
+        absorbed_l := absorbed_l + coalesce(held, 0);
+
         update placement set to_at = now()
          where vessel_id = (dst ->> 'vessel_id')::uuid and to_at is null;
 
@@ -345,7 +239,12 @@ begin
   for dst in select value from jsonb_array_elements(p_destinations)
   loop
     v_id := (dst ->> 'vessel_id')::uuid;
-    vol  := (dst ->> 'volume_l')::numeric;
+    -- What arrived, plus what was already standing there and has just been
+    -- absorbed into this blend. 0014 wrote only the first of those, so a barrel
+    -- holding 50 L that took 150 L read as 150 L afterwards and fifty litres of
+    -- wine left the record while staying in the barrel.
+    vol  := (dst ->> 'volume_l')::numeric
+            + coalesce((absorbed ->> (dst ->> 'vessel_id'))::numeric, 0);
 
     select p.volume_l into held
       from placement p where p.vessel_id = v_id and p.to_at is null
@@ -359,6 +258,15 @@ begin
       values (target, v_id, vol);
     end if;
   end loop;
+
+  -- The blend was minted with what arrived, before anything was known about
+  -- what the destinations already held. A lot whose quantity disagrees with the
+  -- placements holding it is the shape T0-2 exists to prevent, and here it was
+  -- low by exactly the wine that was already in the vessel.
+  if plan ->> 'kind' = 'blend' and absorbed_l > 0 then
+    update node set quantity = coalesce(total_in, 0) + absorbed_l
+     where id = target;
+  end if;
 
   -- A move keeps its identity and loses only what the hose kept.
   if plan ->> 'kind' = 'move' then
@@ -379,6 +287,17 @@ begin
             'overfilled', jsonb_array_length(plan -> 'overfill') > 0),
           'observed');
 
-  return plan || jsonb_build_object('node_id', target, 'event_id', ev_id);
+  return plan || jsonb_build_object('node_id', target, 'event_id', ev_id,
+                                   -- So a screen can say what is in the vessel
+                                   -- rather than only what went down the hose.
+                                   'absorbed_l', absorbed_l);
 end;
-$$;
+$function$;
+
+
+comment on function rack(jsonb, jsonb, jsonb, boolean, jsonb) is
+  'Moves or blends wine. A destination that already holds another lot is a '
+  'blend, and what that vessel held stays in it: the placement is what arrived '
+  'plus what was absorbed. See 0014 and 0103.';
+
+commit;

@@ -68,7 +68,9 @@
 --              supabase/migrations/0099_a_vessel_says_which_vintage.sql,
 --              supabase/migrations/0100_a_jacket_is_on_a_machine.sql,
 --              supabase/migrations/0101_a_note_can_be_about_a_screen.sql,
---              supabase/migrations/0102_a_tank_takes_more_than_one_pressing.sql]
+--              supabase/migrations/0102_a_tank_takes_more_than_one_pressing.sql,
+--              supabase/migrations/0103_racking_keeps_what_was_already_there.sql,
+--              supabase/migrations/0104_a_pressed_bin_leaves_the_room.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh, scripts/rpc-args.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -11216,6 +11218,208 @@ begin
     raise exception 'FAIL: riesling into a tank of chardonnay says nothing';
   end if;
   perform test_ok('a pressing of a different variety into an occupied tank goes through and says so, because somebody can pour before telling the app and a refusal at the press loses the number');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- racking keeps what was already there'; end $$;
+
+-- 0103. "I added 50 L to a barrel from the press, then 150 L from a tank I
+-- pressed into (via racking). Now it's just showing the 150 L in that barrel."
+--
+-- The wine was in the barrel the whole time. rack_plan counted the 50 L as a
+-- parent's contribution and the shares it wrote were right; the placement and
+-- the blend's quantity were given what arrived instead of what was there.
+do $$
+declare
+  tank   uuid := '00000000-0000-0000-0000-0000000fd001';
+  barrel uuid := '00000000-0000-0000-0000-0000000fd002';
+  lot_t  uuid := '00000000-0000-0000-0000-0000000fd011';
+  lot_b  uuid := '00000000-0000-0000-0000-0000000fd012';
+  out_js jsonb;
+  vol    numeric;
+  qty    numeric;
+  placed numeric;
+begin
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+
+  insert into vessel (id, name, type_id, capacity_l) values
+    (tank,   'CR tank',   term_id('vessel_type', 'tank'),   1000),
+    (barrel, 'CR barrel', term_id('vessel_type', 'barrel'), 228);
+  insert into node (id, stage, status, name, quantity, unit, vintage, non_vintage, created_by) values
+    (lot_t, 'maturation', 'open', 'CR tank wine',   600, 'L', 2026, false,
+     '00000000-0000-0000-0000-00000000a001'),
+    (lot_b, 'maturation', 'open', 'CR barrel wine',  50, 'L', 2026, false,
+     '00000000-0000-0000-0000-00000000a001');
+  insert into placement (node_id, vessel_id, volume_l) values
+    (lot_t, tank, 600),
+    (lot_b, barrel, 50);
+
+  out_js := rack(
+    jsonb_build_array(jsonb_build_object('vessel_id', tank,   'volume_l', 150)),
+    jsonb_build_array(jsonb_build_object('vessel_id', barrel, 'volume_l', 150)));
+
+  -- **The bug, in one number.** A barrel holding 50 that takes 150 holds 200.
+  select volume_l into vol from placement
+   where vessel_id = barrel and to_at is null;
+  if vol <> 200 then
+    raise exception 'FAIL: a barrel holding 50 L that took 150 L reads % L', vol;
+  end if;
+  perform test_ok('racking into a vessel that already holds wine leaves what was there plus what arrived, because the wine already in the barrel does not leave it by being blended with');
+
+  -- And the lot agrees with the vessel holding it, which is the other half.
+  select node_id into lot_b from placement where vessel_id = barrel and to_at is null;
+  select quantity into qty from node where id = lot_b;
+  select sum(volume_l) into placed from placement where node_id = lot_b and to_at is null;
+  if qty <> placed then
+    raise exception 'FAIL: the blend says % L and its placements hold % L', qty, placed;
+  end if;
+  perform test_ok('the blended lot''s quantity and the placements holding it agree, which is the disagreement T0-2 exists to prevent and the one this left behind');
+
+  -- The transfer numbers describe the transfer and are deliberately unchanged:
+  -- 150 L left the tank and 150 L arrived. Counting the 50 as arriving would
+  -- make the loss negative.
+  if (out_js ->> 'in_l')::numeric <> 150 or (out_js ->> 'out_l')::numeric <> 150 then
+    raise exception 'FAIL: the transfer reports % out and % in',
+      out_js ->> 'out_l', out_js ->> 'in_l';
+  end if;
+  if (out_js ->> 'absorbed_l')::numeric <> 50 then
+    raise exception 'FAIL: the rack absorbed % L', out_js ->> 'absorbed_l';
+  end if;
+  perform test_ok('what went down the hose and what was already standing in the vessel are reported separately, so the loss stays the difference between out and in rather than going negative');
+
+  -- The shares were always right, and stay right.
+  select sum(fraction) into vol from lineage where child_id = lot_b;
+  if vol < 0.99 or vol > 1.01 then
+    raise exception 'FAIL: the blend''s shares sum to %', vol;
+  end if;
+  perform test_ok('the shares of the blend still sum to one, which they did before this fix as well: rack_plan always counted the wine in the destination, and only the volume forgot it');
+
+  -- The source lost what left it, which was never in doubt and is the thing a
+  -- change to the destination could plausibly break.
+  select volume_l into vol from placement where vessel_id = tank and to_at is null;
+  if vol <> 450 then
+    raise exception 'FAIL: 150 L left a 600 L tank and it holds % L', vol;
+  end if;
+  perform test_ok('the tank the wine came out of is down by what left it, unchanged by the destination now keeping what it held');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- a pressed bin leaves the room'; end $$;
+
+-- 0104. "I added 4 grundies for Domain Publique but they're showing up in bins
+-- to return. Also when I pressed the Pearlstad bins it should have taken the
+-- picking bins out of the cold room and emptied them."
+do $$
+declare
+  cold   uuid := '00000000-0000-0000-0000-0000000fe001';
+  pad    uuid := '00000000-0000-0000-0000-0000000fe002';
+  press  uuid := '00000000-0000-0000-0000-0000000fe011';
+  quiet  uuid := '00000000-0000-0000-0000-0000000fe012';
+  pick   uuid := '00000000-0000-0000-0000-0000000fe021';
+  pick2  uuid := '00000000-0000-0000-0000-0000000fe022';
+  client uuid;
+  bin_t  uuid;
+  tank_t uuid;
+  out_js jsonb;
+  n      int;
+  where_ uuid;
+begin
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+
+  select id into client from party where kind = 'client' limit 1;
+  select id into bin_t from term
+   where kind = 'vessel_type' and coalesce((attributes ->> 'intake_bin')::boolean, false)
+   limit 1;
+  select id into tank_t from term
+   where kind = 'vessel_type' and active
+     and not coalesce((attributes ->> 'intake_bin')::boolean, false)
+   limit 1;
+
+  insert into location (id, name) values (cold, 'CP cold room'), (pad, 'CP crush pad');
+  insert into vessel (id, name, type_id, capacity_l, location_id) values
+    (press, 'CP press', term_id('vessel_type', 'press'), 1200, pad),
+    (quiet, 'CP press with no room', term_id('vessel_type', 'press'), 1200, null);
+
+  -- **The one he hit.** A client's tank is theirs and is not a thing on a
+  -- returns list. 0098 said it was, by carrying a bin rule into every vessel.
+  out_js := add_vessels(jsonb_build_object(
+    'type_id', tank_t, 'name', 'CP client tank', 'owner_id', client), 1);
+  if exists (select 1 from vessel
+              where name = 'CP client tank'
+                and coalesce((attributes ->> 'borrowed')::boolean, false)) then
+    raise exception 'FAIL: a tank a client owns is marked as borrowed';
+  end if;
+  if exists (select 1 from bin_to_return where bin_name = 'CP client tank') then
+    raise exception 'FAIL: a client''s tank is on the list of bins to return';
+  end if;
+  perform test_ok('a vessel a client owns is not a thing to give back, which is what 0098 said by moving a picking bin rule into the function that makes every vessel');
+
+  -- And 0036's rule, which is about bins, is untouched.
+  perform register_bins(2, bin_t, 'CPB', client, null);
+  if not exists (select 1 from bin_to_return where bin_name like 'CPB%') then
+    raise exception 'FAIL: a picking bin a client owns is not on the returns list';
+  end if;
+  perform test_ok('a picking bin somebody else owns is still on the returns list, because that rule was right and is about bins rather than about ownership');
+
+  -- Naming a lender says it goes back, whatever it is. It is still not a bin,
+  -- so it is not on a list of bins.
+  perform add_vessels(jsonb_build_object(
+    'type_id', tank_t, 'name', 'CP loaned tank',
+    'attributes', jsonb_build_object('on_loan_from', 'Somebody')), 1);
+  if not exists (select 1 from vessel
+                  where name = 'CP loaned tank'
+                    and coalesce((attributes ->> 'borrowed')::boolean, false)) then
+    raise exception 'FAIL: naming a lender did not mark the vessel as going back';
+  end if;
+  if exists (select 1 from bin_to_return where bin_name = 'CP loaned tank') then
+    raise exception 'FAIL: a borrowed tank appears on the list of bins to return';
+  end if;
+  perform test_ok('naming a lender still says a vessel goes back whatever it is, and the bins to return list is still only bins, which is what its name has always claimed');
+
+  -- **The bins leave the room.** They were wheeled to the press; the app kept
+  -- drawing them in the cold room they came out of.
+  perform add_bins_to_pick(
+    jsonb_build_object('id', pick, 'variety_id', term_id('variety', 'chardonnay'),
+                       'vintage', 2026),
+    null, 2, bin_t, 'CPCOLD', 100);
+  update vessel set location_id = cold
+   where id in (select vessel_id from placement where node_id = pick and to_at is null);
+  perform weigh_bins(pick,
+    array(select vessel_id from unweighed_bin where node_id = pick), 1800);
+
+  out_js := start_press(array(select vessel_id from placement
+                          where node_id = pick and to_at is null), press);
+
+  select count(*) into n from vessel
+   where name like 'CPCOLD%' and location_id = cold;
+  if n <> 0 then
+    raise exception 'FAIL: % bins are still in the cold room after being pressed', n;
+  end if;
+  select count(*) into n from vessel
+   where name like 'CPCOLD%' and location_id = pad;
+  if n <> 2 then
+    raise exception 'FAIL: % of the pressed bins are where the press is', n;
+  end if;
+  perform test_ok('bins that go into a press end up where the press is rather than staying in the room they were wheeled out of, because somebody just carried them there and the app already knew where the press stands');
+
+  -- A press with no room of its own moves nothing: an unassigned vessel is one
+  -- nobody can find, which is worse than one in the wrong room.
+  perform add_bins_to_pick(
+    jsonb_build_object('id', pick2, 'variety_id', term_id('variety', 'chardonnay'),
+                       'vintage', 2026),
+    null, 1, bin_t, 'CPKEEP', 100);
+  update vessel set location_id = cold
+   where id in (select vessel_id from placement where node_id = pick2 and to_at is null);
+  perform weigh_bins(pick2,
+    array(select vessel_id from unweighed_bin where node_id = pick2), 900);
+  perform start_press(array(select vessel_id from placement
+                        where node_id = pick2 and to_at is null), quiet);
+
+  select location_id into where_ from vessel where name like 'CPKEEP%' limit 1;
+  if where_ is distinct from cold then
+    raise exception 'FAIL: a press with no room of its own moved a bin to %', where_;
+  end if;
+  perform test_ok('a press that stands nowhere in particular leaves its bins where they were, because a vessel in no room at all is one nobody can find and that is worse than one in the wrong room');
 end $$;
 
 do $$ begin raise notice '--- all assertions passed'; end $$;
