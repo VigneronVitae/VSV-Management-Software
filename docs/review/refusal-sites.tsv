@@ -261,6 +261,7 @@ hook_up_glycol:guard:7	hook_up_glycol	guard	if open_machine = p_machine_id then	
 hook_up_glycol:guard:8	hook_up_glycol	guard	if open_id is not null then	if false then	1
 hook_up_glycol:guard:9	hook_up_glycol	guard	if when_ < open_from then	if false then	1
 hook_up_glycol:raise:7	hook_up_glycol	raise	raise exception	raise notice	7
+machine_spec:permissive:1	machine_spec	permissive	and coalesce((t.attributes ->> 'changes_spec')::boolean, false)	and coalesce((t.attributes ->> 'changes_spec')::boolean, true)	1
 make_invite:guard:1	make_invite	guard	if not is_admin() then	if false then	1
 make_invite:raise:1	make_invite	raise	raise exception 'only an administrator lets somebody in';	raise notice 'only an administrator lets somebody in';	1
 move_vessels:guard:1	move_vessels	guard	if not is_facility_user() then	if false then	1
@@ -408,6 +409,19 @@ record_event:guard:2	record_event	guard	if p_vessel_ids is not null and array_le
 record_event:guard:3	record_event	guard	if n_here = 0 then	if false then	1
 record_event:raise:2	record_event	raise	raise exception 'none of those vessels hold that lot';	raise notice 'none of those vessels hold that lot';	1
 record_event:guard:4	record_event	guard	if n_here < n_total then	if false then	1
+record_machine_work:guard:1	record_machine_work	guard	if not is_facility_user() then	if false then	1
+record_machine_work:raise:1	record_machine_work	raise	raise exception 'only somebody who works here records work on a machine'	raise notice 'only somebody who works here records work on a machine'	1
+record_machine_work:guard:2	record_machine_work	guard	if not exists (select 1 from machine where id = p_machine_id) then	if false then	1
+record_machine_work:raise:2	record_machine_work	raise	raise exception 'no machine with id %', p_machine_id;	raise notice 'no machine with id %', p_machine_id;	1
+record_machine_work:guard:3	record_machine_work	guard	if said is null then	if false then	1
+record_machine_work:raise:3	record_machine_work	raise	raise exception 'there is nothing here to say';	raise notice 'there is nothing here to say';	1
+record_machine_work:permissive:1	record_machine_work	permissive	select t.id, coalesce((t.attributes ->> 'changes_spec')::boolean, false)	select t.id, coalesce((t.attributes ->> 'changes_spec')::boolean, true)	1
+record_machine_work:guard:4	record_machine_work	guard	if k is null then	if false then	1
+record_machine_work:raise:4	record_machine_work	raise	raise exception '% is not a kind of work this winery records', p_kind;	raise notice '% is not a kind of work this winery records', p_kind;	1
+record_machine_work:guard:5	record_machine_work	guard	if p_spec_change is not null and p_spec_change <> '{}'::jsonb and not changes then	if false then	1
+record_machine_work:raise:5	record_machine_work	raise	raise exception	raise notice	5
+record_machine_work:guard:6	record_machine_work	guard	if when_ > current_date then	if false then	1
+record_machine_work:raise:6	record_machine_work	raise	raise exception 'that date has not happened yet, so it is not work that was done';	raise notice 'that date has not happened yet, so it is not work that was done';	1
 record_vessel_note:guard:1	record_vessel_note	guard	if op is null then	if false then	1
 record_vessel_note:raise:1	record_vessel_note	raise	raise exception 'there is no operation called %', p_operation;	raise notice 'there is no operation called %', p_operation;	1
 refuse_forking_a_pick:head:1	refuse_forking_a_pick	head	if (select stage from node where id = new.parent_id) = 'bin'\n     and (select stage from node where id = new.child_id) = 'bin' then	if false then	1
@@ -440,6 +454,27 @@ register_glycol_machine:guard:3	register_glycol_machine	guard	if exists (select 
 register_glycol_machine:raise:3	register_glycol_machine	raise	raise exception 'there is already a glycol machine called %', nm;	raise notice 'there is already a glycol machine called %', nm;	1
 register_glycol_machine:permissive:1	register_glycol_machine	permissive	values (nm, coalesce(p_can_heat, false), p_location_id, auth.uid())	values (nm, coalesce(p_can_heat, true), p_location_id, auth.uid())	1
 register_glycol_machine:permissive:2	register_glycol_machine	permissive	return jsonb_build_object('id', one, 'name', nm, 'can_heat', coalesce(p_can_heat, false));	return jsonb_build_object('id', one, 'name', nm, 'can_heat', coalesce(p_can_heat, true));	1
+register_machine:guard:1	register_machine	guard	if not is_facility_user() then	if false then	1
+register_machine:raise:1	register_machine	raise	raise exception 'only somebody who works here registers a machine'	raise notice 'only somebody who works here registers a machine'	1
+register_machine:guard:2	register_machine	guard	if nm is null then	if false then	1
+register_machine:raise:2	register_machine	raise	raise exception 'a machine needs something to be called';	raise notice 'a machine needs something to be called';	1
+register_machine:head:1	register_machine	head	if p_model_id is not null\n     and not exists (select 1 from machine_model where id = p_model_id) then	if false then	1
+register_machine:raise:3	register_machine	raise	raise exception 'no machine model with id %', p_model_id;	raise notice 'no machine model with id %', p_model_id;	1
+register_machine:guard:3	register_machine	guard	if p_vessel_id is not null then	if false then	1
+register_machine:guard:4	register_machine	guard	if not exists (select 1 from vessel where id = p_vessel_id and active) then	if false then	1
+register_machine:raise:4	register_machine	raise	raise exception 'that vessel is not one a machine can be';	raise notice 'that vessel is not one a machine can be';	1
+register_machine:guard:5	register_machine	guard	if taken is not null then	if false then	1
+register_machine:raise:5	register_machine	raise	raise exception 'that vessel is already registered as the machine %', taken;	raise notice 'that vessel is already registered as the machine %', taken;	1
+register_machine:guard:6	register_machine	guard	if place is null then	if false then	1
+register_machine_model:guard:1	register_machine_model	guard	if not is_facility_user() then	if false then	1
+register_machine_model:raise:1	register_machine_model	raise	raise exception 'only somebody who works here registers a machine model'	raise notice 'only somebody who works here registers a machine model'	1
+register_machine_model:guard:2	register_machine_model	guard	if mk is null or md is null then	if false then	1
+register_machine_model:raise:2	register_machine_model	raise	raise exception 'a model is a make and a model, and this gives %',	raise notice 'a model is a make and a model, and this gives %',	1
+register_machine_model:guard:3	register_machine_model	guard	if p_kind is not null then	if false then	1
+register_machine_model:guard:4	register_machine_model	guard	if want_kind is null then	if false then	1
+register_machine_model:raise:3	register_machine_model	raise	raise exception '% is not a kind of machine this winery knows about', p_kind;	raise notice '% is not a kind of machine this winery knows about', p_kind;	1
+register_machine_model:head:1	register_machine_model	head	if exists (select 1 from machine_model\n              where active and lower(make) = lower(mk) and lower(model) = lower(md)) then	if false then	1
+register_machine_model:raise:4	register_machine_model	raise	raise exception 'there is already a % % registered', mk, md;	raise notice 'there is already a % % registered', mk, md;	1
 register_subject_resolver:guard:1	register_subject_resolver	guard	if not is_admin() then	if false then	1
 register_subject_resolver:raise:1	register_subject_resolver	raise	raise exception 'only an administrator may register a resolver'	raise notice 'only an administrator may register a resolver'	1
 remove_pick:guard:1	remove_pick	guard	if n.id is null then	if false then	1

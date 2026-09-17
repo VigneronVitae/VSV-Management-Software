@@ -70,7 +70,9 @@
 --              supabase/migrations/0101_a_note_can_be_about_a_screen.sql,
 --              supabase/migrations/0102_a_tank_takes_more_than_one_pressing.sql,
 --              supabase/migrations/0103_racking_keeps_what_was_already_there.sql,
---              supabase/migrations/0104_a_pressed_bin_leaves_the_room.sql]
+--              supabase/migrations/0104_a_pressed_bin_leaves_the_room.sql,
+--              supabase/migrations/0105_a_machine_is_a_departure_from_its_model.sql,
+--              supabase/migrations/0106_the_acts_a_shop_performs.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh, scripts/rpc-args.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -2610,7 +2612,12 @@ begin
   -- true. The read could arguably be wider, since the list of screens in this
   -- app is not a secret, and it is scoped anyway because a client has no use
   -- for it and the narrower answer needs no argument.
-  want := '108';
+  -- 108 before 0105, which added six across the three shop tables:
+  -- machine_model, machine and machine_work, a read and a write on each, all
+  -- scoped to is_facility_user(). None reads blanket true. What is wrong with
+  -- the tractor is not a custom crush client's business, and the narrower
+  -- answer needs no argument.
+  want := '114';
   if have <> want then
     raise exception
       'FAIL: there are % policies in public and this suite was written against %. If that is deliberate, update this number, and judge the new policy in the disposition list below if it reads or writes blanket true', have, want;
@@ -2953,7 +2960,14 @@ begin
   -- unique on the key the client routes on. No foreign keys, deliberately: a
   -- note names its subject by type and id rather than by a column per kind,
   -- which is S-4 and the reason `doctor` exists.
-  want := 'c=48 f=82 p=44 u=22';
+  -- c=48 f=82 p=44 u=22 before 0105, which added three tables. Three checks
+  -- that a model, a machine and an entry each say something rather than being
+  -- blank. Eleven keys: each table's author, the two composite pins into the
+  -- machine_kind and machine_work_kind vocabularies with their plain kind_id
+  -- beside them, a machine's model and room, an entry's machine, and the
+  -- bridge. One unique, on machine.vessel_id, which is what stops a press
+  -- having two histories.
+  want := 'c=51 f=93 p=47 u=23';
   if have <> want then
     raise exception
       E'FAIL: the constraint inventory changed.\nnow:  %\nwas:  %\nIf that is deliberate, update this line in the same commit that changed the schema.', have, want;
@@ -2984,6 +2998,12 @@ begin
 
   want := 'event.event_operation_is_an_operation, '
        || 'location.location_kind_is_a_location_kind, '
+       -- 0105. The shop's two vocabularies, pinned exactly as every other
+       -- pointer into term has been since 0027: a machine is of a kind, and a
+       -- piece of work is of a kind, and neither can be given a term belonging
+       -- to some other vocabulary.
+       || 'machine_model.machine_model_kind_is_a_machine_kind, '
+       || 'machine_work.machine_work_kind_is_a_work_kind, '
        -- 0071. A lot says its colour, pinned the way the variety and the
        -- product type already are. It is the fact a barrel's own colour is
        -- derived from, and no other column in this schema can answer it.
@@ -3031,6 +3051,9 @@ begin
   -- through a positional alias list and reordering node silently rebinds it.
   want := 'event.operation_kind=''operation''::text '
        || 'location.kind_kind=''location_kind''::text '
+       -- 0105, the kind halves of the shop's two vocabularies.
+       || 'machine_model.kind_kind=''machine_kind''::text '
+       || 'machine_work.kind_kind=''machine_work_kind''::text '
        -- 0071, the kind half of the colour key.
        || 'node.colour_kind=''wine_colour''::text '
        || 'node.product_kind=''product_type''::text '
@@ -3051,7 +3074,7 @@ begin
     raise exception
       E'FAIL: the generated kind columns changed.\nnow:  %\nwas:  %', have, want;
   end if;
-  perform test_ok('the nine generated kind columns are constants and still in place, so a kind cannot be lied about');
+  perform test_ok('every generated kind column is a constant and still in place, so a kind cannot be lied about');
 end $$;
 
 -- Behaviour, not just shape. Every one of the nine refuses a term of the wrong
@@ -3185,7 +3208,14 @@ begin
   -- gone, and in practice neither is ever deleted, because a vessel is retired
   -- by `active` and a machine the same way. One new set null, the room a
   -- machine stands in, because a machine outlives a room being renamed away.
-  want := 'a=47 c=17 n=3 r=15';
+  -- a=47 c=17 n=3 r=15 before 0105. Seven new no-actions: three authors and the
+  -- four pointers into the two vocabularies, because a kind is retired by
+  -- deactivating the term rather than deleting the row. One new cascade, an
+  -- entry to its machine, since work done to a machine that no longer exists
+  -- is not a record of anything. Three new set nulls: a machine outlives its
+  -- model being retired, the room it stood in, and the vessel it was, which is
+  -- the bridge going away rather than the machine.
+  want := 'a=54 c=18 n=6 r=15';
   if have <> want then
     raise exception
       E'FAIL: foreign key delete behaviour changed.\nnow:  %\nwas:  %\na is no action, c is cascade, n is set null, r is restrict.', have, want;
@@ -4198,11 +4228,15 @@ begin
   -- Nine since 0071 registered wine_colour, which is winemaking by the same
   -- argument press_cut is: whether a wine is red is a fact about wine, and core
   -- has no opinion about what oak does.
-  if (select count(*) from term_kind where module <> 'core') <> 9 then
-    raise exception 'FAIL: % of the kinds are owned by a module other than core, and the claim is nine',
+  -- Eleven since 0105 registered machine_kind and machine_work_kind to a new
+  -- module, `shop`. What kind of thing a tractor is, and what kind of work was
+  -- done to it, are not questions the cellar or core has an opinion about, and
+  -- this is the first module that is not about wine at all.
+  if (select count(*) from term_kind where module <> 'core') <> 11 then
+    raise exception 'FAIL: % of the kinds are owned by a module other than core, and the claim is eleven',
       (select count(*) from term_kind where module <> 'core');
   end if;
-  perform test_ok('the registry says which module owns each kind, and nine of them are not core''s');
+  perform test_ok('the registry says which module owns each kind, and eleven of them are not core''s, across five modules');
 end $$;
 
 -- A term cannot name a kind nobody registered, and adding a kind is a row.
@@ -11420,6 +11454,124 @@ begin
     raise exception 'FAIL: a press with no room of its own moved a bin to %', where_;
   end if;
   perform test_ok('a press that stands nowhere in particular leaves its bins where they were, because a vessel in no room at all is one nobody can find and that is worse than one in the wrong room');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- a machine is a departure from its model'; end $$;
+
+-- 0105 and 0106. "There should be an app that isn't maintenance exactly, but
+-- lineage of equipment including maintenance", and then the design, which is
+-- his: "stuff that is unique (and not, hence the bridge). Departure from
+-- something."
+do $$
+declare
+  model  uuid;
+  mach   uuid;
+  press  uuid := '00000000-0000-0000-0000-0000000db001';
+  out_js jsonb;
+  spec   jsonb;
+  n      int;
+begin
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+
+  insert into vessel (id, name, type_id, capacity_l) values
+    (press, 'CM press', term_id('vessel_type', 'press'), 1200);
+
+  out_js := register_machine_model('CMake', 'CModel', 'press',
+    '{"power": "single phase 230V", "capacity_t": 1.2, "control": "original panel"}'::jsonb);
+  model := (out_js ->> 'id')::uuid;
+
+  -- **The bridge.** The press is already a vessel and must stay one object.
+  out_js := register_machine('CM the press', model, 'CM-1', press);
+  mach := (out_js ->> 'id')::uuid;
+  if (out_js ->> 'is_a_vessel')::boolean is not true then
+    raise exception 'FAIL: a machine registered against a vessel does not say so';
+  end if;
+  if (select vessel_name from machine_detail where id = mach) <> 'CM press' then
+    raise exception 'FAIL: the machine does not know which vessel it is';
+  end if;
+  perform test_ok('a machine can be a vessel that already exists rather than a second copy of it, which is the bridge he asked for: the press is one thing whether you are pressing with it or fixing it');
+
+  begin
+    perform register_machine('CM the press again', model, 'CM-2', press);
+    raise exception 'FAIL: one vessel was registered as two machines';
+  exception when others then
+    if position('already registered as the machine' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a vessel cannot be claimed by two machines, because a press with two histories is worse than a press with none');
+  end;
+
+  -- **Departure from something, and this is the whole idea.** With no history,
+  -- a machine reads exactly as its model.
+  spec := machine_spec(mach);
+  if spec ->> 'power' <> 'single phase 230V' then
+    raise exception 'FAIL: an untouched machine reads % rather than its model', spec ->> 'power';
+  end if;
+  perform test_ok('a machine nobody has touched reads exactly as its model, because what it is has not departed from anything yet');
+
+  -- The VFDs he named, dated when they actually went in.
+  out_js := record_machine_work(mach, 'modification',
+    'Installed VFDs to run it on three phase.', date '2026-03-14',
+    '{"power": "three phase via VFD"}'::jsonb);
+  spec := machine_spec(mach);
+  if spec ->> 'power' <> 'three phase via VFD' then
+    raise exception 'FAIL: after the VFDs the power reads %', spec ->> 'power';
+  end if;
+  if spec ->> 'capacity_t' <> '1.2' then
+    raise exception 'FAIL: a modification to the power changed the capacity to %', spec ->> 'capacity_t';
+  end if;
+  perform test_ok('one dated modification changes what the machine is, and changes only what it touched: the power comes from the VFD install and the capacity still comes from the model');
+
+  -- Work that happened months ago, which is the ordinary case for a history
+  -- nobody has been keeping.
+  if (select at from machine_history where id = (out_js ->> 'id')::uuid) <> date '2026-03-14' then
+    raise exception 'FAIL: work recorded for March is filed under another date';
+  end if;
+  perform test_ok('work is dated when it happened rather than when it was typed, because a history that can only record today is one nobody can enter');
+
+  -- A service is not a departure.
+  perform record_machine_work(mach, 'service', 'Hydraulic oil and filter.', date '2026-08-02');
+  spec := machine_spec(mach);
+  if spec ->> 'power' <> 'three phase via VFD' then
+    raise exception 'FAIL: an oil change altered what the machine is';
+  end if;
+  select count(*) into n from machine_detail where id = mach and modifications = 1 and entries = 2;
+  if n <> 1 then
+    raise exception 'FAIL: the counts do not separate departures from ordinary work';
+  end if;
+  perform test_ok('a service is recorded beside the modifications without changing what the machine is, which is the difference between fixing a thing and altering it');
+
+  -- **And a service cannot pretend to be one.** A spec change on a kind that
+  -- does not change the spec would be silently ignored, which is a write that
+  -- reports success and changes nothing.
+  begin
+    perform record_machine_work(mach, 'repair', 'Swapped the motor.', current_date,
+      '{"power": "single phase"}'::jsonb);
+    raise exception 'FAIL: a repair carried a change to the specification';
+  exception when others then
+    if position('does not change what the machine is' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a repair cannot carry a change to the specification, because machine_spec would ignore it and the person would have recorded something that reads as saved and does nothing');
+  end;
+
+  begin
+    perform record_machine_work(mach, 'service', 'Next oil change.', current_date + 30);
+    raise exception 'FAIL: work was recorded for a date in the future';
+  exception when others then
+    if position('has not happened yet' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('work cannot be recorded for a date that has not arrived, because this records what was done and there is deliberately nowhere to put a plan, which is S-91');
+  end;
+
+  -- A quirk is not maintenance and is the thing he actually described.
+  perform record_machine_work(mach, 'quirk',
+    'Panel calls the programs by number. Program 4 is the one we use for whites.', current_date);
+  if not exists (select 1 from machine_history
+                  where machine_id = mach and kind = 'quirk' and not changed_it) then
+    raise exception 'FAIL: a quirk is not recorded as something that was not a change';
+  end if;
+  perform test_ok('what you have to know to run a machine is recorded in the same place as what was done to it, because the old panel with the numbered programs is not maintenance and is exactly what somebody needs at six in the morning');
+
+  -- And a machine is something a note can be about, which 0101 made general.
+  perform add_note('machine', mach, 'CM a note about a machine');
+  perform test_ok('a note can be about a machine, so the registry inherits photographs and notes rather than inventing its own');
 end $$;
 
 do $$ begin raise notice '--- all assertions passed'; end $$;

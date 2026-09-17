@@ -7,7 +7,8 @@
 --              supabase/migrations/0090_a_press_takes_bins.sql,
 --              supabase/migrations/0098_a_vessel_arrives_in_a_number.sql,
 --              supabase/migrations/0103_racking_keeps_what_was_already_there.sql]
--- Depended on by: [tests/schema_assertions.sql]
+-- Depended on by: [tests/schema_assertions.sql,
+--                  supabase/migrations/0105_a_machine_is_a_departure_from_its_model.sql]
 -- Axioms enforced: T0-2 (where a bin is follows from what was done with it),
 --                  AR-E7 (a rule about picking bins does not become a rule about
 --                  every vessel by being moved into a general function)

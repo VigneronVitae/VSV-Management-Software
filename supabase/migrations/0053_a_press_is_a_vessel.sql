@@ -3,7 +3,8 @@
 -- Purpose: "A press is a vessel, so that fruit in it is somewhere rather than
 --           nowhere for the hours a press takes."
 -- Depends on: [supabase/migrations/0052_press_as_a_process.sql]
--- Depended on by: [tests/schema_assertions.sql]
+-- Depended on by: [tests/schema_assertions.sql,
+--                  supabase/migrations/0105_a_machine_is_a_departure_from_its_model.sql]
 -- Axioms enforced: AR-E6 (a vessel type is a registry row, so adding one is
 --                  data rather than a schema change)
 -- ---------------------------------------------------------------------------

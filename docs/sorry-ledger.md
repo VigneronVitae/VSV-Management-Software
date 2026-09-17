@@ -1091,6 +1091,20 @@ being changed is the code juice is running through tonight. *Load-bearing:* yes 
 shared tank is corrected, which is the ordinary way a mistyped volume is fixed, and the symptom is
 a tank that reads fuller than it is rather than anything silent.
 
+**S-91. Machines have a history and no schedule.**
+`0105` records what was done to a machine and when, which is what the winemaker asked for:
+"lineage of equipment including maintenance", not a maintenance planner. So there are no due
+dates, no service intervals, no hour meter rolling over into a reminder, and nothing anywhere
+says the tractor is overdue.
+That is a real gap and it is deliberate rather than forgotten. A due date nobody set produces a
+screen full of red, and a screen full of red is one people stop reading, which costs more than
+having no reminders at all. The honest version needs somebody to say what the interval actually
+is for each machine, and that is a conversation with a person who owns the equipment rather than
+a schema decision. *Resolves when:* somebody asks the app when the press was last serviced and
+is annoyed that it cannot also say when it is next due, at which point the interval is a field on
+the model, the last service is already recorded here, and the arithmetic is one line.
+*Load-bearing:* no. Nothing depends on it and nothing claims otherwise.
+
 ## Discharged
 **S-87. Five bins carried the wrong naming convention.** *Discharged 2026-09-17.*
 PB4 through PB8 were Pearlstad's, sitting in the middle of a series that was otherwise this
