@@ -1048,20 +1048,6 @@ this survivable** and is the reason it is filed rather than built: import there,
 throw the stack away. *Load-bearing:* not while every import is rehearsed in practice first,
 and immediately if anybody imports straight into the cellar.
 
-**S-87. Five bins carry the wrong naming convention and nothing renames them.**
-`0098` makes a borrowed vessel default to a prefix taken from the lender, so Pearlstaad's next
-stack arrives as PEAR1 onward instead of continuing this winery's PB series. The five that are
-already here were registered before that rule existed: PB4 through PB8 are Pearlstaad's, sitting
-in the middle of a series that is otherwise ours, and the thirty of his own that are coming will
-take PB9 onward and close the gap over them.
-Nothing in `0098` renames them, deliberately. Two of those bins are in a press log from this
-afternoon and all five are on the pad with numbers somebody has been reading off them all day,
-and a bin called one thing in the app and another in the yard is worse than a bin with an
-unhelpful name. *Resolves when:* the Pearlstaad bins go back empty, at which point renaming them
-costs nothing and can be done in one statement, or the winemaker asks for it sooner and accepts
-that the names change under a running pick. *Load-bearing:* no while there are five, and yes on
-the day somebody has to decide which of forty bins go back on a trailer.
-
 **S-88. A machine being asked to cool is not a machine that is cooling.**
 `0100` derives `running` on a glycol machine from the jackets hooked to it, which is right in the
 sense that it cannot go stale and wrong in the sense that nothing in this app has ever touched the
@@ -1106,6 +1092,17 @@ shared tank is corrected, which is the ordinary way a mistyped volume is fixed, 
 a tank that reads fuller than it is rather than anything silent.
 
 ## Discharged
+**S-87. Five bins carried the wrong naming convention.** *Discharged 2026-09-17.*
+PB4 through PB8 were Pearlstad's, sitting in the middle of a series that was otherwise this
+winery's, and `0098` set the convention for a borrowed stack without applying it to them: they were
+in a press log and being read off by hand all day, and a bin called one thing in the app and another
+in the yard is worse than a bin with an unhelpful name.
+The winemaker asked for the rename the morning he was about to register new bins, which is exactly
+the day it mattered and a day when all five were empty and off the press. They are PEAR1 to PEAR5,
+each carrying a note recording what it used to be called, because somebody had been reading PB4 off
+the side of one all week and may have written that on paper. PB4 is free again and is where the next
+stack of this winery's own bins will start.
+
 **S-78. Anybody who can sign up becomes staff.** *Discharged by `0068`.*
 `enable_signup = true`, and `claim_account` gave any authenticated identity that had not
 claimed one a `cellar` role, which `is_facility_user()` treats as somebody who works here.

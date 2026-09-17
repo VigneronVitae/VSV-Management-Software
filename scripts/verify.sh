@@ -59,10 +59,13 @@ trap 'rm -f "$edges" "$headered"' EXIT
 
 for f in $(tracked); do
   corpus "$f" && continue
+  # .ps1 is scanned too, from the day the watchdog arrived carrying a header
+  # nothing read. A header that is not checked is a comment.
+  #
   # .sh is scanned too. It was not until now, which meant this script's own
   # typed header was the one header in the tree nothing checked, and it named
   # package.json, a file that carries no header and never could.
-  case "$f" in *.md|*.sql|*.sh) ;; *) continue ;; esac
+  case "$f" in *.md|*.sql|*.sh|*.ps1) ;; *) continue ;; esac
   grep -q 'Depends on:' "$f" 2>/dev/null || continue
   echo "$f" >> "$headered"
 
@@ -133,7 +136,7 @@ fi
 # and the bidirectionality check. Two tracked shell scripts had none.
 for f in $(tracked); do
   corpus "$f" && continue
-  case "$f" in *.md|*.sql|*.sh) ;; *) continue ;; esac
+  case "$f" in *.md|*.sql|*.sh|*.ps1) ;; *) continue ;; esac
   case "$f" in supabase/seed/*) continue ;; esac
   grep -q 'Depends on:' "$f" 2>/dev/null     || fail "$f: carries no typed header, so it is invisible to the dependency graph"
 done
