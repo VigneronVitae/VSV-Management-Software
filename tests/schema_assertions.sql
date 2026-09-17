@@ -77,7 +77,8 @@
 --              supabase/migrations/0108_a_model_is_readable_on_its_own.sql,
 --              supabase/migrations/0109_a_module_says_where_it_lives.sql,
 --              supabase/migrations/0110_the_front_door_opens_before_you_sign_in.sql,
---              supabase/migrations/0111_a_count_that_reads_zero_is_a_lie.sql]
+--              supabase/migrations/0111_a_count_that_reads_zero_is_a_lie.sql,
+--              supabase/migrations/0112_a_machine_decomposes_into_parts.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh, scripts/rpc-args.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -2626,7 +2627,11 @@ begin
   -- The read is blanket true and is judged below, because the front door has to
   -- draw itself before anybody has signed in and the list of doors says nothing
   -- about what is behind them.
-  want := '116';
+  -- 116 before 0112, which added four across model_part and machine_part_change:
+  -- a read and a write on each, both scoped to is_facility_user(). None reads
+  -- blanket true. What the press is made of is this winery's business and a
+  -- custom crush client has no use for it.
+  want := '120';
   if have <> want then
     raise exception
       'FAIL: there are % policies in public and this suite was written against %. If that is deliberate, update this number, and judge the new policy in the disposition list below if it reads or writes blanket true', have, want;
@@ -2989,7 +2994,16 @@ begin
   -- readable and capability registries already carry, and adding a key would
   -- mean every one of those rows pointing at a table that did not exist until
   -- now.
-  want := 'c=53 f=93 p=48 u=23';
+  -- c=53 f=93 p=48 u=23 before 0112, which added two tables. `model_part`
+  -- brings a primary key, four checks (it says what it is, a quantity is a
+  -- quantity, it is not its own parent, and its domain is a part domain), and
+  -- five keys: the model, its parent part, the author, and the composite domain
+  -- pin with its plain id beside it. `machine_part_change` brings a primary key,
+  -- three more checks (the action is an action, it is about something, and a
+  -- removal names no replacement, plus a quantity check), and five keys: the
+  -- work that did it, the stock part, the earlier change it is about, and the
+  -- domain pin.
+  want := 'c=60 f=103 p=50 u=23';
   if have <> want then
     raise exception
       E'FAIL: the constraint inventory changed.\nnow:  %\nwas:  %\nIf that is deliberate, update this line in the same commit that changed the schema.', have, want;
@@ -3025,10 +3039,12 @@ begin
        -- piece of work is of a kind, and neither can be given a term belonging
        -- to some other vocabulary.
        || 'machine_model.machine_model_kind_is_a_machine_kind, '
+       || 'machine_part_change.machine_part_change_domain_is_a_part_domain, '
        || 'machine_work.machine_work_kind_is_a_work_kind, '
        -- 0071. A lot says its colour, pinned the way the variety and the
        -- product type already are. It is the fact a barrel's own colour is
        -- derived from, and no other column in this schema can answer it.
+       || 'model_part.model_part_domain_is_a_part_domain, '
        || 'node.node_colour_is_a_wine_colour, '
        || 'node.node_product_type_is_a_product_type, '
        || 'node.node_variety_is_a_variety, '
@@ -3075,8 +3091,10 @@ begin
        || 'location.kind_kind=''location_kind''::text '
        -- 0105, the kind halves of the shop's two vocabularies.
        || 'machine_model.kind_kind=''machine_kind''::text '
+       || 'machine_part_change.domain_kind=''part_domain''::text '
        || 'machine_work.kind_kind=''machine_work_kind''::text '
        -- 0071, the kind half of the colour key.
+       || 'model_part.domain_kind=''part_domain''::text '
        || 'node.colour_kind=''wine_colour''::text '
        || 'node.product_kind=''product_type''::text '
        || 'node.variety_kind=''variety''::text '
@@ -3237,7 +3255,14 @@ begin
   -- is not a record of anything. Three new set nulls: a machine outlives its
   -- model being retired, the room it stood in, and the vessel it was, which is
   -- the bridge going away rather than the machine.
-  want := 'a=54 c=18 n=6 r=15';
+  -- a=54 c=18 n=6 r=15 before 0112. Five new no-actions: the two composite
+  -- domain pins with their plain ids, and a part's author, because a domain is
+  -- retired by deactivating the term. Three new cascades: a part to its model, a
+  -- part to its parent part, and a change to the work that did it, because none
+  -- of the three means anything once its owner is gone. Two new set nulls: a
+  -- change pointing at a stock part and at an earlier change, both of which can
+  -- go while the record that something happened stays.
+  want := 'a=59 c=21 n=8 r=15';
   if have <> want then
     raise exception
       E'FAIL: foreign key delete behaviour changed.\nnow:  %\nwas:  %\na is no action, c is cascade, n is set null, r is restrict.', have, want;
@@ -4254,11 +4279,14 @@ begin
   -- module, `shop`. What kind of thing a tractor is, and what kind of work was
   -- done to it, are not questions the cellar or core has an opinion about, and
   -- this is the first module that is not about wine at all.
-  if (select count(*) from term_kind where module <> 'core') <> 11 then
-    raise exception 'FAIL: % of the kinds are owned by a module other than core, and the claim is eleven',
+  -- Twelve since 0112 registered part_domain, also to `shop`: what kind of part
+  -- something is, mechanical or electrical or software, which is a question
+  -- about machines rather than about wine.
+  if (select count(*) from term_kind where module <> 'core') <> 12 then
+    raise exception 'FAIL: % of the kinds are owned by a module other than core, and the claim is twelve',
       (select count(*) from term_kind where module <> 'core');
   end if;
-  perform test_ok('the registry says which module owns each kind, and eleven of them are not core''s, across five modules');
+  perform test_ok('the registry says which module owns each kind, and twelve of them are not core''s, across five modules');
 end $$;
 
 -- A term cannot name a kind nobody registered, and adding a kind is a row.
@@ -11674,6 +11702,144 @@ begin
     raise exception 'FAIL: the module list is not readable before sign-in';
   end if;
   perform test_ok('the list of modules is readable before anybody signs in, because the front door draws itself before it knows who is looking and a chooser with nothing on it reads as an app with nothing in it');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- a machine decomposes into parts'; end $$;
+
+-- 0112. "I'm wanting this to literally have as in depth as possible
+-- understanding of each machine. [...] But like it needs decomposed into parts:
+-- mechanical parts, electrical parts, software parts, etc."
+do $$
+declare
+  mdl   uuid := '00000000-0000-0000-0000-0000000ea001';
+  sys   uuid := '00000000-0000-0000-0000-0000000ea011';
+  pump  uuid := '00000000-0000-0000-0000-0000000ea012';
+  memb  uuid := '00000000-0000-0000-0000-0000000ea013';
+  gone  uuid := '00000000-0000-0000-0000-0000000ea014';
+  mach  uuid := '00000000-0000-0000-0000-0000000ea021';
+  work1 uuid;
+  work2 uuid;
+  added uuid;
+  got   record;
+  n     int;
+begin
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+
+  insert into machine_model (id, make, model) values (mdl, 'CPmake', 'CPmodel');
+  insert into model_part (id, model_id, parent_id, name, domain_id, part_number, sort_order) values
+    (sys,  mdl, null, 'CP hydraulic system',
+     (select id from term where kind = 'part_domain' and value = 'hydraulic'), null, 10),
+    (pump, mdl, sys,  'CP hydraulic pump',
+     (select id from term where kind = 'part_domain' and value = 'hydraulic'), 'HP-1', 10),
+    (memb, mdl, null, 'CP membrane',
+     (select id from term where kind = 'part_domain' and value = 'mechanical'), 'MB-1', 20),
+    (gone, mdl, null, 'CP thing that goes',
+     (select id from term where kind = 'part_domain' and value = 'mechanical'), 'TG-1', 30);
+
+  -- **The tree, flattened so a screen does not have to walk it.**
+  select * into got from model_part_tree where id = pump;
+  if got.depth <> 1 or got.path <> 'CP hydraulic system > CP hydraulic pump' then
+    raise exception 'FAIL: a subassembly part reads at depth % with path %', got.depth, got.path;
+  end if;
+  perform test_ok('a model decomposes into a tree of parts with a depth and a path, because a press is a hydraulic system containing a pump containing a seal kit and a flat list cannot say that');
+
+  if (select domain from model_part_tree where id = pump) <> 'hydraulic' then
+    raise exception 'FAIL: a part reads as the wrong domain';
+  end if;
+  perform test_ok('a part says what kind of thing it is out of a vocabulary rather than a column, so mechanical, electrical and software are rows somebody can add to without a migration');
+
+  insert into machine (id, name, model_id) values (mach, 'CP the press', mdl);
+
+  -- With nothing done to it, a machine is exactly its model.
+  select count(*) into n from machine_part where machine_id = mach;
+  if n <> 4 then
+    raise exception 'FAIL: an untouched machine has % parts and its model has 4', n;
+  end if;
+  if exists (select 1 from machine_part where machine_id = mach and departed) then
+    raise exception 'FAIL: an untouched machine has a part that has departed from the model';
+  end if;
+  perform test_ok('a machine nobody has worked on is made of exactly what its model is made of, which is the same composition machine_spec does one level up');
+
+  -- **The VFD, which is his example: a part the model never had.**
+  insert into machine_work (id, machine_id, kind_id, at, body)
+  values (gen_random_uuid(), mach,
+          (select id from term where kind = 'machine_work_kind' and value = 'modification'),
+          date '2026-03-14', 'CP installed VFDs.')
+  returning id into work1;
+
+  insert into machine_part_change (work_id, model_part_id, action, name, domain_id, part_number, quantity)
+  values (work1, null, 'added', 'CP VFD drive',
+          (select id from term where kind = 'part_domain' and value = 'electrical'), 'VFD-3P', 2)
+  returning id into added;
+
+  select * into got from machine_part where machine_id = mach and name = 'CP VFD drive';
+  if got.part_number <> 'VFD-3P' or got.quantity <> 2 or not got.departed then
+    raise exception 'FAIL: the added part reads % x% departed %',
+      got.part_number, got.quantity, got.departed;
+  end if;
+  if got.changed_at <> date '2026-03-14' then
+    raise exception 'FAIL: the added part is dated %', got.changed_at;
+  end if;
+  perform test_ok('a part the model never had appears on the machine and is dated to the work that fitted it, which is the VFD on the press: the thing that makes this press not a stock one');
+
+  -- A stock part replaced keeps its place and changes its number.
+  insert into machine_work (id, machine_id, kind_id, at, body)
+  values (gen_random_uuid(), mach,
+          (select id from term where kind = 'machine_work_kind' and value = 'repair'),
+          date '2026-07-02', 'CP new membrane.')
+  returning id into work2;
+
+  insert into machine_part_change (work_id, model_part_id, action, name, domain_id, part_number)
+  values (work2, memb, 'replaced', 'CP membrane',
+          (select id from term where kind = 'part_domain' and value = 'mechanical'), 'MB-2');
+
+  select * into got from machine_part where machine_id = mach and model_part_id = memb;
+  if got.part_number <> 'MB-2' or not got.departed then
+    raise exception 'FAIL: the replaced part reads % and departed is %', got.part_number, got.departed;
+  end if;
+  perform test_ok('a stock part that was replaced reads as what is actually fitted while staying the same part of the machine, so the model still says what it was and the machine says what it is');
+
+  -- A part removed is gone from what the machine is made of, and the record of
+  -- its removal is not.
+  insert into machine_part_change (work_id, model_part_id, action)
+  values (work2, gone, 'removed');
+  if exists (select 1 from machine_part where machine_id = mach and model_part_id = gone) then
+    raise exception 'FAIL: a part that was removed is still part of the machine';
+  end if;
+  if not exists (select 1 from machine_part_change where model_part_id = gone and action = 'removed') then
+    raise exception 'FAIL: the removal was not recorded';
+  end if;
+  perform test_ok('a part that was taken off is no longer what the machine is made of and the dated fact that it was taken off survives, because the history is the thing and the current state is derived from it');
+
+  -- And an added part can be taken off again, which is what about_change is for.
+  insert into machine_part_change (work_id, about_change, action)
+  values (work2, added, 'removed');
+  if exists (select 1 from machine_part where machine_id = mach and name = 'CP VFD drive') then
+    raise exception 'FAIL: an added part could not be removed again';
+  end if;
+  perform test_ok('a part that was added can be taken off again, by a change about that change, so a machine is not stuck with everything anybody ever fitted to it');
+
+  -- **A part change goes through a dated piece of work, never on its own.**
+  begin
+    insert into machine_part_change (work_id, model_part_id, action, name)
+    values (gen_random_uuid(), memb, 'replaced', 'CP nothing');
+    raise exception 'FAIL: a part changed without any work having been done';
+  exception when foreign_key_violation then
+    perform test_ok('a part cannot change except through a dated piece of work, because a part did not change on its own: on some day somebody fitted it, and that is the same history everything else is in');
+  end;
+
+  begin
+    insert into machine_part_change (work_id, model_part_id, action, name)
+    values (work2, memb, 'removed', 'CP still here');
+    raise exception 'FAIL: a removal named a replacement part';
+  exception when check_violation then
+    perform test_ok('a removal cannot name what the part now is, because there is no part now, and anything that does name one is a replacement wearing the wrong word');
+  end;
+
+  -- A schematic can hang on a single part, which is what 0101's registry was for.
+  perform add_note('model_part', pump, 'CP the seal kit is discontinued.');
+  perform test_ok('a note or a document can be about one part rather than about the whole machine, which is what a schematic of the hydraulic circuit actually is');
 end $$;
 
 do $$ begin raise notice '--- all assertions passed'; end $$;

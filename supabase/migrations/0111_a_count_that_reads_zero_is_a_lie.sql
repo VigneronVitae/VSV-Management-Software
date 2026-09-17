@@ -4,7 +4,8 @@
 --           a count that reads zero because of who is asking is a lie told
 --           confidently."
 -- Depends on: [supabase/migrations/0110_the_front_door_opens_before_you_sign_in.sql]
--- Depended on by: [tests/schema_assertions.sql]
+-- Depended on by: [tests/schema_assertions.sql,
+--                  supabase/migrations/0112_a_machine_decomposes_into_parts.sql]
 -- Axioms enforced: A25 (the null-permit class, in its counting form: a row you
 --                  may not read counts as nothing rather than as unknown), A13
 -- Open sorries: none

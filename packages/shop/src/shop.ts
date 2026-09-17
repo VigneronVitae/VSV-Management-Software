@@ -476,8 +476,15 @@ function addMachineScreen(): HTMLElement {
       vessels(),
       machineModels(),
     ]);
+    // "First model number is just a list with 0 selections and no way to add a
+    // selection." An empty picker with no way out is a dead end, and the model
+    // is the thing worth filling in first: it is the baseline every departure is
+    // measured against.
     model.replaceChildren(
-      el("option", { value: "", text: "No model" }),
+      el("option", {
+        value: "",
+        text: models.length === 0 ? "No models registered yet" : "No model",
+      }),
       ...models.map((mm) =>
         el("option", {
           value: mm.id,
@@ -509,6 +516,21 @@ function addMachineScreen(): HTMLElement {
         { class: "field" },
         el("span", { class: "field-label", text: "It is also this vessel" }),
         asVessel,
+      ),
+      // A way out of the empty picker, from the screen where it is empty. The
+      // list screen has this button too, and somebody who got here first should
+      // not have to find their way back to it.
+      el(
+        "p",
+        { class: "field-hint" },
+        models.length === 0
+          ? "No models yet. A model is what one of these is as it shipped, and everything this machine differs by is measured against it."
+          : "The model is the baseline. What this particular machine differs by is recorded as work on it.",
+      ),
+      button(
+        models.length === 0 ? "Add the first model" : "Add a model",
+        () => show(addModelScreen()),
+        "quiet",
       ),
       el("p", {
         class: "field-hint",

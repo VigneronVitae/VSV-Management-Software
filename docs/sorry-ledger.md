@@ -1160,6 +1160,20 @@ behind something that has to be opened on purpose. The evidence for which is whe
 asks about a module they saw greyed out. *Load-bearing:* no, and the counts beside each one are
 there so that a dead entry at least says how much of it exists.
 
+**S-95. A parts decomposition with no way to put one in.**
+`0112` builds the tree, the domains and the derivation, and registers both readables, and
+there is no capability and no screen for any of it. A model's parts can only be entered by
+writing SQL, which means the researched baseline for the press, the thing the whole structure
+exists to hold, cannot be entered by the person who did the research.
+This is the same order of work the shop module itself followed, kernel first and screens
+after, and it was defensible there because the kernel was small. Here the entering is the
+hard part: a press decomposes into a tree somebody has to sit and type, probably from a parts
+manual, probably over an evening. *Resolves when:* `add_model_part` and `change_machine_part`
+exist as capabilities and the shop app can draw and edit a tree, which is a bigger screen
+than anything in that app so far. Until then this schema holds nothing.
+*Load-bearing:* yes, in the sense that the feature does not exist for a user until it is
+closed. Nothing else depends on it.
+
 ## Discharged
 **S-92. A machine model with no machine could not be chosen.** *Discharged by `0108`.*
 `0106` registered two readables and forgot the obvious third, so the add-a-machine screen built
