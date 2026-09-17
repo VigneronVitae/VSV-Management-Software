@@ -259,6 +259,15 @@ export type GlycolConflict = {
   warm_side: string | null;
 };
 
+// 0101. A screen the client can be at, so a note can be about one.
+export type ScreenRow = {
+  id: Uuid;
+  key: string;
+  label: string;
+  note: string | null;
+  active: boolean;
+};
+
 export type NodePayload = {
   id: Uuid;
   stage: NodeStage;

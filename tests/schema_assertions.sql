@@ -66,7 +66,8 @@
 --              supabase/migrations/0097_a_room_departs_from_room_temperature.sql,
 --              supabase/migrations/0098_a_vessel_arrives_in_a_number.sql,
 --              supabase/migrations/0099_a_vessel_says_which_vintage.sql,
---              supabase/migrations/0100_a_jacket_is_on_a_machine.sql]
+--              supabase/migrations/0100_a_jacket_is_on_a_machine.sql,
+--              supabase/migrations/0101_a_note_can_be_about_a_screen.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh, scripts/rpc-args.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -2601,7 +2602,12 @@ begin
   -- blanket true. Which machine is cooling which tank is this winery's plumbing
   -- and says nothing about whose wine is in the tank, but a client has no use
   -- for it either, and the narrower answer is the one that needs no argument.
-  want := '106';
+  -- 106 before 0101, which added two on `screen`: a read scoped to
+  -- is_facility_user() and a write scoped to is_admin(). Neither reads blanket
+  -- true. The read could arguably be wider, since the list of screens in this
+  -- app is not a secret, and it is scoped anyway because a client has no use
+  -- for it and the narrower answer needs no argument.
+  want := '108';
   if have <> want then
     raise exception
       'FAIL: there are % policies in public and this suite was written against %. If that is deliberate, update this number, and judge the new policy in the disposition list below if it reads or writes blanket true', have, want;
@@ -2940,7 +2946,11 @@ begin
   -- period does not end before it starts. No unique constraint, because one
   -- open hookup per vessel is a partial index and a constraint cannot be
   -- partial.
-  want := 'c=48 f=82 p=43 u=21';
+  -- c=48 f=82 p=43 u=21 before 0101, which added `screen`: a primary key and a
+  -- unique on the key the client routes on. No foreign keys, deliberately: a
+  -- note names its subject by type and id rather than by a column per kind,
+  -- which is S-4 and the reason `doctor` exists.
+  want := 'c=48 f=82 p=44 u=22';
   if have <> want then
     raise exception
       E'FAIL: the constraint inventory changed.\nnow:  %\nwas:  %\nIf that is deliberate, update this line in the same commit that changed the schema.', have, want;
@@ -10997,6 +11007,79 @@ begin
     raise exception 'FAIL: a jacket on no machine could not be set to heating';
   end if;
   perform test_ok('a jacket hooked to no machine can be held warm, because there is no machine to contradict it, and that permission is written as a test on the machine rather than left to a null comparison falling through');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- a note can be about a screen'; end $$;
+
+-- 0101. "I want to be able to add a note to anything. Maybe a permanent top
+-- right block to select something on any screen to take a note of? One of my
+-- first uses will be to make notes of verbage changes, so notes point to actual
+-- objects."
+do $$
+declare
+  scr    uuid;
+  trm    uuid;
+  mach   uuid;
+  out_js jsonb;
+  nm     text;
+begin
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+
+  select id into scr from screen where key = 'vessels';
+  if scr is null then
+    raise exception 'FAIL: the vessels screen is not something that exists';
+  end if;
+
+  -- **The first use he named.** A note about wording, pointing at the screen
+  -- whose wording it is.
+  out_js := add_note('screen', scr, 'CN this should say something else');
+  if (out_js ->> 'id') is null then
+    raise exception 'FAIL: a note about a screen was not written';
+  end if;
+  perform test_ok('a note can be about a screen, which is what makes a wording note point at an object rather than being a sentence in a list nobody comes back to');
+
+  -- And it can be found by the name of the thing it is about, which is the
+  -- whole point of pointing at an object rather than typing its name.
+  nm := resolve_subject_name('screen', scr);
+  if nm <> 'Vessels' then
+    raise exception 'FAIL: a screen resolves to %, so a note about it cannot be found by name', coalesce(nm, 'nothing');
+  end if;
+  perform test_ok('a screen resolves to what it is called, so a note about one can be listed under the thing it is about rather than under a uuid');
+
+  -- The vocabulary, which is where the words this winery chose actually live.
+  select id into trm from term where kind = 'variety' and active limit 1;
+  if trm is not null then
+    perform add_note('term', trm, 'CN call this something else');
+    perform test_ok('a note can be about a term, which is where a variety name or a vessel type name is written and therefore where a note about calling it something else belongs');
+  end if;
+
+  -- 0100 arrived with nothing able to say anything about a machine.
+  out_js := register_glycol_machine('CN machine', false);
+  mach := (out_js ->> 'id')::uuid;
+  perform add_note('glycol_machine', mach, 'CN the compressor is loud');
+  perform test_ok('a note can be about a glycol machine, which 0100 created with no way to say anything about it');
+
+  -- Still refused for something nothing is, which is the check that makes the
+  -- registry mean anything.
+  begin
+    perform add_note('haircut', gen_random_uuid(), 'CN nope');
+    raise exception 'FAIL: a note was filed against a kind of thing that does not exist';
+  exception when others then
+    if position('nothing in this system is a' in sqlerrm) = 0 then raise; end if;
+    perform test_ok('a note about a kind of thing nothing is, is still refused, so adding subjects to the registry is what widens notes rather than notes accepting anything');
+  end;
+
+  -- Every screen the client can reach has to be here, and scripts/screens.sh is
+  -- what enforces that against the client. This is the half that can be checked
+  -- from inside the database: the registry is not empty and nothing is doubled.
+  if (select count(*) from screen) < 40 then
+    raise exception 'FAIL: only % screens are registered', (select count(*) from screen);
+  end if;
+  if exists (select key from screen group by key having count(*) > 1) then
+    raise exception 'FAIL: a screen key is registered twice';
+  end if;
+  perform test_ok('every screen is registered once, which is what scripts/screens.sh compares the client against so a new screen without a row fails the gate rather than failing in somebody''s hand');
 end $$;
 
 do $$ begin raise notice '--- all assertions passed'; end $$;

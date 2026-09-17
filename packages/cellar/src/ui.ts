@@ -46,6 +46,20 @@ export function on<E extends keyof HTMLElementEventMap>(
 // alike. In practice mode the band is at the top of the page, it says what
 // practice mode means rather than just naming it, and the body carries a class
 // so a skin can make the whole page unmistakable.
+// "Maybe a permanent top right block to select something on any screen to take
+// a note of?" Every screen is built by screen(), so the control goes here and
+// exists once rather than being remembered on each of forty one screens.
+//
+// ui.ts cannot reach the kernel without inverting the layering, so the walk
+// registers what the button does and this only knows that there is one. When
+// nothing has registered, no button is drawn, which is what keeps a test host
+// and a non-browser host working.
+let noteWanted: (() => void) | null = null;
+
+export function whenNoteWanted(fn: () => void): void {
+  noteWanted = fn;
+}
+
 export function screen(title: string, ...body: Child[]): HTMLElement {
   const practising = currentBackend() === "practice";
   try {
@@ -64,9 +78,25 @@ export function screen(title: string, ...body: Child[]): HTMLElement {
           text: "PRACTICE. Nothing here is real and all of it can be thrown away.",
         })
       : null,
-    el("h1", { text: title }),
+    noteWanted
+      ? el("div", { class: "screen-head" }, el("h1", { text: title }), noteButton())
+      : el("h1", { text: title }),
     ...body,
   );
+}
+
+function noteButton(): HTMLElement {
+  const b = el("button", {
+    class: "btn btn-quiet note-here",
+    type: "button",
+    // Said out loud for anybody not looking at the glyph, and because the glyph
+    // alone is a guess about what this does.
+    "aria-label": "Take a note about what is on this screen",
+    title: "Take a note",
+    text: "Note",
+  });
+  b.addEventListener("click", () => noteWanted?.());
+  return b;
 }
 
 export function lede(text: string): HTMLElement {

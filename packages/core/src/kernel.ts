@@ -45,6 +45,7 @@ import type {
   Sample,
   SampleKind,
   SampleTarget,
+  ScreenRow,
   ShoppingItem,
   SubjectNote,
   SupplyCount,
@@ -508,6 +509,25 @@ export async function resolveVesselTypeNote(noteId: Uuid): Promise<void> {
     })
     .eq("id", noteId);
   if (error) throw new KernelError(error);
+}
+
+// --- screens --------------------------------------------------------------
+
+// 0101. A screen is a row so a note about wording has something to point at.
+// Read once per session: forty one rows that change only when a migration
+// changes them.
+let screenCache: ScreenRow[] | null = null;
+
+export async function screens(): Promise<ScreenRow[]> {
+  if (screenCache) return screenCache;
+  const { data, error } = await kernel()
+    .from("screen")
+    .select("*")
+    .eq("active", true)
+    .order("label");
+  if (error) throw new KernelError(error);
+  screenCache = (data ?? []) as ScreenRow[];
+  return screenCache;
 }
 
 // --- glycol ---------------------------------------------------------------

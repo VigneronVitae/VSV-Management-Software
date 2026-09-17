@@ -111,6 +111,7 @@ import {
   type SupplyOnHand,
   samples,
   sampleTargets,
+  screens,
   setBinFruit,
   setColour,
   setMakerMakes,
@@ -208,6 +209,7 @@ import {
   summaryRow,
   type Variant,
   variantSwitch,
+  whenNoteWanted,
 } from "./ui.ts";
 
 // The inventory walk. Its acceptance test is a stranger's first run: empty
@@ -229,6 +231,17 @@ export function mountWalk(target: HTMLElement): void {
   window.addEventListener("popstate", () => {
     if (pushes > 0) pushes -= 1;
     void open(decode(window.location.hash), "replace");
+  });
+  // 0101. What the note button on every screen does. Registered here rather
+  // than known by ui.ts, which would have to reach the kernel to do it.
+  //
+  // atPlace is null on the sign in and claim screens, which are not places and
+  // have nothing to be a note about, and no button is drawn there because the
+  // sheet would have nothing to offer.
+  whenNoteWanted(() => {
+    const here = atPlace;
+    if (!here) return;
+    document.body.append(noteSheet(here));
   });
   void route();
 }
@@ -6414,6 +6427,184 @@ function capabilityRoute(key: string): Place | null {
 // Grouped by heading rather than flat, because "a press is going" and "a pick
 // has fruit on the pad" are different kinds of worry, and oldest first inside
 // each, because the press started four hours ago is the one worth asking about.
+// --- a note about anything -------------------------------------------------
+
+// "I want to be able to add a note to anything. Maybe a permanent top right
+// block to select something on any screen to take a note of? One of my first
+// uses will be to make notes of verbage changes, so notes point to actual
+// objects."
+//
+// add_note has taken any registered subject since 0063, so this is the control
+// and not the capability. What it has to get right is the default: a note filed
+// against the wrong thing is worse than one filed against nothing, because it
+// will be found by somebody looking at the wrong object.
+
+// What the screen somebody is standing on is about, where that is a thing the
+// kernel knows. Null means the screen itself is the only subject, which is the
+// case a wording note wants anyway.
+function subjectOfPlace(place: Place): { type: string; id: string } | null {
+  switch (place.at) {
+    case "vessel":
+    case "vessel-edit":
+    case "vessel-fill":
+    case "vessel-photos":
+      return { type: "vessel", id: place.id };
+    case "vessel-type":
+      // 0101 registered term, which is where the words this winery chose live.
+      return { type: "term", id: place.id };
+    case "wine":
+    case "pick-photos":
+      return { type: "node", id: place.id };
+    // pick-bins is reachable with a pick and without one, so its id is only
+    // sometimes there. Without one the screen is the subject, which is right:
+    // a note taken on the bin list with no pick open is about the list.
+    case "pick-bins":
+      return place.id ? { type: "node", id: place.id } : null;
+    case "block":
+      return { type: "block", id: place.id };
+    default:
+      // Including every screen with no id, and `sample`, which is not a subject
+      // type the kernel has. Guessing at one would file notes against a
+      // subject_type add_note refuses, which is a failure at save time rather
+      // than a wrong default.
+      return null;
+  }
+}
+
+// The sheet. Opened from the button every screen carries.
+function noteSheet(place: Place): HTMLElement {
+  const said = el("div", {});
+  const body = field({
+    label: "The note",
+    hint: "What you want to remember about it.",
+  });
+  const about = el("select", { class: "input" });
+  const existing = el("div", {});
+  const holder = el("div", { class: "rows" }, empty("Loading."));
+
+  const sheet = el(
+    "div",
+    { class: "sheet" },
+    el(
+      "div",
+      { class: "sheet-inner" },
+      el("h2", { class: "section-head", text: "Take a note" }),
+      holder,
+    ),
+  );
+
+  function close(): void {
+    sheet.remove();
+  }
+
+  void (async () => {
+    const here = subjectOfPlace(place);
+    const rows = await screens();
+    const screenRow = rows.find((r) => r.key === place.at) ?? null;
+
+    // Two options at most, and the first is the one that is right more often.
+    // A note taken while standing on a vessel is nearly always about the
+    // vessel; a note taken on a list is about the screen.
+    const choices: { value: string; text: string }[] = [];
+    if (here) {
+      choices.push({
+        value: `${here.type}:${here.id}`,
+        text: `This ${here.type === "term" ? "vessel type" : here.type}`,
+      });
+    }
+    if (screenRow) {
+      choices.push({
+        value: `screen:${screenRow.id}`,
+        text: `This screen (${screenRow.label})`,
+      });
+    }
+
+    if (choices.length === 0) {
+      // Rather than a composer that cannot save. S-89's neighbour: a screen the
+      // registry has not caught up with, which the gate is supposed to prevent.
+      holder.replaceChildren(
+        banner(
+          "There is nothing on this screen a note can point at yet. " +
+            "That is a gap in the app rather than in what you wanted to say.",
+          "error",
+        ),
+        button("Close", close, "quiet"),
+      );
+      return;
+    }
+
+    about.replaceChildren(
+      ...choices.map((c) => el("option", { value: c.value, text: c.text })),
+    );
+
+    async function showExisting(): Promise<void> {
+      const [type, id] = about.value.split(":");
+      if (!type || !id) return;
+      try {
+        const already = await notesFor(type, id);
+        existing.replaceChildren(
+          already.length === 0
+            ? el("span", {})
+            : el(
+                "div",
+                { class: "rows" },
+                el("span", {
+                  class: "field-label",
+                  text: `Already said about this (${already.length})`,
+                }),
+                // The last three. Enough to notice you are about to write the
+                // same thing twice, which is what a wording list fills up with.
+                ...already
+                  .slice(0, 3)
+                  .map((n) => el("p", { class: "row-note", text: n.body })),
+              ),
+        );
+      } catch {
+        // A read failing must not stop somebody writing the note. The list is
+        // a convenience and the note is the point.
+        existing.replaceChildren(el("span", {}));
+      }
+    }
+
+    on(about, "change", () => void showExisting());
+
+    holder.replaceChildren(
+      el(
+        "div",
+        { class: "field" },
+        el("span", { class: "field-label", text: "About" }),
+        about,
+      ),
+      body.root,
+      existing,
+      el(
+        "div",
+        { class: "button-row" },
+        button("Save the note", async () => {
+          const text = body.value().trim();
+          if (!text) {
+            said.replaceChildren(banner("There is nothing here to say.", "error"));
+            return;
+          }
+          const [type, id] = about.value.split(":");
+          if (!type || !id) return;
+          try {
+            await addNote({ subjectType: type, subjectId: id, body: text });
+            close();
+          } catch (error) {
+            said.replaceChildren(fail(error));
+          }
+        }),
+        button("Close", close, "quiet"),
+      ),
+      said,
+    );
+    void showExisting();
+  })();
+
+  return sheet;
+}
+
 // --- glycol ----------------------------------------------------------------
 
 // "The glycol jackets should be linked to a glycol pump and chiller/cooler",

@@ -1076,6 +1076,20 @@ expectation to compare it against, which is the shape `0096` already uses for yi
 *Load-bearing:* no while two machines sit in one room and a person can hear them, and immediately
 if this app is ever used to decide that a tank is fine unattended.
 
+**S-89. A note about wording points at a screen, not at the words.**
+`0101` makes every screen a row so a note can be about one, which answers "notes point to
+actual objects" for the case the winemaker named. What it does not do is make the words
+themselves objects. A note reading "the button here should say Save rather than Record" is
+filed against the screen, and somebody reading it later has to find the button by looking.
+The alternative is a row per label, which is a content management system for an app whose
+words are currently readable in one file, and it would put a round trip in front of every
+string a screen draws. *Resolves when:* either the wording notes pile up enough that finding
+the label becomes the slow part, at which point the answer is probably that a note carries the
+exact text it is about as a quote rather than that every label becomes a row, or the app
+acquires a second language, at which point the labels have to move into the database anyway
+and this stops being a choice. *Load-bearing:* no, and the first few dozen wording notes are
+the evidence that decides it.
+
 ## Discharged
 **S-78. Anybody who can sign up becomes staff.** *Discharged by `0068`.*
 `enable_signup = true`, and `claim_account` gave any authenticated identity that had not

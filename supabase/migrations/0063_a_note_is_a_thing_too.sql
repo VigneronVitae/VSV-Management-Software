@@ -3,7 +3,8 @@
 -- Purpose: "A note and a photograph are themselves things, so a note can hang
 --           off a note and a photograph can hang off either."
 -- Depends on: [supabase/migrations/0062_a_note_on_anything.sql]
--- Depended on by: [tests/schema_assertions.sql]
+-- Depended on by: [tests/schema_assertions.sql,
+--                  supabase/migrations/0101_a_note_can_be_about_a_screen.sql]
 -- Axioms enforced: AR-E5 (what kinds of thing exist is a registry, so adding
 --                  two costs two rows and no code)
 -- ---------------------------------------------------------------------------
