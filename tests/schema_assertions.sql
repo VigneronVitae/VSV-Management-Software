@@ -67,7 +67,8 @@
 --              supabase/migrations/0098_a_vessel_arrives_in_a_number.sql,
 --              supabase/migrations/0099_a_vessel_says_which_vintage.sql,
 --              supabase/migrations/0100_a_jacket_is_on_a_machine.sql,
---              supabase/migrations/0101_a_note_can_be_about_a_screen.sql]
+--              supabase/migrations/0101_a_note_can_be_about_a_screen.sql,
+--              supabase/migrations/0102_a_tank_takes_more_than_one_pressing.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh, scripts/rpc-args.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -11080,6 +11081,141 @@ begin
     raise exception 'FAIL: a screen key is registered twice';
   end if;
   perform test_ok('every screen is registered once, which is what scripts/screens.sh compares the client against so a new screen without a row fails the gate rather than failing in somebody''s hand');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- a tank takes more than one pressing'; end $$;
+
+-- 0102. Mid press: "it's not letting me press a second lot into the second tank
+-- as the first because 'Skinny Boy already holds wine'. The big tank will hold
+-- multiple pressings of the same variety."
+--
+-- 0014 had already written the rule down for racking: "a destination that
+-- already holds a different lot is not an error, it is a blend". draw_cut
+-- refused instead, which is a refusal arriving while juice is running.
+do $$
+declare
+  pick   uuid := '00000000-0000-0000-0000-0000000fb001';
+  pick2  uuid := '00000000-0000-0000-0000-0000000fb002';
+  press  uuid := '00000000-0000-0000-0000-0000000fb011';
+  tank   uuid := '00000000-0000-0000-0000-0000000fb012';
+  -- A press holds one load at a time, so the second pressing needs its own.
+  press2 uuid := '00000000-0000-0000-0000-0000000fb013';
+  load_id  uuid;
+  load2_id uuid;
+  resident uuid;
+  out_js jsonb;
+  vol    numeric;
+  shares numeric;
+  n      int;
+begin
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+
+  insert into vessel (id, name, type_id, capacity_l) values
+    (press, 'CB press', term_id('vessel_type', 'press'), 1200),
+    (press2, 'CB press 2', term_id('vessel_type', 'press'), 1200),
+    (tank,  'CB tank',  term_id('vessel_type', 'tank'),  2000);
+
+  perform add_bins_to_pick(
+    jsonb_build_object('id', pick, 'variety_id', term_id('variety', 'chardonnay'),
+                       'vintage', 2026),
+    null, 2, term_id('vessel_type', 'picking_bin'), 'CBBIN', 100);
+  perform weigh_bins(pick,
+    array(select vessel_id from unweighed_bin where node_id = pick), 2000);
+
+  out_js := start_press(array(select vessel_id from placement
+                          where node_id = pick and to_at is null), press);
+  load_id := (out_js ->> 'node_id')::uuid;
+
+  -- The free run goes into an empty tank, which is the path that always worked.
+  out_js := draw_cut(load_id, tank, 500, term_id('press_cut', 'free_run'));
+  if (out_js ->> 'blended_into') is not null then
+    raise exception 'FAIL: a draw into an empty tank claims it blended with %',
+      out_js ->> 'blended_into';
+  end if;
+  select node_id into resident from placement where vessel_id = tank and to_at is null;
+  perform test_ok('a cut drawn into an empty tank is the lot in that tank, which is the case that always worked and has to keep working');
+
+  -- **The refusal that stopped him.** A second cut is a second lot, so free run
+  -- and hard press into one tank hit this too: wider than the case he reported.
+  out_js := draw_cut(load_id, tank, 120, term_id('press_cut', 'hard_press'));
+  if (out_js ->> 'blended_into') is null then
+    raise exception 'FAIL: a second cut into an occupied tank did not report a blend';
+  end if;
+  if (select node_id from placement where vessel_id = tank and to_at is null) <> resident then
+    raise exception 'FAIL: the tank changed which lot it holds';
+  end if;
+  perform test_ok('a second cut drawn into a tank that already holds wine blends instead of being refused, and the tank keeps the lot that was already in it rather than minting a new one with a name nobody chose');
+
+  select volume_l into vol from placement where vessel_id = tank and to_at is null;
+  if vol <> 620 then
+    raise exception 'FAIL: 500 L and then 120 L leaves % L in the tank', vol;
+  end if;
+  select quantity into vol from node where id = resident;
+  if vol <> 620 then
+    raise exception 'FAIL: the lot in the tank says it is % L', vol;
+  end if;
+  perform test_ok('the lot in the tank grows by what arrived, and the lot and its placement agree, because a tank that reads one number in the vessel list and another on the lot is worse than either');
+
+  -- **The lineage, which is what he asked for.** "It should carry the lineage
+  -- from the pressings but also be just Pearlstaad chardonnay."
+  select count(*) into n from lineage where child_id = resident;
+  if n < 2 then
+    raise exception 'FAIL: the blended lot has % parents', n;
+  end if;
+  select sum(fraction) into shares from lineage where child_id = resident;
+  if shares < 0.99 or shares > 1.01 then
+    raise exception 'FAIL: the shares of what is in the tank sum to %', shares;
+  end if;
+  perform test_ok('the lot in the tank carries every pressing that fed it as a parent, with shares summing to one, so what it is made of stays derived from the volumes that went in');
+
+  -- Same cut again into the same tank grows its share rather than writing a
+  -- second row, which the primary key would refuse anyway.
+  out_js := draw_cut(load_id, tank, 60, term_id('press_cut', 'hard_press'));
+  select count(*) into n from lineage where child_id = resident;
+  if n <> 2 then
+    raise exception 'FAIL: drawing the same cut again left % parents', n;
+  end if;
+  select volume_l into vol from placement where vessel_id = tank and to_at is null;
+  if vol <> 680 then
+    raise exception 'FAIL: another 60 L leaves % L', vol;
+  end if;
+  select sum(fraction) into shares from lineage where child_id = resident;
+  if shares < 0.99 or shares > 1.01 then
+    raise exception 'FAIL: after a third draw the shares sum to %', shares;
+  end if;
+  perform test_ok('drawing the same cut into the same tank again grows that pressing''s share rather than adding a second parent, and the shares still sum to one');
+
+  -- The tank's own lot records what arrived, so its history is readable from
+  -- the lot somebody is looking at rather than only from the other one.
+  select count(*) into n from event
+   where subject_type = 'node' and subject_id = resident
+     and data ->> 'action' = 'received';
+  if n <> 2 then
+    raise exception 'FAIL: the tank''s lot records % arrivals', n;
+  end if;
+  perform test_ok('the lot in the tank has an event for each arrival, so the history of the wine somebody is looking at is on that wine rather than only on the cut that fed it');
+
+  -- **A different variety is said, not refused.** His ruling for barrels,
+  -- applied again for the same reason.
+  perform add_bins_to_pick(
+    jsonb_build_object('id', pick2, 'variety_id', term_id('variety', 'riesling'),
+                       'vintage', 2026),
+    null, 1, term_id('vessel_type', 'picking_bin'), 'CBBIN2', 100);
+  perform weigh_bins(pick2,
+    array(select vessel_id from unweighed_bin where node_id = pick2), 900);
+  out_js := start_press(array(select vessel_id from placement
+                          where node_id = pick2 and to_at is null), press2);
+  load2_id := (out_js ->> 'node_id')::uuid;
+
+  out_js := draw_cut(load2_id, tank, 40, term_id('press_cut', 'free_run'));
+  if (out_js ->> 'blended_into') is null then
+    raise exception 'FAIL: a second pressing into the tank was not recorded as a blend';
+  end if;
+  if (out_js ->> 'variety_differs')::boolean is not true then
+    raise exception 'FAIL: riesling into a tank of chardonnay says nothing';
+  end if;
+  perform test_ok('a pressing of a different variety into an occupied tank goes through and says so, because somebody can pour before telling the app and a refusal at the press loses the number');
 end $$;
 
 do $$ begin raise notice '--- all assertions passed'; end $$;

@@ -6,7 +6,8 @@
 -- Depends on: [supabase/migrations/0026_subject_type_registry.sql,
 --              supabase/migrations/0063_a_note_is_a_thing_too.sql,
 --              supabase/migrations/0100_a_jacket_is_on_a_machine.sql]
--- Depended on by: [tests/schema_assertions.sql, scripts/screens.sh]
+-- Depended on by: [tests/schema_assertions.sql, scripts/screens.sh,
+--                  supabase/migrations/0102_a_tank_takes_more_than_one_pressing.sql]
 -- Axioms enforced: AR-E5 (a registry row rather than a new kind of note),
 --                  A13 (a note about "the vessels screen" filed against nothing
 --                  is a note nobody will ever find again)

@@ -188,9 +188,8 @@ draw_cut:raise:6	draw_cut	raise	raise exception 'that is not a press cut';	raise
 draw_cut:guard:6	draw_cut	guard	if cut_n.id is null then	if false then	1
 draw_cut:head:2	draw_cut	head	if exists (select 1 from placement\n              where node_id = cut_id and vessel_id = p_vessel_id and to_at is null) then	if false then	1
 draw_cut:silent:1	draw_cut	silent	where node_id = cut_id and vessel_id = p_vessel_id and to_at is null;	where node_id = cut_id and true;	1
-draw_cut:head:3	draw_cut	head	if exists (select 1 from placement\n                where vessel_id = p_vessel_id and to_at is null and node_id <> cut_id) then	if false then	1
-draw_cut:silent:2	draw_cut	silent	where vessel_id = p_vessel_id and to_at is null and node_id <> cut_id) then	where vessel_id = p_vessel_id and true	1
-draw_cut:raise:7	draw_cut	raise	raise exception '% already holds other wine',	raise notice '% already holds other wine',	1
+draw_cut:guard:7	draw_cut	guard	if resident is null then	if false then	1
+draw_cut:silent:2	draw_cut	silent	where vessel_id = p_vessel_id and to_at is null;	where vessel_id = p_vessel_id and true;	1
 draw_to_level:guard:1	draw_to_level	guard	if p_level_l is null or p_level_l < 0 then	if false then	1
 draw_to_level:raise:1	draw_to_level	raise	raise exception 'a level of % is not a reading',	raise notice 'a level of % is not a reading',	1
 draw_to_level:guard:2	draw_to_level	guard	if v_name is null then	if false then	1

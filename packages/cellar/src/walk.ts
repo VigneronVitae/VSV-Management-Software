@@ -3253,6 +3253,16 @@ function rackScreen(): HTMLElement {
 
     const gasSource = termOrText("Gas in the source", "air, argon, nitrogen");
     const gasLine = termOrText("Gas in the line", "air, argon");
+    // "Racking needs gas at destination too." What the receiving vessel was
+    // full of before the wine arrived is the half of an oxygen pickup record
+    // that was missing: a purged tank and one left open are the difference
+    // between a clean rack and a lost one, and only this field can tell them
+    // apart afterwards.
+    //
+    // One value for all destinations, the same shape the source field has. A
+    // rack into two vessels purged differently would need this per leg, which
+    // is a change to legList and not one anybody has asked for.
+    const gasDestination = termOrText("Gas in the destination", "air, argon, nitrogen");
     const method = termOrText("Method", "gravity, pump");
     const lees = field({
       label: "Lees carried, litres",
@@ -3337,6 +3347,7 @@ function rackScreen(): HTMLElement {
       el("h2", { class: "section-head", text: "How" }),
       gasSource.root,
       gasLine.root,
+      gasDestination.root,
       method.root,
       lees.root,
       el("h2", { class: "section-head", text: "What this does" }),
@@ -3358,6 +3369,7 @@ function rackScreen(): HTMLElement {
             data: {
               gas_source: gasSource.value() || null,
               gas_line: gasLine.value() || null,
+              gas_destination: gasDestination.value() || null,
               method: method.value() || null,
               lees_l: lees.value() ? Number(lees.value()) : null,
             },

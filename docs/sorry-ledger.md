@@ -1090,6 +1090,21 @@ acquires a second language, at which point the labels have to move into the data
 and this stops being a choice. *Load-bearing:* no, and the first few dozen wording notes are
 the evidence that decides it.
 
+**S-90. A corrected draw does not shrink the tank it was blended into.**
+`0102` lets a cut be drawn into a tank that already holds wine, and the tank's lot grows by the
+volume that arrived. Everywhere else in the press, quantities are recomputed from the draws that
+have not been superseded, so a corrected draw lands without anybody working out what the old one
+contributed. The blend path adds instead: the resident lot's volume and the lineage shares are
+incremented by what arrived, because the resident lot's own starting volume is not derivable from
+the press events and subtracting it would mean guessing. So superseding a draw that went into an
+occupied tank leaves that tank reading high, and the lineage shares reading off by the same
+amount. *Resolves when:* the resident lot's volume before the press touched it is written down at
+the moment of the first blend, at which point the whole thing recomputes the way every other
+quantity here does. That is a small change and it is not being made mid harvest, because the code
+being changed is the code juice is running through tonight. *Load-bearing:* yes if a draw into a
+shared tank is corrected, which is the ordinary way a mistyped volume is fixed, and the symptom is
+a tank that reads fuller than it is rather than anything silent.
+
 ## Discharged
 **S-78. Anybody who can sign up becomes staff.** *Discharged by `0068`.*
 `enable_signup = true`, and `claim_account` gave any authenticated identity that had not
