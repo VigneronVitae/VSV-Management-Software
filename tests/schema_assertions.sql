@@ -72,7 +72,8 @@
 --              supabase/migrations/0103_racking_keeps_what_was_already_there.sql,
 --              supabase/migrations/0104_a_pressed_bin_leaves_the_room.sql,
 --              supabase/migrations/0105_a_machine_is_a_departure_from_its_model.sql,
---              supabase/migrations/0106_the_acts_a_shop_performs.sql]
+--              supabase/migrations/0106_the_acts_a_shop_performs.sql,
+--              supabase/migrations/0107_the_shop_has_screens_too.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh, scripts/rpc-args.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.

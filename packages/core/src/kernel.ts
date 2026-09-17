@@ -28,6 +28,8 @@ import type {
   LotDetail,
   LotWithoutColour,
   LotWithoutVintage,
+  MachineDetail,
+  MachineWork,
   NodePayload,
   PaperRecord,
   Party,
@@ -509,6 +511,107 @@ export async function resolveVesselTypeNote(noteId: Uuid): Promise<void> {
     })
     .eq("id", noteId);
   if (error) throw new KernelError(error);
+}
+
+// --- the shop -------------------------------------------------------------
+
+// 0105 and 0106. Machines, and everything done to them. Here in core rather than
+// in the shop module because every kernel call lives here; the module is the
+// screens.
+
+export async function machines(): Promise<MachineDetail[]> {
+  const { data, error } = await kernel()
+    .from("machine_detail")
+    .select("*")
+    .eq("active", true)
+    .order("name");
+  if (error) throw new KernelError(error);
+  return (data ?? []) as MachineDetail[];
+}
+
+export async function machine(id: Uuid): Promise<MachineDetail | null> {
+  const { data, error } = await kernel()
+    .from("machine_detail")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw new KernelError(error);
+  return (data ?? null) as MachineDetail | null;
+}
+
+export async function machineWork(machineId: Uuid): Promise<MachineWork[]> {
+  const { data, error } = await kernel()
+    .from("machine_history")
+    .select("*")
+    .eq("machine_id", machineId);
+  if (error) throw new KernelError(error);
+  return (data ?? []) as MachineWork[];
+}
+
+export async function registerMachineModel(args: {
+  make: string;
+  model: string;
+  kind?: string | null;
+  spec?: Record<string, unknown>;
+  note?: string | null;
+}): Promise<{ id: Uuid; make: string; model: string }> {
+  const { data, error } = await kernel().rpc("register_machine_model", {
+    p_make: args.make,
+    p_model: args.model,
+    p_kind: args.kind ?? null,
+    p_spec: args.spec ?? {},
+    p_note: args.note ?? null,
+  });
+  if (error) throw new KernelError(error);
+  return data as { id: Uuid; make: string; model: string };
+}
+
+export async function registerMachine(args: {
+  name: string;
+  modelId?: Uuid | null;
+  serial?: string | null;
+  vesselId?: Uuid | null;
+  locationId?: Uuid | null;
+  acquiredAt?: string | null;
+}): Promise<{ id: Uuid; name: string; is_a_vessel: boolean }> {
+  const { data, error } = await kernel().rpc("register_machine", {
+    p_name: args.name,
+    p_model_id: args.modelId ?? null,
+    p_serial: args.serial ?? null,
+    p_vessel_id: args.vesselId ?? null,
+    p_location_id: args.locationId ?? null,
+    p_acquired_at: args.acquiredAt ?? null,
+  });
+  if (error) throw new KernelError(error);
+  return data as { id: Uuid; name: string; is_a_vessel: boolean };
+}
+
+export async function recordMachineWork(args: {
+  machineId: Uuid;
+  kind: string;
+  body: string;
+  at?: string | null;
+  specChange?: Record<string, unknown> | null;
+}): Promise<{
+  id: Uuid;
+  at: string;
+  changed_it: boolean;
+  spec_now: Record<string, unknown>;
+}> {
+  const { data, error } = await kernel().rpc("record_machine_work", {
+    p_machine_id: args.machineId,
+    p_kind: args.kind,
+    p_body: args.body,
+    p_at: args.at ?? null,
+    p_spec_change: args.specChange ?? null,
+  });
+  if (error) throw new KernelError(error);
+  return data as {
+    id: Uuid;
+    at: string;
+    changed_it: boolean;
+    spec_now: Record<string, unknown>;
+  };
 }
 
 // --- screens --------------------------------------------------------------

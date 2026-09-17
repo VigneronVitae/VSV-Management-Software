@@ -27,7 +27,9 @@
       "core": ["packages/core/src/index.ts"],
       "core/*": ["packages/core/src/*"],
       "cellar": ["packages/cellar/src/index.ts"],
-      "cellar/*": ["packages/cellar/src/*"]
+      "cellar/*": ["packages/cellar/src/*"],
+      "shop": ["packages/shop/src/index.ts"],
+      "shop/*": ["packages/shop/src/*"]
     }
   },
   "include": [

@@ -3,7 +3,8 @@
 # Type: script
 # Purpose: "Every screen the client can route to has a row in `screen`, so a
 #           note about wording has something to point at."
-# Depends on: [supabase/migrations/0101_a_note_can_be_about_a_screen.sql]
+# Depends on: [supabase/migrations/0101_a_note_can_be_about_a_screen.sql,
+#              supabase/migrations/0107_the_shop_has_screens_too.sql]
 # Depended on by: [scripts/green.sh]
 # ---------------------------------------------------------------------------
 #
@@ -28,22 +29,31 @@ cd "$(dirname "$0")/.." || exit 2
 
 CONTAINER="${VSV_DB_CONTAINER:-supabase_db_vsv-management-software}"
 DB="${1:-postgres}"
-SRC="${VSV_PLACES_SRC:-packages/cellar/src/places.ts}"
+# Both clients. The shop arrived as a second periphery and its screens have to
+# be registered for the same reason the cellar's are: a note about wording needs
+# something to point at, and the person most likely to have wording feedback is
+# the one using the newest screens.
+SRC="${VSV_PLACES_SRC:-packages/cellar/src/places.ts packages/shop/src/places.ts}"
 
-if [ ! -f "$SRC" ]; then
-  echo "FAIL  no place list at $SRC"
-  exit 1
-fi
+for f in $SRC; do
+  if [ ! -f "$f" ]; then
+    echo "FAIL  no place list at $f"
+    exit 1
+  fi
+done
 
 # Everything quoted inside WITHOUT_ID and WITH_ID. Both are flat lists of string
 # literals, one per line, which is what makes this readable without a parser.
+# The cellar names its two sets WITHOUT_ID and WITH_ID; the shop names its one
+# set PLACES. Both are flat lists of string literals, which is what makes this
+# readable without a parser.
 places=$(awk '
-  /^const (WITHOUT_ID|WITH_ID) = new Set\(\[/ { inside = 1; next }
-  inside && /^\]\);/                          { inside = 0; next }
+  /^(const|export const) (WITHOUT_ID|WITH_ID|PLACES) = new Set\(\[/ { inside = 1; next }
+  inside && /^\]\);/                                                 { inside = 0; next }
   inside && match($0, /"[^"]+"/) {
     print substr($0, RSTART + 1, RLENGTH - 2)
   }
-' "$SRC" | sort -u)
+' $SRC | sort -u)
 
 if [ -z "$places" ]; then
   echo "FAIL  no places found in $SRC, which means this check is reading nothing"

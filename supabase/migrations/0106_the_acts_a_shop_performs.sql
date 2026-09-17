@@ -5,7 +5,8 @@
 --           than against three tables."
 -- Depends on: [supabase/migrations/0057_the_contract.sql,
 --              supabase/migrations/0105_a_machine_is_a_departure_from_its_model.sql]
--- Depended on by: [tests/schema_assertions.sql]
+-- Depended on by: [tests/schema_assertions.sql,
+--                  supabase/migrations/0107_the_shop_has_screens_too.sql]
 -- Axioms enforced: AR-Q8 (the interface is periphery over a read and write
 --                  contract), T0-5 (work is appended, never edited)
 -- Open sorries: none

@@ -1105,6 +1105,33 @@ is annoyed that it cannot also say when it is next due, at which point the inter
 the model, the last service is already recorded here, and the arithmetic is one line.
 *Load-bearing:* no. Nothing depends on it and nothing claims otherwise.
 
+**S-93. The shop app loses your place when the phone discards the tab.**
+The cellar learned this the hard way: a phone discards a backgrounded tab under memory pressure,
+so leaving the app to take a photograph and coming back is a cold start rather than a switch. The
+winemaker found it halfway through registering a tank, needing the photograph that was the reason
+to leave. `places.ts` answered it by putting the place in the URL, so a restart lands where you
+were, and drafts answered the typing.
+The shop periphery has neither. Its screens are reached by calling a function from a closure on
+the screen before, which is exactly the shape the cellar had before it was fixed, and it is the
+same phone. Matt recording a repair, stopping to photograph a part number, and coming back to the
+machine list with his typing gone is the specific failure, and it will happen the first week he
+uses it. *Resolves when:* the shop gets the same treatment, which is a hash router over the
+`ShopPlace` union already written in `packages/shop/src/places.ts` plus the draft store the cellar
+uses. The union exists because this was foreseen while building it, not afterwards.
+*Load-bearing:* yes, as soon as anybody uses the shop app for anything longer than one screen.
+
+**S-92. A machine model with no machine cannot be chosen.**
+`0106` registers `shop.machines` and `shop.machine_history` as readables and nothing for models on
+their own. The add-a-machine screen therefore builds its model list from the machines that already
+exist, taking each one's model, which means a model you have just registered and not yet used is
+missing from the list the moment you need it. Registering a model and then a machine of that model
+is the ordinary first thing anybody does, so this is wrong on the first run.
+It is small and it is not a schema problem: `machine_model` is a table with rows in it, and the
+gap is that no readable names it. *Resolves when:* somebody adds `shop.models` to the readable
+registry, at which point the screen reads the list directly and this paragraph goes away.
+*Load-bearing:* yes for the first machine anybody registers, and the workaround is to register the
+machine first and the model after, which is backwards.
+
 ## Discharged
 **S-87. Five bins carried the wrong naming convention.** *Discharged 2026-09-17.*
 PB4 through PB8 were Pearlstad's, sitting in the middle of a series that was otherwise this

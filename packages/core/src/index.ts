@@ -4,3 +4,5 @@
 export * from "./env.ts";
 export * from "./kernel.ts";
 export * from "./types.ts";
+// The DOM primitives, here since the shop module needed them too. See ui.ts.
+export * from "./ui.ts";

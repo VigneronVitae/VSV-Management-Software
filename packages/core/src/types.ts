@@ -268,6 +268,47 @@ export type ScreenRow = {
   active: boolean;
 };
 
+// 0105. A machine as a machine. `spec` is derived: the model's specification
+// with every modification applied over the top, so the press reads three phase
+// because somebody recorded the VFDs and not because a field says so.
+export type MachineDetail = {
+  id: Uuid;
+  name: string;
+  serial: string | null;
+  acquired_at: string | null;
+  active: boolean;
+  model_id: Uuid | null;
+  make: string | null;
+  model: string | null;
+  model_name: string | null;
+  kind: string | null;
+  location_name: string | null;
+  // Set when this machine is also a vessel, which the press is.
+  vessel_id: Uuid | null;
+  vessel_name: string | null;
+  stock_spec: Record<string, unknown> | null;
+  spec: Record<string, unknown>;
+  modifications: number;
+  entries: number;
+  last_worked_on: string | null;
+};
+
+// One thing done to a machine. `changed_it` separates a departure from work that
+// returned the machine to what it was.
+export type MachineWork = {
+  id: Uuid;
+  machine_id: Uuid;
+  machine: string;
+  at: string;
+  kind: string;
+  kind_label: string;
+  changed_it: boolean;
+  body: string;
+  spec_change: Record<string, unknown> | null;
+  by_whom: string | null;
+  created_at: string;
+};
+
 export type NodePayload = {
   id: Uuid;
   stage: NodeStage;
