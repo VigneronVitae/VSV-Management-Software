@@ -1,6 +1,6 @@
 ---
 Type: ruling
-Version: 2.1
+Version: 2.2
 Purpose: "Records every architectural decision governing the decomposition of this system into installable modules, with the reasoning, the falsifier, and the condition under which each ruling would be wrong."
 Depends on: [packages/cellar/docs/spec.md, docs/methodology-lineage.md]
 Depended on by: [docs/findings-ledger.md, docs/status-ledger.md, docs/session-reports/modularization-progress.md, supabase/migrations/0023_subject_resolver.sql, supabase/migrations/0024_task_board_via_registry.sql, supabase/migrations/0026_subject_type_registry.sql, supabase/migrations/0027_term_kind_registry.sql, scripts/status.sh, docs/practice-mode.md, docs/review/2026-09-15-what-other-apps-do.md]
@@ -8,7 +8,7 @@ Depended on by: [docs/findings-ledger.md, docs/status-ledger.md, docs/session-re
 
 # Architecture Rulings
 
-**Version 2.1.** Versioning follows the rule below at the end of this document.
+**Version 2.2.** Versioning follows the rule below at the end of this document.
 
 This system is one winery's production tracker and is intended to become a set of
 modules a different operation can install a subset of. A farm with no winery installs
@@ -550,6 +550,38 @@ A resolver states what it inferred the requirement to be and the operator confir
 corrects before anything is dispatched. Nearly free for a work-order resolver, and the
 corrections are the data worth having, because they say the requirement tags are wrong.
 
+**AR-J3. The system covers the whole operation except money changing hands. Settled.**
+*Status:* ruled, 2026-09-17, by the winemaker.
+*Raised in answer to a scouting document that could not decide whether one system covering
+both winemaking and equipment maintenance was an opportunity or a mistake: "yeah we are
+doing everything except transactions and payment stuff."*
+
+**What that includes.** Everything the operation does to the physical thing and to the
+record of it: fruit, wine, vessels, the machines that move them, the stores they consume,
+the vineyard they came from, the paperwork the government wants. The modules registered in
+`0109` are the shape of it, including the ones with nothing behind them yet.
+
+**What it excludes, and why the line is there rather than somewhere else.** Taking money.
+Card processing, a point of sale, a wine club's recurring billing, invoices, accounts, a
+cart. Not because those are unimportant but because they are a solved and heavily regulated
+market that this winery already buys, and because the failure modes are categorically
+different: a bug here loses the record of a pressing and a bug there takes the wrong amount
+from a customer. The two do not belong under one set of eyes at this scale.
+
+**The consequence that matters is the seam.** Something else will take the money, and the
+same case of wine exists on both sides of that line. This system will say a case was made,
+bottled, and is in a location; the other will say it was sold. Neither is authoritative
+about the other, and the join has to be made somewhere. That is a real integration and it is
+not built, thought about, or scheduled.
+
+*What would show this wrong:* somebody having to key the same case count into two systems
+every week, or a compliance report that cannot be produced without sales figures this system
+refuses to hold. Either would mean the line was drawn in the wrong place rather than that
+there should be no line.
+
+*Enforcement:* none yet, and it does not need one while nothing here touches money. It
+becomes enforceable the day a module proposes a price field.
+
 ---
 
 ## Open questions
@@ -905,6 +937,16 @@ preference, and should be marked as one.
 ---
 
 ## Changelog
+
+### 2.2 (2026-09-17)
+
+*Cause: the winemaker drew the outer boundary of the system in one sentence, and it was
+not written down anywhere.*
+
+**Added AR-J3,** which says what this covers and what it does not: everything the operation
+does to the wine and the equipment, and nothing that takes money. Minor rather than patch
+because it adds a ruling. Nothing existing was reworded or reversed.
+
 
 ### 2.1 (2026-09-11)
 

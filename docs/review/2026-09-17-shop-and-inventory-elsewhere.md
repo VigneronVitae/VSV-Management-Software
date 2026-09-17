@@ -167,6 +167,13 @@ something the winery software vendors sell.
 That is a finding worth sitting with. It is either an opportunity or a warning,
 and this document cannot tell which.
 
+**Answered the same day, by the person who gets to answer it:** *"yeah we are
+doing everything except transactions and payment stuff."* So the combination is
+deliberate rather than accidental, and the boundary is money rather than subject
+matter. That is now AR-J3, and the consequence it names is the seam: something
+else takes the money, the same case of wine exists on both sides of that line,
+and the join is not built.
+
 ## The trellis idea, confirmed from an unexpected direction
 
 He described the machine record as *"a trellis for AI mechanic help and
