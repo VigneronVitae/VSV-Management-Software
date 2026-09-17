@@ -1120,6 +1120,21 @@ uses it. *Resolves when:* the shop gets the same treatment, which is a hash rout
 uses. The union exists because this was foreseen while building it, not afterwards.
 *Load-bearing:* yes, as soon as anybody uses the shop app for anything longer than one screen.
 
+**S-93. The shop app loses your place when the phone discards the tab.**
+The cellar learned this the hard way: a phone discards a backgrounded tab under memory pressure,
+so leaving the app to take a photograph and coming back is a cold start rather than a switch. The
+winemaker found it halfway through registering a tank, needing the photograph that was the reason
+to leave. `places.ts` answered it by putting the place in the URL, so a restart lands where you
+were, and drafts answered the typing.
+The shop periphery has neither. Its screens are reached by calling a function from a closure on
+the screen before, which is exactly the shape the cellar had before it was fixed, and it is the
+same phone. Matt recording a repair, stopping to photograph a part number, and coming back to the
+machine list with his typing gone is the specific failure, and it will happen the first week he
+uses it. *Resolves when:* the shop gets the same treatment, which is a hash router over the
+`ShopPlace` union already written in `packages/shop/src/places.ts` plus the draft store the cellar
+uses. The union exists because this was foreseen while building it, not afterwards.
+*Load-bearing:* yes, as soon as anybody uses the shop app for anything longer than one screen.
+
 **S-92. A machine model with no machine cannot be chosen.**
 `0106` registers `shop.machines` and `shop.machine_history` as readables and nothing for models on
 their own. The add-a-machine screen therefore builds its model list from the machines that already
@@ -1132,7 +1147,29 @@ registry, at which point the screen reads the list directly and this paragraph g
 *Load-bearing:* yes for the first machine anybody registers, and the workaround is to register the
 machine first and the model after, which is backwards.
 
+**S-94. The front door lists modules nobody can get.**
+`0109` lists every module including the ones with no periphery, on the argument that "started and
+not finished" is truer than showing nothing. Stores, Vineyards and Marketing therefore appear on
+the chooser as things that cannot be opened, and Marketing in particular has not a single row in
+the kernel behind it: it is there because the winemaker named it.
+The risk is the ordinary one for a list of things that do not work yet. A person who taps three
+dead entries learns to stop reading the list, and by the time Stores is real they have stopped
+looking. *Resolves when:* either those modules get peripheries, at which point the problem solves
+itself, or somebody notices they are being ignored and the honest answer becomes hiding them
+behind something that has to be opened on purpose. The evidence for which is whether anybody ever
+asks about a module they saw greyed out. *Load-bearing:* no, and the counts beside each one are
+there so that a dead entry at least says how much of it exists.
+
 ## Discharged
+**S-92. A machine model with no machine could not be chosen.** *Discharged by `0108`.*
+`0106` registered two readables and forgot the obvious third, so the add-a-machine screen built
+its model list out of the machines that already had one. Register a model and then a machine of
+it, which is the first thing anybody does, and the model was missing at exactly that moment.
+`machine_model_detail` lists models whether or not anybody owns one, and carries a count of how
+many machines are of it so a model with none reads as newly registered rather than as an error.
+The screen reads it, and `shop.register_machine` now names it as the source for its model field
+instead of pointing at the machine list as a stand-in.
+
 **S-87. Five bins carried the wrong naming convention.** *Discharged 2026-09-17.*
 PB4 through PB8 were Pearlstad's, sitting in the middle of a series that was otherwise this
 winery's, and `0098` set the convention for a borrowed stack without applying it to them: they were

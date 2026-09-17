@@ -32,14 +32,19 @@ const SHELL = `vsv-shell-${VERSION}`;
 // under the dev server it is dozens of modules with changing query strings, and
 // precaching a partial graph would produce an app that loads and does not run,
 // which is worse than one that says it cannot reach the winery.
+// Relative to this worker's own scope, which is /cellar/ since 0109 moved the
+// app off the root and gave the root to the front door. Absolute paths here
+// would precache the launcher's index as the cellar's shell, and then serve it
+// for every cellar navigation while offline: the app would open on somebody
+// else's page and look like it had lost its mind.
 const ALWAYS = [
-  "/",
-  "/manifest.webmanifest",
-  "/icon-192.png",
-  "/icon-512.png",
-  "/icon-maskable-512.png",
-  "/apple-touch-icon.png",
-];
+  "./",
+  "./manifest.webmanifest",
+  "./icon-192.png",
+  "./icon-512.png",
+  "./icon-maskable-512.png",
+  "./apple-touch-icon.png",
+].map((p) => new URL(p, self.registration.scope).toString());
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

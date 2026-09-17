@@ -29,7 +29,9 @@ import type {
   LotWithoutColour,
   LotWithoutVintage,
   MachineDetail,
+  MachineModel,
   MachineWork,
+  ModuleRow,
   NodePayload,
   PaperRecord,
   Party,
@@ -513,6 +515,16 @@ export async function resolveVesselTypeNote(noteId: Uuid): Promise<void> {
   if (error) throw new KernelError(error);
 }
 
+// --- the modules ----------------------------------------------------------
+
+// 0109. What this winery has and where each part can be opened. Read by the
+// front door, which holds no list of its own.
+export async function modules(): Promise<ModuleRow[]> {
+  const { data, error } = await kernel().from("module_detail").select("*");
+  if (error) throw new KernelError(error);
+  return (data ?? []) as ModuleRow[];
+}
+
 // --- the shop -------------------------------------------------------------
 
 // 0105 and 0106. Machines, and everything done to them. Here in core rather than
@@ -546,6 +558,15 @@ export async function machineWork(machineId: Uuid): Promise<MachineWork[]> {
     .eq("machine_id", machineId);
   if (error) throw new KernelError(error);
   return (data ?? []) as MachineWork[];
+}
+
+export async function machineModels(): Promise<MachineModel[]> {
+  const { data, error } = await kernel()
+    .from("machine_model_detail")
+    .select("*")
+    .order("name");
+  if (error) throw new KernelError(error);
+  return (data ?? []) as MachineModel[];
 }
 
 export async function registerMachineModel(args: {

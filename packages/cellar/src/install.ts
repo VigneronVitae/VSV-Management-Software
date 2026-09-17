@@ -103,7 +103,10 @@ export function watchForInstall(): void {
   }
 
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js").then(
+    // Relative on purpose. The app moved from the root to /cellar/ in 0109, and
+    // an absolute "/sw.js" would claim the whole origin, including the front
+    // door and the shop. Registered relative, its scope is this app's own path.
+    navigator.serviceWorker.register("sw.js").then(
       () => {
         workerError = null;
         changed();

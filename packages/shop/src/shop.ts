@@ -27,6 +27,7 @@ import {
   lede,
   type MachineDetail,
   machine,
+  machineModels,
   machines,
   machineWork,
   on,
@@ -466,16 +467,23 @@ function addMachineScreen(): HTMLElement {
   const body = el("div", { class: "rows" }, empty("Loading."));
 
   void (async () => {
-    // Models come from the machines that exist, because there is no readable
-    // for models on their own yet and every machine names one. S-92.
-    const [all, kit] = await Promise.all([machines(), vessels()]);
-    const seen = new Map<string, string>();
-    for (const m of all) {
-      if (m.model_id && m.model_name) seen.set(m.model_id, m.model_name);
-    }
+    // 0108. Models read from their own list, so one registered a minute ago and
+    // not yet used is there. Until that readable existed this screen built the
+    // list out of the machines that already had a model, which left out exactly
+    // the model somebody had just made. That was S-92.
+    const [all, kit, models] = await Promise.all([
+      machines(),
+      vessels(),
+      machineModels(),
+    ]);
     model.replaceChildren(
       el("option", { value: "", text: "No model" }),
-      ...[...seen].map(([id, label]) => el("option", { value: id, text: label })),
+      ...models.map((mm) =>
+        el("option", {
+          value: mm.id,
+          text: mm.machines > 0 ? `${mm.name} (${mm.machines})` : mm.name,
+        }),
+      ),
     );
     // The bridge. A machine that is already a vessel claims it rather than
     // becoming a second copy of the same press.

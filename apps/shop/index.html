@@ -6,8 +6,12 @@
     <meta name="color-scheme" content="light dark" />
     <!-- Its own manifest, its own scope, its own icon. Same origin as the cellar
          app on purpose: the sign-in is stored per origin, so one login serves
-         both and an intern does not sign in twice. -->
-    <link rel="manifest" href="/shop/manifest.webmanifest" />
+         both and an intern does not sign in twice.
+
+         Every path here is relative, because this is served at /shop/ through a
+         proxy that strips the prefix before forwarding. An absolute /src/ would
+         reach the cellar app instead. -->
+    <link rel="manifest" href="manifest.webmanifest" />
     <!-- A different colour from the cellar app, so that the first glance at the
          phone says which one this is. -->
     <meta name="theme-color" content="#2f4858" />
@@ -15,10 +19,10 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Shop" />
     <title>Vitae Springs Shop</title>
-    <link rel="stylesheet" href="/src/app.css" />
+    <link rel="stylesheet" href="./src/app.css" />
   </head>
   <body>
     <main id="app"></main>
-    <script type="module" src="/src/index.ts"></script>
+    <script type="module" src="./src/index.ts"></script>
   </body>
 </html>

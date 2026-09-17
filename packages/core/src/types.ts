@@ -268,6 +268,34 @@ export type ScreenRow = {
   active: boolean;
 };
 
+// 0109. A module, and where it can be opened. `path` is null for one the kernel
+// knows about and nobody can open yet; the counts are read from the contract so
+// a module cannot claim to be more than it is.
+export type ModuleRow = {
+  key: string;
+  label: string;
+  note: string;
+  path: string | null;
+  sort_order: number;
+  openable: boolean;
+  readables: number;
+  capabilities: number;
+};
+
+// 0108. A model, listable whether or not anybody owns one of them yet, which is
+// what registering a model and then a machine of it actually needs.
+export type MachineModel = {
+  id: Uuid;
+  make: string;
+  model: string;
+  name: string;
+  kind: string | null;
+  spec: Record<string, unknown>;
+  note: string | null;
+  active: boolean;
+  machines: number;
+};
+
 // 0105. A machine as a machine. `spec` is derived: the model's specification
 // with every modification applied over the top, so the press reads three phase
 // because somebody recorded the VFDs and not because a field says so.

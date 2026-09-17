@@ -73,7 +73,11 @@
 --              supabase/migrations/0104_a_pressed_bin_leaves_the_room.sql,
 --              supabase/migrations/0105_a_machine_is_a_departure_from_its_model.sql,
 --              supabase/migrations/0106_the_acts_a_shop_performs.sql,
---              supabase/migrations/0107_the_shop_has_screens_too.sql]
+--              supabase/migrations/0107_the_shop_has_screens_too.sql,
+--              supabase/migrations/0108_a_model_is_readable_on_its_own.sql,
+--              supabase/migrations/0109_a_module_says_where_it_lives.sql,
+--              supabase/migrations/0110_the_front_door_opens_before_you_sign_in.sql,
+--              supabase/migrations/0111_a_count_that_reads_zero_is_a_lie.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh, scripts/rpc-args.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -2618,7 +2622,11 @@ begin
   -- scoped to is_facility_user(). None reads blanket true. What is wrong with
   -- the tractor is not a custom crush client's business, and the narrower
   -- answer needs no argument.
-  want := '114';
+  -- 114 before 0109, which added two on `module`: a read and an admin write.
+  -- The read is blanket true and is judged below, because the front door has to
+  -- draw itself before anybody has signed in and the list of doors says nothing
+  -- about what is behind them.
+  want := '116';
   if have <> want then
     raise exception
       'FAIL: there are % policies in public and this suite was written against %. If that is deliberate, update this number, and judge the new policy in the disposition list below if it reads or writes blanket true', have, want;
@@ -2658,6 +2666,13 @@ begin
     -- stand in. None of it says whose wine, or how much.
     ('term.term_read', 'permissive',
      'The vocabulary. Every picker in every client reads it, and it names varieties rather than wine.'),
+    -- 0110. The widest deliberate read in the schema, and the narrowest thing
+    -- behind it: five rows naming the apps. The front door is the first screen
+    -- anybody opens and it draws before there is a session, so scoping this to
+    -- authenticated produced a chooser with nothing on it. Each door still
+    -- refuses anybody who is not signed in.
+    ('module.module_read', 'permissive',
+     'Five rows naming the modules and where each is served. The front door draws before anybody has signed in, and this is the list of doors rather than what is behind them.'),
     ('term_kind.term_kind_read', 'permissive',
      'Vocabulary about vocabulary, AR-E7. Reading it tells you what kinds of term exist.'),
     ('template.template_read', 'permissive',
@@ -2968,7 +2983,13 @@ begin
   -- beside them, a machine's model and room, an entry's machine, and the
   -- bridge. One unique, on machine.vessel_id, which is what stops a press
   -- having two histories.
-  want := 'c=51 f=93 p=47 u=23';
+  -- c=51 f=93 p=47 u=23 before 0109, which added `module`: a primary key on the
+  -- module's own name, a check that it says what it is, and a check that a path
+  -- looks like a path. No foreign keys: a module is named by a string that the
+  -- readable and capability registries already carry, and adding a key would
+  -- mean every one of those rows pointing at a table that did not exist until
+  -- now.
+  want := 'c=53 f=93 p=48 u=23';
   if have <> want then
     raise exception
       E'FAIL: the constraint inventory changed.\nnow:  %\nwas:  %\nIf that is deliberate, update this line in the same commit that changed the schema.', have, want;
@@ -11466,7 +11487,9 @@ do $$ begin raise notice '--- a machine is a departure from its model'; end $$;
 -- something."
 do $$
 declare
-  model  uuid;
+  -- Not `model`: machine_model_detail has a column of that name and plpgsql
+  -- resolves the variable first. Same trap as 0086 and register_machine_model.
+  the_model uuid;
   mach   uuid;
   press  uuid := '00000000-0000-0000-0000-0000000db001';
   out_js jsonb;
@@ -11480,10 +11503,10 @@ begin
 
   out_js := register_machine_model('CMake', 'CModel', 'press',
     '{"power": "single phase 230V", "capacity_t": 1.2, "control": "original panel"}'::jsonb);
-  model := (out_js ->> 'id')::uuid;
+  the_model := (out_js ->> 'id')::uuid;
 
   -- **The bridge.** The press is already a vessel and must stay one object.
-  out_js := register_machine('CM the press', model, 'CM-1', press);
+  out_js := register_machine('CM the press', the_model, 'CM-1', press);
   mach := (out_js ->> 'id')::uuid;
   if (out_js ->> 'is_a_vessel')::boolean is not true then
     raise exception 'FAIL: a machine registered against a vessel does not say so';
@@ -11494,7 +11517,7 @@ begin
   perform test_ok('a machine can be a vessel that already exists rather than a second copy of it, which is the bridge he asked for: the press is one thing whether you are pressing with it or fixing it');
 
   begin
-    perform register_machine('CM the press again', model, 'CM-2', press);
+    perform register_machine('CM the press again', the_model, 'CM-2', press);
     raise exception 'FAIL: one vessel was registered as two machines';
   exception when others then
     if position('already registered as the machine' in sqlerrm) = 0 then raise; end if;
@@ -11573,6 +11596,84 @@ begin
   -- And a machine is something a note can be about, which 0101 made general.
   perform add_note('machine', mach, 'CM a note about a machine');
   perform test_ok('a note can be about a machine, so the registry inherits photographs and notes rather than inventing its own');
+
+  -- 0108, discharging S-92. A model with nothing built on it yet is still
+  -- listable, which is what registering a model and then a machine of it needs
+  -- and what the screen could not do while it read its list off the machines.
+  perform register_machine_model('CMake2', 'CModel2', 'tractor');
+  if not exists (select 1 from machine_model_detail
+                  where make = 'CMake2' and model = 'CModel2' and machines = 0) then
+    raise exception 'FAIL: a model nobody owns one of is not listed';
+  end if;
+  perform test_ok('a machine model can be listed before anybody owns one, because registering the model and then the machine of it is the first thing anybody does and the model was missing at exactly that moment');
+
+  if (select machines from machine_model_detail where id = the_model) < 1 then
+    raise exception 'FAIL: a model does not count the machines that are of it';
+  end if;
+  perform test_ok('a model says how many of this winery''s machines are of it, so one with none reads as newly registered rather than as an error');
+end $$;
+
+-- ---------------------------------------------------------------------------
+do $$ begin raise notice '--- a module says where it lives'; end $$;
+
+-- 0109, 0110, 0111. "Could we have /cellar/ be the cellar one and the root be
+-- the chooser that you pick cellar/shop/inventory/marketing/get new modules?"
+do $$
+declare
+  got    record;
+  n      bigint;
+  secdef boolean;
+begin
+  perform test_act_as('00000000-0000-0000-0000-00000000a001');
+
+  select * into got from module_detail where key = 'cellar';
+  if got.path is distinct from '/cellar/' or not got.openable then
+    raise exception 'FAIL: the cellar module says it lives at % and openable is %',
+      got.path, got.openable;
+  end if;
+  perform test_ok('a module says where its periphery lives, so the front door is a list read from the kernel rather than a list somebody typed into a client');
+
+  select * into got from module_detail where key = 'marketing';
+  if got.openable then
+    raise exception 'FAIL: a module with no periphery says it can be opened';
+  end if;
+  perform test_ok('a module the kernel knows about with nothing built on it says so rather than offering a door onto nothing, which is what "get new modules" honestly is today');
+
+  -- **The counts are the contract's, not a second number.** A module that could
+  -- claim to be substantial while being empty is a module description nobody
+  -- can trust.
+  select count(*) into n from capability where module = 'cellar';
+  select * into got from module_detail where key = 'cellar';
+  if got.capabilities <> n then
+    raise exception 'FAIL: the cellar claims % capabilities and the contract has %',
+      got.capabilities, n;
+  end if;
+  perform test_ok('how much is in a module is counted from the contract rather than declared beside it, so it cannot drift from what the module can actually do');
+
+  -- **0111, and the reason it exists.** The counts are subqueries over tables an
+  -- anonymous session cannot read, so before this they returned zero rather than
+  -- failing, and the front door printed "0 things you can do" beside a module
+  -- with thirty one of them. Counting as the owner is what makes the answer the
+  -- same for everybody; this asserts the mechanism, because the suite runs as a
+  -- superuser and cannot be anonymous to observe the symptom.
+  select p.prosecdef into secdef
+    from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace
+   where ns.nspname = 'public' and p.proname = 'module_contract_size';
+  if not coalesce(secdef, false) then
+    raise exception 'FAIL: the module counts are computed as the caller, so they read zero for anybody who cannot read the contract';
+  end if;
+  perform test_ok('the module counts are computed as the owner, so a person who has not signed in is told how much is in a module rather than being told zero, which is the empty-set form of A25 and was printed on the front door before anybody noticed');
+
+  -- And the list itself is readable before sign-in, which is the whole point of
+  -- a front door.
+  if not exists (
+    select 1 from pg_policies
+     where schemaname = 'public' and tablename = 'module'
+       and cmd = 'SELECT' and 'public' = any(roles)
+  ) then
+    raise exception 'FAIL: the module list is not readable before sign-in';
+  end if;
+  perform test_ok('the list of modules is readable before anybody signs in, because the front door draws itself before it knows who is looking and a chooser with nothing on it reads as an app with nothing in it');
 end $$;
 
 do $$ begin raise notice '--- all assertions passed'; end $$;
