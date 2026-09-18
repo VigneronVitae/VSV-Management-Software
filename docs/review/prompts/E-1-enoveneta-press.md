@@ -1,6 +1,6 @@
 # E-1: The Enoveneta membrane press, from photographs to a parts skeleton
 
-**Target:** one machine at Vitae Springs, a pneumatic membrane press by Enoveneta, referred to in the app as "1.2T Membrane Press".
+**Target:** one machine at Vitae Springs. Enoveneta pneumatic membrane press, serial `4365`, registration `00/318820 PD`, 3500 litres, probably built 1999 or 2000. Called "1.2T Membrane Press" in the winery's own app, which may be wrong.
 **Scope:** identification and documentation of this press and the components photographed on it. Not a review of any code.
 **Date:** 2026-09-17
 **Wanted by:** the winemaker, so that the shop module has a researched baseline to record departures from.
@@ -27,15 +27,79 @@ limit: a press contains a hydraulic system, which contains a pump, which contain
 
 ## The evidence, and how far to trust it
 
-Six photographs were taken on 2026-09-17. They are not attached to this file. They are at
-`C:\Users\Randy\.claude\uploads\d6a38a2d-4674-4fda-be24-1420b81eb15a\` on the winery desktop,
-named `7c596789`, `ab4b8075`, `7b609e07`, `6f21133f`, `25adcc69`, `8bb04794`, each
-`-image.jpg`. **Attach them to your session if you can.** What follows is a transcription made
-from them, and a transcription is not the photograph.
+**Nine photographs are attached to this session.** They were taken at the winery on
+2026-09-17 and they are the primary evidence. Look at them. What follows is a transcription
+made from them, and a transcription is not the photograph: where the two disagree, the
+photograph is right and the transcription is a mistake worth reporting back.
+
+They show, in no particular order: the maker's plate; the whole press from the side; the
+control panel; the drum-head air fitting, twice; the pneumatic directional valve; both
+variable frequency drives; and an electrical junction box.
 
 Everything below is marked either **read** (legible in a photograph) or **inferred** (a
 reasonable reading that you should confirm or correct). Carry that distinction into your
 output. Do not upgrade an inference to a fact because it would make the document tidier.
+
+### The maker's plate, which is the identification
+
+Stamped and hand-engraved stainless plate riveted to the shell. **Read, in full:**
+
+| Field | Value |
+|---|---|
+| Maker | `ENOVENETA`, `TECNOLOGIE ENOLOGICHE`, with a registered trademark mark |
+| Address | `35016 PIAZZOLA sul BRENTA (PADOVA) - ITALY` |
+| `N. DI SERIE` | `4365` |
+| `N. MATRICOLA` | `00/318820 PD` |
+| `PRESS/BAR` | `2` and `1,8` in one cell |
+| `LITRI` | `3500` |
+| `TEMP. C°` | `-10 +35` |
+
+An `EV` monogram is embossed at the right of the plate.
+
+- **Inferred.** `N. DI SERIE` 4365 is the manufacturer's serial. `N. MATRICOLA` is an Italian
+  pressure-equipment registration: `PD` is the province of Padova and `00/` is very likely the
+  year 2000, which agrees with the `10/99` date code on the pneumatic valve. So the press was
+  probably built in late 1999 or 2000.
+- **Inferred.** `PRESS/BAR 2 1,8` reads as a design pressure of 2 bar and a maximum working
+  pressure of 1.8 bar, but the cell is ambiguous in the photograph. Confirm it.
+- **Read, and a discrepancy worth resolving.** The plate says **3500 litres**. The winery's own
+  app calls this machine a "1.2T Membrane Press". Those are not obviously the same claim: for
+  closed pneumatic presses the drum volume in litres is typically a good deal larger than the
+  fruit capacity in tonnes, but a factor of roughly three is at the high end. Establish what
+  this model is actually rated to take in tonnes of whole fruit and of destemmed fruit, and say
+  whether "1.2T" is right, wrong, or measuring something else. The winery will fix its own
+  records from your answer.
+- **Inferred.** `TEMP. C° -10 +35` is the ambient temperature range the machine is rated to
+  work in, not a product temperature.
+
+**This plate is the most valuable thing in this document.** A serial number and a registration
+number are what a manufacturer's parts department needs, and they turn "find a parts diagram
+for a press that looks like this" into "ask Enoveneta for the parts list for serial 4365".
+
+### The press as a whole
+
+- **Read.** A closed cylindrical stainless drum, horizontal, in a dimpled or scalloped finish,
+  mounted in a stainless frame on four swivel casters. `ENOVENETA` and the `EV` logo on the
+  side with a magenta stripe. A yellow warning decal on the upper shell. A louvred control
+  cabinet at the right-hand end, carrying the panel photographed separately. A push handle at
+  the left end.
+- **Read.** In front of it stands a separate stainless receiving tray or must pan with a mesh
+  screen and a low lip, with whole berries and a little juice on it.
+- **Read.** It is standing outside on asphalt beside a shed, which is where it is used.
+- **Inferred.** The closed shell, the single long access door line along the side, and the
+  volume on the plate together say this is a closed tank press rather than an open or basket
+  type. Whether it is a full-drum membrane or a lateral membrane is the sort of thing the model
+  identification should settle.
+
+### The electrical junction box
+
+- **Read.** A white polycarbonate enclosure bolted to the shell, four corner screws, cable
+  glands entering from both sides with cream-jacketed cable. Moulded into the lid: `GEWISS`,
+  `GW 44 205`, `IP 56`.
+- **Inferred.** GEWISS is an Italian electrical manufacturer and `GW44205` is a catalogue
+  number for a weatherproof junction box, so this is very likely original equipment rather than
+  a later addition. Confirm the size and whether it is still a current part, because it is the
+  kind of thing that gets cracked and needs replacing.
 
 ### The press and its control panel
 
@@ -128,11 +192,22 @@ output. Do not upgrade an inference to a fact because it would make the document
 
 ### 1. Which press this is
 
-Identify the Enoveneta model. The winery calls it a 1.2 tonne membrane press. Enoveneta's
-range, current and discontinued, includes closed and open pneumatic presses under several
-series names. Say which model this control panel and drum belong to, what capacity it is
-actually rated at, and roughly what years it was built. If the panel was fitted to more than
-one model, say so rather than guessing.
+**Start from the plate, not from the photographs of the parts.** Serial `4365`, registration
+`00/318820 PD`, 3500 litres, Piazzola sul Brenta.
+
+Identify the Enoveneta model. Enoveneta's range, current and discontinued, includes closed and
+open pneumatic presses under several series names, and the 3500 litre figure should narrow it
+quickly. Say which model this is, what it is rated to take in tonnes, and what years it was
+built. If a given panel was fitted across several models, say so rather than picking one.
+
+**Then write to Enoveneta.** They are still trading, at Piazzola sul Brenta in Padova. A serial
+number is exactly what their parts department needs. Draft the email the winery should send:
+short, in English with an Italian courtesy line if that helps, quoting `N. DI SERIE 4365` and
+`N. MATRICOLA 00/318820 PD`, asking for the operator manual, the spare parts catalogue, the
+pneumatic and electrical schematics, and the current price and lead time on a replacement
+membrane. Include their actual contact address, and say where you got it.
+
+Resolve the 3500 litres against the winery's "1.2T" while you are there.
 
 ### 2. The documentation
 
@@ -184,6 +259,9 @@ Treat these as sub-investigations and give each a short section:
   should know that before the panel dies.
   Do not analyse the winery's own pressure curve or offer opinions about it. That is
   winemaking, it is theirs, and it is not what this document is for.
+- **The junction box.** Confirm `GEWISS GW44205`: dimensions, IP rating, whether it is
+  current, and what the modern equivalent is. Brief, because it is a box, but a cracked
+  weatherproof box on a machine that is washed down matters more than it sounds.
 - **The MOLLOM drives.** Identify the actual model and find its manual. Then address the
   rewire label directly and carefully: what would moving the output terminals to the input
   mean on a drive of this type, under what circumstance would somebody do it, what does it
