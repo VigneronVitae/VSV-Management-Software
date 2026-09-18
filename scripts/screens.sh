@@ -6,7 +6,8 @@
 # Depends on: [supabase/migrations/0101_a_note_can_be_about_a_screen.sql,
 #              supabase/migrations/0107_the_shop_has_screens_too.sql,
 #              supabase/migrations/0113_a_vineyard_is_a_place_you_can_open.sql,
-#              supabase/migrations/0114_every_pick_stays_on_the_list.sql]
+#              supabase/migrations/0114_every_pick_stays_on_the_list.sql,
+#              supabase/migrations/0118_the_vineyard_has_a_door.sql]
 # Depended on by: [scripts/green.sh]
 # ---------------------------------------------------------------------------
 #
@@ -35,7 +36,7 @@ DB="${1:-postgres}"
 # be registered for the same reason the cellar's are: a note about wording needs
 # something to point at, and the person most likely to have wording feedback is
 # the one using the newest screens.
-SRC="${VSV_PLACES_SRC:-packages/cellar/src/places.ts packages/shop/src/places.ts}"
+SRC="${VSV_PLACES_SRC:-packages/cellar/src/places.ts packages/shop/src/places.ts packages/vineyard/src/places.ts}"
 
 for f in $SRC; do
   if [ ! -f "$f" ]; then
@@ -46,11 +47,28 @@ done
 
 # Everything quoted inside WITHOUT_ID and WITH_ID. Both are flat lists of string
 # literals, one per line, which is what makes this readable without a parser.
-# The cellar names its two sets WITHOUT_ID and WITH_ID; the shop names its one
-# set PLACES. Both are flat lists of string literals, which is what makes this
-# readable without a parser.
+# The cellar names its two sets WITHOUT_ID and WITH_ID; the shop and the
+# vineyard each name one set PLACES. All of them are flat lists of string
+# literals, which is what makes this readable without a parser.
 places=$(awk '
-  /^(const|export const) (WITHOUT_ID|WITH_ID|PLACES) = new Set\(\[/ { inside = 1; next }
+  # The opening line may carry literals of its own. A short set formats onto one
+  # line, and the first version of this treated the opener as if it were always
+  # bare: it skipped the rest of that line with `next`, never saw a closing
+  # `]);`, and ran on through the file printing any quoted string it met. The
+  # symptom was the word `id` appearing in the list of screens, off a line
+  # reading `"id" in place`. So the opener is scanned rather than skipped, and a
+  # set that closes on its own line closes there.
+  /^(const|export const) (WITHOUT_ID|WITH_ID|PLACES) = new Set\(\[/ {
+    inside = 1
+    line = $0
+    sub(/^[^[]*\[/, "", line)
+    while (match(line, /"[^"]+"/)) {
+      print substr(line, RSTART + 1, RLENGTH - 2)
+      line = substr(line, RSTART + RLENGTH)
+    }
+    if (line ~ /\]\)/) inside = 0
+    next
+  }
   inside && /^\]\);/                                                 { inside = 0; next }
   inside && match($0, /"[^"]+"/) {
     print substr($0, RSTART + 1, RLENGTH - 2)

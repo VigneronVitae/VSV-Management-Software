@@ -1681,3 +1681,80 @@ body.practising {
 .log-table .partial {
   color: var(--warn);
 }
+
+/* The vineyard's own two grids. Both are "many small things you tap", which
+   nothing else in this app needed: a vessel list is tall rows because there are
+   forty vessels, and a row of vines is a hundred and thirty two positions that
+   have to be seen at once to be any use. */
+
+/* The rows in a block, by the number on the end post. */
+.row-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(3rem, 1fr));
+  gap: 0.4rem;
+}
+
+.row-number {
+  min-height: var(--tap);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.row-number:hover {
+  border-color: var(--ink-faint);
+}
+
+/* One row of vines, drawn the way the map draws it. Small on purpose: the whole
+   row has to fit on a phone or it is not a map, it is a list. */
+.vine-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(2.1rem, 1fr));
+  gap: 3px;
+}
+
+.vine {
+  aspect-ratio: 1;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  /* The variety, set per cell from the module. */
+  background: var(--vine, var(--rule));
+  /* Set per cell from the module, black or white by the fill's luminance. A
+     fixed white works for the dark half of the palette and fails for the pale
+     varieties, which the map paints pale on purpose. */
+  color: var(--vine-ink, #fff);
+  font: inherit;
+  font-size: 0.65rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  cursor: pointer;
+  /* Light text on a painted cell reads at arm's length; a thin shadow keeps it
+     legible on the paler varieties without a second colour per variety. */
+  /* No shadow: the ink is chosen to contrast, so a shadow only muddies the
+     small digits it was propping up. */
+}
+
+/* A gap is not a pale vine. It is drawn hollow so a missing plant is countable
+   down the row at a glance, which is the question somebody walks a row to ask. */
+.vine-gap {
+  background: transparent;
+  border: 1px dashed var(--rule);
+  color: var(--ink-faint);
+  text-shadow: none;
+}
+
+.vine-on {
+  border-color: var(--ink);
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+
+.vine-detail {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--rule);
+}

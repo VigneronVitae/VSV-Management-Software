@@ -1392,6 +1392,112 @@ export type FruitRow = {
   bins_weighed: number;
 };
 
+// --- the vineyard, 0115 and 0117 ------------------------------------------
+//
+// A block is rows, a row is plant spaces, and what stands in a space is the
+// latest dated change rather than a column. These four read the derivations
+// rather than the tables, because the counts and the acreage are functions and
+// a client that summed them itself would be the second answer T0-2 forbids.
+
+export type BlockAcreage = {
+  block_id: Uuid;
+  block: string;
+  vineyard_id: Uuid | null;
+  vineyard: string | null;
+  vines_per_acre: number | null;
+  plants: number;
+  gaps: number;
+  spaces: number;
+  acres: number | null;
+};
+
+export async function blockAcreage(): Promise<BlockAcreage[]> {
+  const { data, error } = await kernel()
+    .from("block_acreage")
+    .select(
+      "block_id,block,vineyard_id,vineyard,vines_per_acre,plants,gaps,spaces,acres",
+    )
+    .order("plants", { ascending: false });
+  if (error) throw new KernelError(error);
+  return (data ?? []) as BlockAcreage[];
+}
+
+export type BlockPlanting = {
+  block_id: Uuid;
+  block: string;
+  vineyard_id: Uuid | null;
+  vineyard: string | null;
+  variety_id: Uuid | null;
+  variety: string | null;
+  clone: string | null;
+  state: string | null;
+  plants: number;
+  acres: number | null;
+};
+
+export async function blockPlanting(blockId?: Uuid): Promise<BlockPlanting[]> {
+  let q = kernel()
+    .from("block_planting")
+    .select(
+      "block_id,block,vineyard_id,vineyard,variety_id,variety,clone,state,plants,acres",
+    );
+  if (blockId) q = q.eq("block_id", blockId);
+  const { data, error } = await q.order("plants", { ascending: false });
+  if (error) throw new KernelError(error);
+  return (data ?? []) as BlockPlanting[];
+}
+
+export type VineRow = {
+  id: Uuid;
+  block_id: Uuid;
+  number: number;
+  orientation: string | null;
+  length_ft: number | null;
+  notes: string | null;
+};
+
+export async function vineRows(blockId: Uuid): Promise<VineRow[]> {
+  const { data, error } = await kernel()
+    .from("vine_row")
+    .select("id,block_id,number,orientation,length_ft,notes")
+    .eq("block_id", blockId)
+    .order("number");
+  if (error) throw new KernelError(error);
+  return (data ?? []) as VineRow[];
+}
+
+export type PlantSpace = {
+  space_id: Uuid;
+  space_number: number;
+  row_id: Uuid;
+  row_number: number;
+  orientation: string | null;
+  block_id: Uuid;
+  block: string;
+  vineyard_id: Uuid | null;
+  vineyard: string | null;
+  as_of: string | null;
+  state: string | null;
+  state_label: string | null;
+  variety_id: Uuid | null;
+  variety: string | null;
+  clone: string | null;
+  note: string | null;
+  provenance: string | null;
+};
+
+export async function plantSpaces(rowId: Uuid): Promise<PlantSpace[]> {
+  const { data, error } = await kernel()
+    .from("plant_space_now")
+    .select(
+      "space_id,space_number,row_id,row_number,orientation,block_id,block,vineyard_id,vineyard,as_of,state,state_label,variety_id,variety,clone,note,provenance",
+    )
+    .eq("row_id", rowId)
+    .order("space_number");
+  if (error) throw new KernelError(error);
+  return (data ?? []) as PlantSpace[];
+}
+
 export async function fruitLog(): Promise<FruitRow[]> {
   const { data, error } = await kernel()
     .from("fruit_log")

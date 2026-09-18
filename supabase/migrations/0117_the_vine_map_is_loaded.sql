@@ -5,7 +5,8 @@
 -- Depends on: [supabase/migrations/0039_vineyard.sql,
 --              supabase/migrations/0115_a_vineyard_is_rows_and_plant_spaces.sql,
 --              supabase/migrations/0116_the_vineyard_is_not_everybodys_business.sql]
--- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql]
+-- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql,
+--                  supabase/migrations/0118_the_vineyard_has_a_door.sql]
 -- Axioms enforced: T0-4, every row lands as `inferred`. I read a spreadsheet; I
 --                  did not walk the rows, and the field is the verifier's.
 --                  T0-2, acreage is counted here rather than copied.

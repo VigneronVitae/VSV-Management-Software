@@ -1,0 +1,19 @@
+{
+  "name": "vineyard-app",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "dependencies": {
+    "core": "workspace:*",
+    "vineyard": "workspace:*"
+  },
+  "devDependencies": {
+    "vite": "^7.1.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  }
+}

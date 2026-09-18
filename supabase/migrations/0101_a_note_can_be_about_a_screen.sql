@@ -10,7 +10,8 @@
 --                  supabase/migrations/0102_a_tank_takes_more_than_one_pressing.sql,
 --                  supabase/migrations/0107_the_shop_has_screens_too.sql,
 --                  supabase/migrations/0113_a_vineyard_is_a_place_you_can_open.sql,
---                  supabase/migrations/0114_every_pick_stays_on_the_list.sql]
+--                  supabase/migrations/0114_every_pick_stays_on_the_list.sql,
+--                  supabase/migrations/0118_the_vineyard_has_a_door.sql]
 -- Axioms enforced: AR-E5 (a registry row rather than a new kind of note),
 --                  A13 (a note about "the vessels screen" filed against nothing
 --                  is a note nobody will ever find again)

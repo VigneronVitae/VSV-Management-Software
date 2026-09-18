@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <!-- Its own manifest, its own scope, its own icon. Same origin as the cellar
+         app on purpose: the sign-in is stored per origin, so one login serves
+         both and an intern does not sign in twice.
+
+         Every path here is relative, because this is served at /vineyard/ through a
+         proxy that strips the prefix before forwarding. An absolute /src/ would
+         reach the cellar app instead. -->
+    <link rel="manifest" href="manifest.webmanifest" />
+    <!-- A different colour from the cellar app, so that the first glance at the
+         phone says which one this is. -->
+    <meta name="theme-color" content="#3f6144" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Vineyard" />
+    <title>Vitae Springs Vineyard</title>
+    <link rel="stylesheet" href="./src/app.css" />
+  </head>
+  <body>
+    <main id="app"></main>
+    <script type="module" src="./src/index.ts"></script>
+  </body>
+</html>
