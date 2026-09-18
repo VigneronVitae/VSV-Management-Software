@@ -202,6 +202,7 @@ import {
   checkbox,
   el,
   empty,
+  type Field,
   field,
   lede,
   on,
@@ -4757,139 +4758,42 @@ async function resultScreen(
 // must be fast before it is complete, so a bin is recorded in one tap with no
 // weight, and the weight is a separate act at the scale.
 
-// A pick that has been described and has no bins yet. Held here rather than in
-// the URL because it is not a thing until its first bin is recorded, and a place
-// is resolved by asking the kernel, which would have nothing to answer with.
-let pendingPick: {
+// Picks that have been described and have no bins yet. Held here rather than in
+// the URL because one is not a thing until its first bin is recorded, and a
+// place is resolved by asking the kernel, which would have nothing to answer
+// with.
+//
+// A list rather than one, because picking is chosen a vineyard at a time and
+// then a set of blocks within it. **One entry per block, and never one entry
+// carrying several.** `block_composition` in 0002 derives a wine's block makeup
+// by walking the lineage back to the picks that fed it and reading `block_id`
+// off each one, so a pick is the unit that carries a block. A pick naming three
+// blocks would not be a blend the kernel could take apart, it would be three
+// percentages that had stopped existing, and nothing later could recover them.
+type PendingPick = {
   id: string;
   block_id: string | null;
+  // Carried so the switcher can label itself without another read, and so the
+  // label survives a block being renamed mid-pick.
+  block_name: string;
   variety_id: string | null;
   vintage: number | null;
-} | null = null;
-// The block a pick came from, with a way to add one without leaving the screen.
-// S-51: block carries an admin-write policy, so a cellar hand gets a refusal
-// here rather than a row, and the refusal says what it is.
-//
-// A block now belongs to a vineyard rather than carrying its name as text, so
-// adding one means naming the vineyard first. Both are one field and the
-// vineyard is remembered, which is the point of 0039: "Pearlstaad" is typed
-// once for the season rather than once per block.
-function blockField(): {
-  root: HTMLElement;
-  value: () => string;
-  reload: (selected?: string) => Promise<void>;
-} {
-  const select = el("select", { class: "input" });
-  const message = el("div", {});
-  const vineyardPick = el("select", { class: "input" });
-  const newVineyard = field({
-    label: "Or a vineyard not listed",
-    placeholder: "Pearlstaad",
-  });
-  const name = field({ label: "Block", placeholder: "Southeast" });
-  let known: Vineyard[] = [];
+  // The real id, once the first bin has landed and this has stopped being
+  // pending. The entry stays in the list rather than being removed, because the
+  // switcher has to keep offering a block after fruit has gone into it.
+  node_id: string | null;
+};
 
-  async function load(selected?: string): Promise<void> {
-    const [blockRows, vineRows] = await Promise.all([blocks(), vineyards()]);
-    known = vineRows;
-    const named = new Map(vineRows.map((v) => [v.id, v.name]));
-    select.replaceChildren(
-      el("option", { value: "", text: "Pick a block" }),
-      ...blockRows.map((b) =>
-        el("option", {
-          value: b.id,
-          text: b.vineyard_id ? `${named.get(b.vineyard_id) ?? "?"} ${b.name}` : b.name,
-        }),
-      ),
-    );
-    vineyardPick.replaceChildren(
-      el("option", { value: "", text: "Pick a vineyard" }),
-      ...vineRows.map((v) => el("option", { value: v.id, text: v.name })),
-    );
-    if (selected) select.value = selected;
-  }
+let pendingPicks: PendingPick[] = [];
+// The vineyard chosen last, because a picking day is usually one vineyard and
+// retyping it for every block set is the kind of friction that gets a screen
+// worked around rather than used.
+let lastVineyard = "";
+let pendingAt = 0;
 
-  const adder = el(
-    "details",
-    { class: "more" },
-    el("summary", { text: "Add a block" }),
-    rows(
-      el(
-        "div",
-        { class: "field" },
-        el("span", { class: "field-label", text: "Vineyard" }),
-        vineyardPick,
-      ),
-      newVineyard.root,
-      name.root,
-      button(
-        "Add it",
-        async () => {
-          const typed = newVineyard.value().trim();
-          if (!vineyardPick.value && !typed) {
-            message.replaceChildren(
-              banner("Which vineyard is this block in?", "error"),
-            );
-            return;
-          }
-          if (!name.value()) {
-            message.replaceChildren(banner("The block needs a name.", "error"));
-            return;
-          }
-          try {
-            let vineyardId = vineyardPick.value;
-            if (!vineyardId) {
-              // Matched case-insensitively against what is already there, so a
-              // second spelling does not become a second vineyard. That is the
-              // whole reason a vineyard stopped being a string.
-              const already = known.find(
-                (v) => v.name.toLowerCase() === typed.toLowerCase(),
-              );
-              if (already) {
-                vineyardId = already.id;
-              } else {
-                vineyardId = newId();
-                await addVineyard({ id: vineyardId, name: typed });
-              }
-            }
-            const blockId = newId();
-            await addBlock({
-              id: blockId,
-              vineyard_id: vineyardId,
-              name: name.value(),
-            });
-            await load(blockId);
-            newVineyard.input.value = "";
-            name.input.value = "";
-            message.replaceChildren(
-              banner(
-                "Added. What is planted in it goes on the vineyard screen.",
-                "good",
-              ),
-            );
-          } catch (error) {
-            message.replaceChildren(fail(error));
-          }
-        },
-        "secondary",
-      ),
-      message,
-    ),
-  );
-
-  return {
-    root: el(
-      "div",
-      { class: "field" },
-      el("span", { class: "field-label", text: "Block" }),
-      select,
-      adder,
-    ),
-    value: () => select.value,
-    reload: load,
-  };
+function currentPick(): PendingPick | null {
+  return pendingPicks[pendingAt] ?? null;
 }
-
 // The list of picks with fruit still in bins. A pick with unweighed bins says so
 // on its row, because that is the number somebody checks at the end of a day.
 function intakeScreen(): HTMLElement {
@@ -5046,7 +4950,7 @@ function newPickScreen(): HTMLElement {
 
   void (async () => {
     try {
-      const block = blockField();
+      const [vineRows, blockRows] = await Promise.all([vineyards(), blocks()]);
       const variety = termPicker("variety", { label: "Variety", stickyKey: "variety" });
       const vintage = field({
         label: "Vintage",
@@ -5057,14 +4961,81 @@ function newPickScreen(): HTMLElement {
         // pick can be. 0049 requires one of the two and this is always the year.
         hint: "Fruit picked now is of this year.",
       });
-      await Promise.all([block.reload(), variety.reload()]);
+      await variety.reload();
+
+      // The vineyard first, and the blocks after. "You should start a pick by
+      // selecting a vineyard, and then it presents the blocks within the
+      // vineyard." The flat list of every block at every vineyard that used to
+      // be here was already long in a two-vineyard season.
+      const vineyardPick = el("select", { class: "input" });
+      vineyardPick.replaceChildren(
+        el("option", { value: "", text: "Pick a vineyard" }),
+        ...vineRows.map((v) => el("option", { value: v.id, text: v.name })),
+      );
+      // The same vineyard all morning is the normal shape of a picking day.
+      if (lastVineyard && vineRows.some((v) => v.id === lastVineyard)) {
+        vineyardPick.value = lastVineyard;
+      }
+
+      const blockBox = el("div", {});
+      let ticked: { field: Field; block: Block }[] = [];
+
+      function drawBlocks(): void {
+        const id = vineyardPick.value;
+        ticked = [];
+        if (!id) {
+          blockBox.replaceChildren(empty("Pick a vineyard to see its blocks."));
+          return;
+        }
+        const mine = blockRows.filter((b) => b.vineyard_id === id);
+        if (mine.length === 0) {
+          blockBox.replaceChildren(
+            empty("That vineyard has no blocks yet."),
+            button("Add a block to it", () => go({ at: "vineyard", id }), "secondary"),
+          );
+          return;
+        }
+        ticked = mine.map((b) => ({ field: checkbox(b.name), block: b }));
+        blockBox.replaceChildren(
+          el("span", { class: "field-label", text: "Blocks" }),
+          ...ticked.map((t) => t.field.root),
+          el("span", {
+            class: "field-hint",
+            text:
+              "Tick as many as you are picking. Each one becomes its own pick, " +
+              "so what came off each block stays its own number, and the bin " +
+              "screen asks which block a bin is off.",
+          }),
+        );
+      }
+
+      on(vineyardPick, "change", () => {
+        lastVineyard = vineyardPick.value;
+        drawBlocks();
+      });
+      drawBlocks();
 
       body.replaceChildren(
         rows(
-          block.root,
+          el(
+            "div",
+            { class: "field" },
+            el("span", { class: "field-label", text: "Vineyard" }),
+            vineyardPick,
+          ),
+          blockBox,
           variety.root,
           vintage.root,
           button("Next, add bins", () => {
+            if (!vineyardPick.value) {
+              message.replaceChildren(banner("Pick a vineyard.", "error"));
+              return;
+            }
+            const chosen = ticked.filter((t) => t.field.input.checked);
+            if (chosen.length === 0) {
+              message.replaceChildren(banner("Tick at least one block.", "error"));
+              return;
+            }
             if (!variety.value()) {
               message.replaceChildren(banner("Pick a variety.", "error"));
               return;
@@ -5075,15 +5046,18 @@ function newPickScreen(): HTMLElement {
               );
               return;
             }
-            // The pick's id is made here, before anything is written, so the
-            // bin screen can add to it and a repeated call finds the same pick
+            // Each id is made here, before anything is written, so the bin
+            // screen can add to one and a repeated call finds the same pick
             // rather than making a second one.
-            pendingPick = {
+            pendingPicks = chosen.map((t) => ({
               id: newId(),
-              block_id: block.value() || null,
+              block_id: t.block.id,
+              block_name: t.block.name,
               variety_id: variety.value(),
               vintage: Number(vintage.value()),
-            };
+              node_id: null,
+            }));
+            pendingAt = 0;
             go({ at: "pick-bins" });
           }),
           button("Back", () => goBack(), "quiet"),
@@ -5106,9 +5080,18 @@ function newPickScreen(): HTMLElement {
 // worth a second of attention.
 function pickBinsScreen(openOn?: string): HTMLElement {
   let nodeId = openOn;
+  // Opening a named pick from the list is not resuming the batch. Without this
+  // the switcher would come back holding this morning's blocks and the next bin
+  // would land on whichever one was current, which is the worst class of bug
+  // this screen can have: fruit recorded against the wrong block, silently.
+  if (openOn) {
+    pendingPicks = [];
+    pendingAt = 0;
+  }
   const body = el("div", {}, empty("Loading."));
   const message = el("div", {});
   const tally = el("div", {});
+  const switcher = el("div", { class: "variant-switch" });
   const view = screen("Add bins", body);
 
   void (async () => {
@@ -5467,26 +5450,50 @@ function pickBinsScreen(openOn?: string): HTMLElement {
       // id after that, so a second call does not make a second pick.
       function pickPayload(): Record<string, unknown> | null {
         if (nodeId) return { id: nodeId };
-        return pendingPick ? { ...pendingPick } : null;
+        const p = currentPick();
+        if (!p) return null;
+        // A block whose first bin has already landed is joined by id; one that
+        // is still only described travels with its description. `block_name` is
+        // this client's label and not the kernel's business, so it does not go.
+        if (p.node_id) return { id: p.node_id };
+        return {
+          id: p.id,
+          block_id: p.block_id,
+          variety_id: p.variety_id,
+          vintage: p.vintage,
+        };
       }
 
       async function landed(result: { node_id: string; bins: number }, said: string) {
-        pendingPick = null;
+        const p = currentPick();
+        if (p) p.node_id = result.node_id;
         nodeId = result.node_id;
         await refreshTally(result.node_id);
         message.replaceChildren(
           banner(
-            `${said} ${result.bins} bin${result.bins === 1 ? "" : "s"} on this pick.`,
+            `${said} ${result.bins} bin${result.bins === 1 ? "" : "s"} on ` +
+              (p && pendingPicks.length > 1 ? p.block_name : "this pick") +
+              ".",
             "good",
           ),
         );
+        drawSwitcher();
         // The pick has an id worth resuming on now, which it did not have when
         // this screen opened.
-        window.history.replaceState(
-          null,
-          "",
-          encode({ at: "pick-bins", id: result.node_id }),
-        );
+        //
+        // Only when it is the only one in hand. A batch cannot be named by one
+        // pick's id, and writing one into the URL would mean a reload came back
+        // holding a single block with the rest of the morning's blocks gone.
+        // Several blocks in hand keeps the bare place and keeps the batch here.
+        if (pendingPicks.length <= 1) {
+          pendingPicks = [];
+          pendingAt = 0;
+          window.history.replaceState(
+            null,
+            "",
+            encode({ at: "pick-bins", id: result.node_id }),
+          );
+        }
         // There is something to cancel now, which there was not a moment ago.
         drawCancel();
       }
@@ -5697,11 +5704,65 @@ function pickBinsScreen(openOn?: string): HTMLElement {
         }
       }
 
+      // Which block the next bin belongs to. Drawn only when more than one was
+      // ticked, because one block needs no choosing and a control that offers a
+      // single option is a control that teaches somebody to ignore it.
+      //
+      // The blocks stay on screen after fruit has gone into them, and say how
+      // much, because picking runs back and forth: two bins off Block 1, four
+      // off Block 3, another off Block 1 when the crew moves back up the row.
+      function drawSwitcher(): void {
+        if (pendingPicks.length <= 1) {
+          switcher.replaceChildren();
+          return;
+        }
+        switcher.replaceChildren(
+          el("span", { class: "field-label", text: "Bins are coming off" }),
+          el(
+            "div",
+            { class: "variant-options" },
+            ...pendingPicks.map((p, i) =>
+              button(
+                p.node_id ? `${p.block_name} ✓` : p.block_name,
+                () => void switchTo(i),
+                i === pendingAt ? "primary" : "quiet",
+              ),
+            ),
+          ),
+          el("span", {
+            class: "field-hint",
+            text:
+              "Each block is its own pick, so what comes off each one stays " +
+              "its own number. A tick means fruit has gone in.",
+          }),
+        );
+      }
+
+      // Changing blocks changes which pick the bin buttons write to, and the
+      // tally has to follow or it reports the block you just left.
+      async function switchTo(i: number): Promise<void> {
+        pendingAt = i;
+        const p = currentPick();
+        nodeId = p?.node_id ?? undefined;
+        message.replaceChildren();
+        if (nodeId) {
+          await refreshTally(nodeId);
+        } else {
+          tally.replaceChildren(
+            empty(`No bins on ${p?.block_name ?? "this block"} yet.`),
+          );
+        }
+        drawSwitcher();
+        drawCancel();
+      }
+
       drawCancel();
+      drawSwitcher();
       if (nodeId) await refreshTally(nodeId);
 
       body.replaceChildren(
         rows(
+          switcher,
           tally,
           fill.root,
           converted,
@@ -5755,7 +5816,7 @@ function pickBinsScreen(openOn?: string): HTMLElement {
 // name somebody would otherwise type. Only useful while a pick is being
 // described, which is the one moment this screen is open.
 function vineyardOfPick(blockRows: Block[], vineRows: Vineyard[]): string {
-  const id = pendingPick?.block_id;
+  const id = currentPick()?.block_id;
   if (!id) return "";
   const vineyardId = blockRows.find((b) => b.id === id)?.vineyard_id;
   if (!vineyardId) return "";
