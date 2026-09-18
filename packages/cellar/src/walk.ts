@@ -149,6 +149,7 @@ import {
   updateBlock,
   updatePlanting,
   updateVessel,
+  updateVineyard,
   uploadPhoto,
   uploadVesselPhoto,
   type VesselGlycol,
@@ -429,6 +430,13 @@ async function screenFor(place: Place): Promise<HTMLElement> {
       const there = (await blocks()).some((b) => b.id === place.id);
       if (!there) throw new GoneError("That block is not there to open.");
       return blockScreen(place.id);
+    }
+    // Checked before opening for the same reason the block is: a link somebody
+    // kept to a vineyard that has since gone should say so.
+    case "vineyard": {
+      const there = (await vineyards()).some((v) => v.id === place.id);
+      if (!there) throw new GoneError("That vineyard is not there to open.");
+      return vineyardScreen(place.id);
     }
     // Checked before opening, the same as every other place carrying an id: a
     // link to the photographs of a pick somebody cancelled should say so rather
@@ -9966,11 +9974,41 @@ function vineyardsScreen(): HTMLElement {
 
       const orphans = blocksOf.get("") ?? [];
 
+      // The vineyard itself is a row, not a heading. It was a heading, and the
+      // consequence was that a vineyard somebody had just added rendered as its
+      // own name over the words "No blocks yet" with nothing to tap: the only
+      // adder for a block lived inside the pick screen's block picker, so the
+      // way to put a block in a new vineyard was to go and pretend to tap fruit.
+      function vineyardRow(v: Vineyard, count: number): HTMLElement {
+        const row = el(
+          "li",
+          { class: "vessel-row", role: "button", tabindex: "0" },
+          el("span", { class: "vessel-name", text: v.name }),
+          el("span", {
+            class: "vessel-detail",
+            text: count === 1 ? "1 block" : `${count} blocks`,
+          }),
+          v.location ? el("span", { class: "vessel-detail", text: v.location }) : null,
+        );
+        const open = () => go({ at: "vineyard", id: v.id });
+        on(row, "click", open);
+        on(row, "keydown", (ev) => {
+          if (ev.key === "Enter" || ev.key === " ") {
+            ev.preventDefault();
+            open();
+          }
+        });
+        return row;
+      }
+
       body.replaceChildren(
         rows(
           ...vineRows.flatMap((v) => [
-            el("h2", { class: "section-head", text: v.name }),
-            v.location ? el("p", { class: "lede", text: v.location }) : el("span", {}),
+            el(
+              "ul",
+              { class: "vessel-list" },
+              vineyardRow(v, (blocksOf.get(v.id) ?? []).length),
+            ),
             blockList(blocksOf.get(v.id) ?? []),
           ]),
           ...(orphans.length > 0
@@ -10010,6 +10048,181 @@ function vineyardsScreen(): HTMLElement {
           ),
           message,
           button("Back", () => goBack(), "quiet"),
+        ),
+      );
+    } catch (error) {
+      body.replaceChildren(
+        fail(error),
+        button("Back", () => goBack(), "quiet"),
+      );
+    }
+  })();
+
+  return view;
+}
+
+// One vineyard: what it is called, where it is, and the blocks in it.
+//
+// This screen is the answer to a vineyard being unopenable. Everything a
+// vineyard can hold today is name, location and blocks, so that is what it
+// offers. Adding a block from here rather than from the pick screen's picker is
+// the point: the picker exists to choose an existing block while tapping fruit,
+// and creating one was a side effect it grew because there was nowhere else.
+//
+// S-51: `block` carries an admin-write policy, so the adder below refuses for a
+// cellar hand. It refuses out loud, through the same fail() every other write
+// uses, which is the A13 requirement. It does not hide itself, because a person
+// who cannot add a block should be told that rather than shown a screen with a
+// piece quietly missing from it.
+function vineyardScreen(vineyardId: string): HTMLElement {
+  const body = el("div", {}, empty("Loading."));
+  const view = screen("Vineyard", body);
+
+  void (async () => {
+    try {
+      const [vineRows, blockRows, planted] = await Promise.all([
+        vineyards(),
+        blocks(),
+        plantings(),
+      ]);
+      const vine = vineRows.find((v) => v.id === vineyardId);
+      if (!vine) {
+        body.replaceChildren(
+          banner("That vineyard is not there to open.", "note"),
+          button("Back", () => goBack(), "quiet"),
+        );
+        return;
+      }
+      view.replaceChildren(el("h1", { text: vine.name }), body);
+
+      const mine = blockRows.filter((b) => b.vineyard_id === vineyardId);
+      const varietiesOf = new Map<string, string[]>();
+      for (const p of planted) {
+        varietiesOf.set(p.block_id, [
+          ...(varietiesOf.get(p.block_id) ?? []),
+          p.variety,
+        ]);
+      }
+
+      const name = field({ label: "Name", value: vine.name });
+      const where = field({
+        label: "Where it is",
+        value: vine.location ?? "",
+        hint: "Free text. An address, a road, whatever you would recognise.",
+      });
+      const said = el("div", {});
+
+      const blockName = field({ label: "Block name", placeholder: "East" });
+      const adding = el("div", {});
+
+      const list =
+        mine.length === 0
+          ? empty("No blocks yet. Add one below.")
+          : el(
+              "ul",
+              { class: "vessel-list" },
+              ...mine.map((b) => {
+                const kinds = varietiesOf.get(b.id) ?? [];
+                const row = el(
+                  "li",
+                  { class: "vessel-row", role: "button", tabindex: "0" },
+                  el("span", { class: "vessel-name", text: b.name }),
+                  el("span", {
+                    class: "vessel-detail",
+                    text:
+                      kinds.length === 0
+                        ? "nothing planted recorded"
+                        : kinds.join(", "),
+                  }),
+                  b.acres === null
+                    ? null
+                    : el("span", {
+                        class: "vessel-detail",
+                        text: `${b.acres} acres`,
+                      }),
+                );
+                const open = () => go({ at: "block", id: b.id });
+                on(row, "click", open);
+                on(row, "keydown", (ev) => {
+                  if (ev.key === "Enter" || ev.key === " ") {
+                    ev.preventDefault();
+                    open();
+                  }
+                });
+                return row;
+              }),
+            );
+
+      body.replaceChildren(
+        rows(
+          lede(
+            "Blocks belong to a vineyard, and what is planted in a block is a " +
+              "list of varieties. Open a block to say what is in it.",
+          ),
+          list,
+          el(
+            "details",
+            { class: "more", open: "" },
+            el("summary", { text: "Add a block" }),
+            rows(
+              blockName.root,
+              button(
+                "Add it",
+                async () => {
+                  if (!blockName.value()) {
+                    adding.replaceChildren(banner("The block needs a name.", "error"));
+                    return;
+                  }
+                  try {
+                    const blockId = newId();
+                    await addBlock({
+                      id: blockId,
+                      vineyard_id: vineyardId,
+                      name: blockName.value(),
+                    });
+                    // Straight into the block, because the next thing anybody
+                    // wants after naming a block is to say what is planted in
+                    // it, and that lives there.
+                    go({ at: "block", id: blockId });
+                  } catch (error) {
+                    adding.replaceChildren(fail(error));
+                  }
+                },
+                "secondary",
+              ),
+              adding,
+            ),
+          ),
+          el(
+            "details",
+            { class: "more" },
+            el("summary", { text: "Rename it, or say where it is" }),
+            rows(
+              name.root,
+              where.root,
+              button(
+                "Save",
+                async () => {
+                  if (!name.value()) {
+                    said.replaceChildren(banner("It needs a name.", "error"));
+                    return;
+                  }
+                  try {
+                    await updateVineyard(vineyardId, {
+                      name: name.value(),
+                      location: where.value() || null,
+                    });
+                    go({ at: "vineyard", id: vineyardId });
+                  } catch (error) {
+                    said.replaceChildren(fail(error));
+                  }
+                },
+                "secondary",
+              ),
+              said,
+            ),
+          ),
+          button("All vineyards", () => go({ at: "vineyards" }), "quiet"),
         ),
       );
     } catch (error) {

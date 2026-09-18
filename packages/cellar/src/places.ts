@@ -55,6 +55,12 @@ export type Place =
   | { at: "bins-to-return" }
   | { at: "export" }
   | { at: "vineyards" }
+  // One vineyard. A vineyard used to be a heading on the list and nothing else,
+  // which meant a vineyard with no blocks in it yet was a dead end: nothing to
+  // open, and the only adder for a block lived inside the pick screen's block
+  // picker. Adding a vineyard and then being unable to touch it is the bug this
+  // place exists to close.
+  | { at: "vineyard"; id: string }
   | { at: "block"; id: string }
   // The only place whose identifier is not a uuid: a day is named by its date,
   // because a link to a day somebody can read and type is worth more than one
@@ -145,6 +151,7 @@ const WITH_ID = new Set([
   "vessel-photos",
   "sample",
   "block",
+  "vineyard",
   "wine",
 ]);
 
