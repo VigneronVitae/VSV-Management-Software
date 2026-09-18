@@ -48,7 +48,30 @@ param(
   # Pretends the database is unreachable, to exercise the recovery path on a
   # machine that is working. A check that has never run is a check nobody has
   # reason to believe.
-  [switch] $SimulateDown
+  [switch] $SimulateDown,
+
+  # Where the repository is, because the web servers are started from it.
+  [string] $RepoRoot = "D:\Vitae Springs Management\Management_Software",
+
+  # The three web servers, which are the thing a phone actually talks to first.
+  #
+  # **This is the gap that let the cellar sit dark all of the morning of
+  # 2026-09-18.** The machine lost power the evening before, came back at 08:24,
+  # and Docker started itself, so the database was answering the whole time and
+  # this watchdog would have reported "ok" on every run. What was down was these
+  # three, which nothing restarts at logon and nothing was watching. A watchdog
+  # that checks the database and not the thing serving the app is a watchdog that
+  # reports health during an outage, which is worse than none.
+  #
+  # The ports are not a choice made here. They are what `tailscale serve status`
+  # already proxies to: / -> 5177, /shop -> 5175, /cellar -> 5176. Changing one
+  # means changing the serve config too, and a mismatch shows up as this script
+  # starting a server nobody can reach.
+  [object[]] $Apps = @(
+    @{ name = "cellar";   dir = "apps\web";      port = 5176 },
+    @{ name = "shop";     dir = "apps\shop";     port = 5175 },
+    @{ name = "launcher"; dir = "apps\launcher"; port = 5177 }
+  )
 )
 
 $ErrorActionPreference = "Continue"
@@ -67,6 +90,46 @@ function Write-Log([string] $Message) {
 if ((Test-Path $LogPath) -and ((Get-Item $LogPath).Length -gt 2MB)) {
   $keep = Get-Content $LogPath -Tail 2000
   Set-Content -Path $LogPath -Value $keep -Encoding utf8
+}
+
+# Listening is the whole question. A port with nothing on it is the outage, and
+# anything more (fetching a page, checking the markup) is a check that can fail
+# for reasons that are not an outage, at five minute intervals, forever.
+function Test-Served([int] $Port) {
+  $listening = Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue
+  return [bool] $listening
+}
+
+foreach ($app in $Apps) {
+  if ($SimulateDown) { continue }
+  if (Test-Served $app.port) { continue }
+
+  $wd = Join-Path $RepoRoot $app.dir
+  $built = Join-Path $wd "dist\index.html"
+
+  # Said rather than started. `vite preview` with no build serves a 404 to a
+  # phone in a barn, and a watchdog that leaves one running has turned a plain
+  # outage into a puzzling one.
+  if (-not (Test-Path $built)) {
+    Write-Log ("FAIL     {0} is down and has no build at {1}. Run: bun run build" -f $app.name, $built)
+    continue
+  }
+
+  Write-Log ("start    {0} was not listening, starting it on {1}" -f $app.name, $app.port)
+  # Hidden, detached, and from the app's own directory, because vite reads its
+  # config from there. --strictPort so a port already taken by something else
+  # fails loudly here instead of quietly serving the cellar on a port the proxy
+  # does not forward.
+  Start-Process -FilePath "bun" `
+    -ArgumentList @("x", "vite", "preview", "--port", $app.port, "--strictPort") `
+    -WorkingDirectory $wd -WindowStyle Hidden
+
+  Start-Sleep -Seconds 4
+  if (Test-Served $app.port) {
+    Write-Log ("ok       {0} answers on {1} again" -f $app.name, $app.port)
+  } else {
+    Write-Log ("FAIL     {0} did not come up on {1}" -f $app.name, $app.port)
+  }
 }
 
 function Test-Cellar {
