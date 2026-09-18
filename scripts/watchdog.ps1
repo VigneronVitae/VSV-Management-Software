@@ -71,7 +71,30 @@ param(
     @{ name = "cellar";   dir = "apps\web";      port = 5176 },
     @{ name = "shop";     dir = "apps\shop";     port = 5175 },
     @{ name = "launcher"; dir = "apps\launcher"; port = 5177 }
-  )
+  ),
+
+  # Where the daily copy of everything lands.
+  #
+  # **On C: on purpose, which is a different physical drive from the repository.**
+  # The repository is on D:, a WD20EZRZ that threw two fatal storage errors in
+  # sixty days, and a backup on the drive that is failing is a backup of the
+  # wrong thing. The database itself lives on C:, so a second copy also goes to
+  # the repository's own backups folder on D: and each drive holds a copy of what
+  # the other one would lose.
+  [string] $BackupDir = "C:\Users\Randy\vsv-backups",
+
+  # About 160 KB a day, so sixty days is ten megabytes. Kept because the useful
+  # backup is sometimes not the newest one: a mistake noticed on Friday wants
+  # Monday's file.
+  [int] $BackupKeepDays = 60,
+
+  # Git Bash, because scripts/db-backup.sh is the thing that knows how to write a
+  # restorable dump and reimplementing it here would be a second answer to the
+  # same question. Not C:\Windows\System32\bash.exe, which is WSL and a different
+  # filesystem. Found from git if this path is wrong.
+  [string] $BashPath = "D:\AGI\Git\bin\bash.exe",
+
+  [switch] $SkipBackup
 )
 
 $ErrorActionPreference = "Continue"
@@ -132,6 +155,91 @@ foreach ($app in $Apps) {
   }
 }
 
+# One copy of everything, once a day, unattended.
+#
+# Built after the machine lost power overnight and the newest backup turned out
+# to be four days old, in the middle of harvest. Four days of intake is not
+# something anybody can reconstruct from memory.
+#
+# It runs at the end of a round that found the database answering, because
+# pg_dump against a database that is down produces a failure that is about the
+# outage rather than about the backup, logged once every five minutes.
+function Invoke-DailyBackup {
+  if ($SkipBackup -or $SimulateDown) { return }
+
+  # One a day, and the question asked is literally "is there a backup from
+  # today". A marker file or a timestamp in the registry is a second record of
+  # the same fact, and the two can disagree; the files cannot disagree with
+  # themselves.
+  $today = Get-Date -Format "yyyyMMdd"
+  if (Get-ChildItem -Path $BackupDir -Filter "vsv-$today-*.sql" -ErrorAction SilentlyContinue) { return }
+
+  $bash = $BashPath
+  if (-not (Test-Path $bash)) {
+    $git = (Get-Command git -ErrorAction SilentlyContinue).Source
+    if ($git) {
+      $candidate = Join-Path (Split-Path (Split-Path $git -Parent) -Parent) "bin\bash.exe"
+      if (Test-Path $candidate) { $bash = $candidate }
+    }
+  }
+  if (-not (Test-Path $bash)) {
+    # Said, not skipped. A backup that silently does not happen is the exact
+    # failure this was built to end.
+    Write-Log "FAIL     no Git Bash found, so no backup was taken. Looked at $BashPath and at git"
+    return
+  }
+
+  New-Item -ItemType Directory -Force -Path $BackupDir | Out-Null
+
+  # Forward slashes, because this is read by bash and a backslash there is an
+  # escape character rather than a path separator.
+  $env:VSV_BACKUP_DIR = $BackupDir.Replace("\", "/")
+  $repo = $RepoRoot.Replace("\", "/")
+
+  $out = & $bash -c "cd '$repo' && bash scripts/db-backup.sh" 2>&1
+  $ok = $LASTEXITCODE -eq 0
+  Remove-Item Env:\VSV_BACKUP_DIR -ErrorAction SilentlyContinue
+
+  if (-not $ok) {
+    Write-Log ("FAIL     the backup did not run: {0}" -f (($out | Select-Object -Last 2) -join " / "))
+    return
+  }
+
+  # The newest file in the directory, rather than whatever the script printed
+  # first. Its first line of stdout is the path, but stderr is merged in here and
+  # pg_dump warns about circular foreign keys on every run, so the first line is
+  # a warning about as often as it is a filename. Asking the directory what
+  # arrived cannot be fooled by anything either program decides to say.
+  $made = Get-ChildItem -Path $BackupDir -Filter "vsv-*.sql" -ErrorAction SilentlyContinue |
+    Sort-Object LastWriteTime -Descending | Select-Object -First 1
+
+  if (-not $made) {
+    Write-Log "FAIL     the backup reported success and left no file behind"
+    return
+  }
+
+  $rows = (($out | Where-Object { $_ -like "rows:*" }) -join " ").Trim()
+  Write-Log ("backup   {0}, {1}" -f $made.Name, $(if ($rows) { $rows } else { "row count not reported" }))
+
+  # The second copy, on the other drive. Each drive then holds what the other
+  # one would lose: the database lives on C: and the repository on D:.
+  $second = Join-Path $RepoRoot "backups"
+  try {
+    New-Item -ItemType Directory -Force -Path $second | Out-Null
+    Copy-Item -Path $made.FullName -Destination $second -ErrorAction Stop
+  } catch {
+    Write-Log ("warn     the second copy on the repository drive failed: {0}" -f $_.Exception.Message)
+  }
+
+  # Old ones, on both drives.
+  $cut = (Get-Date).AddDays(-$BackupKeepDays)
+  foreach ($dir in @($BackupDir, $second)) {
+    Get-ChildItem -Path $dir -Filter "vsv-*.sql" -ErrorAction SilentlyContinue |
+      Where-Object { $_.LastWriteTime -lt $cut } |
+      Remove-Item -Force -ErrorAction SilentlyContinue
+  }
+}
+
 function Test-Cellar {
   if ($SimulateDown) { return $false }
   # The question the app asks, rather than a question about Docker. The engine
@@ -143,6 +251,7 @@ function Test-Cellar {
 
 if (Test-Cellar) {
   Write-Log "ok       the cellar answers"
+  Invoke-DailyBackup
   exit 0
 }
 
@@ -205,6 +314,7 @@ while ($waited -lt 120) {
   if ($SimulateDown) { break }
   if (Test-Cellar) {
     Write-Log "ok       the cellar answers again after ${waited}s"
+    Invoke-DailyBackup
     exit 0
   }
 }

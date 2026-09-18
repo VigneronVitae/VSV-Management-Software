@@ -51,8 +51,15 @@ else
   VIA="pg_dump inside $CONTAINER"
 fi
 
-mkdir -p backups
-OUT="backups/vsv-$(date +%Y%m%d-%H%M%S).sql"
+# Where the file lands. Defaults to the repository, which is where a person
+# running this by hand expects it, and is overridden by the watchdog so the
+# unattended daily copy lands on a different physical drive from the one the
+# repository is on. Two fatal storage errors on D: in sixty days is the reason:
+# a backup on the drive that is failing is a backup of the wrong thing.
+: "${VSV_BACKUP_DIR:=backups}"
+
+mkdir -p "$VSV_BACKUP_DIR"
+OUT="$VSV_BACKUP_DIR/vsv-$(date +%Y%m%d-%H%M%S).sql"
 TMP="$(mktemp)"
 trap 'rm -f "$TMP"' EXIT
 
