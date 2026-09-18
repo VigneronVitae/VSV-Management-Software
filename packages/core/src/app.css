@@ -1758,3 +1758,44 @@ body.practising {
   padding-top: 0.75rem;
   border-top: 1px solid var(--rule);
 }
+
+/* A research report read inside the app. Pre-wrapped rather than rendered: it
+   is markdown from somewhere else, and pretending to render it would mean
+   deciding what to do with every construct somebody else's model emitted. Plain
+   text that wraps is honest and readable, and the original is one tap away. */
+.paper-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  max-height: 60vh;
+  overflow-y: auto;
+  margin: 0.5rem 0 0;
+  padding: 0.6rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--ground);
+  color: var(--ink);
+}
+
+/* A part in a decomposition tree. `summary` is display:flex across these apps,
+   which suppresses the browser's disclosure marker, and a list of seventy two
+   parts needs to say which rows open. Scoped to `.part` so the handful of folds
+   on other screens keep the chrome they have. */
+.more.part > summary::after {
+  content: "\203A";
+  margin-left: auto;
+  padding-left: 0.5rem;
+  color: var(--ink-faint);
+  transition: transform 0.12s ease;
+}
+
+.more.part[open] > summary::after {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .more.part > summary::after {
+    transition: none;
+  }
+}

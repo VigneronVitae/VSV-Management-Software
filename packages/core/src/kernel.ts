@@ -1392,6 +1392,94 @@ export type FruitRow = {
   bins_weighed: number;
 };
 
+// --- what a machine is made of, and its papers, 0119 ----------------------
+
+export type ModelPart = {
+  id: Uuid;
+  model_id: Uuid;
+  model: string;
+  parent_id: Uuid | null;
+  parent: string | null;
+  name: string;
+  domain: string | null;
+  domain_label: string | null;
+  maker: string | null;
+  part_number: string | null;
+  quantity: number | null;
+  wear: boolean;
+  wear_life: string | null;
+  url: string | null;
+  note: string | null;
+  provenance: string;
+  document_id: Uuid | null;
+  document: string | null;
+  document_source: string | null;
+  sort_order: number;
+};
+
+export async function modelParts(modelId: Uuid): Promise<ModelPart[]> {
+  const { data, error } = await kernel()
+    .from("model_part_detail")
+    .select(
+      "id,model_id,model,parent_id,parent,name,domain,domain_label,maker,part_number,quantity,wear,wear_life,url,note,provenance,document_id,document,document_source,sort_order",
+    )
+    .eq("model_id", modelId)
+    .order("sort_order");
+  if (error) throw new KernelError(error);
+  return (data ?? []) as ModelPart[];
+}
+
+export type MachinePaper = {
+  id: Uuid;
+  model_id: Uuid | null;
+  machine_id: Uuid | null;
+  about: string | null;
+  about_what: string;
+  kind: string;
+  kind_label: string;
+  title: string;
+  source: string | null;
+  url: string | null;
+  has_text: boolean;
+  text_length: number;
+  at: string;
+  provenance: string;
+};
+
+// Papers about the model and papers about this one machine, in one list,
+// because somebody looking for the manual does not care which it hangs on.
+export async function machinePapers(args: {
+  modelId?: Uuid | null;
+  machineId?: Uuid | null;
+}): Promise<MachinePaper[]> {
+  const ids: string[] = [];
+  if (args.modelId) ids.push(`model_id.eq.${args.modelId}`);
+  if (args.machineId) ids.push(`machine_id.eq.${args.machineId}`);
+  if (ids.length === 0) return [];
+  const { data, error } = await kernel()
+    .from("machine_paper")
+    .select(
+      "id,model_id,machine_id,about,about_what,kind,kind_label,title,source,url,has_text,text_length,at,provenance",
+    )
+    .or(ids.join(","))
+    .order("at", { ascending: false });
+  if (error) throw new KernelError(error);
+  return (data ?? []) as MachinePaper[];
+}
+
+// The text of one document, fetched only when somebody opens it. A research
+// report runs to tens of thousands of characters and dragging every one of them
+// into a list would make the list unusable on a phone.
+export async function documentText(id: Uuid): Promise<string> {
+  const { data, error } = await kernel()
+    .from("machine_document")
+    .select("body")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw new KernelError(error);
+  return (data?.body as string | null) ?? "";
+}
+
 // --- the vineyard, 0115 and 0117 ------------------------------------------
 //
 // A block is rows, a row is plant spaces, and what stands in a space is the

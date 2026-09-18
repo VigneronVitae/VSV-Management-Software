@@ -10,7 +10,9 @@
 -- Depended on by: [tests/schema_assertions.sql,
 --                  supabase/migrations/0106_the_acts_a_shop_performs.sql,
 --                  docs/review/2026-09-17-shop-and-inventory-elsewhere.md,
---                  supabase/migrations/0112_a_machine_decomposes_into_parts.sql]
+--                  supabase/migrations/0112_a_machine_decomposes_into_parts.sql,
+--                  supabase/migrations/0119_a_machine_keeps_its_papers.sql,
+--                  supabase/migrations/0120_the_hot_water_pressure_washer.sql]
 -- Axioms enforced: T0-2 (what a machine is now follows from what was done to it
 --                  and is never a second fact to maintain), T0-5 (work is
 --                  append-only: a repair recorded wrongly is corrected by a new

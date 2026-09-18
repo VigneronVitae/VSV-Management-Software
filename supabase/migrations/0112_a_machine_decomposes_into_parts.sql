@@ -6,7 +6,9 @@
 -- Depends on: [supabase/migrations/0105_a_machine_is_a_departure_from_its_model.sql,
 --              supabase/migrations/0106_the_acts_a_shop_performs.sql,
 --              supabase/migrations/0111_a_count_that_reads_zero_is_a_lie.sql]
--- Depended on by: [tests/schema_assertions.sql]
+-- Depended on by: [tests/schema_assertions.sql,
+--                  supabase/migrations/0119_a_machine_keeps_its_papers.sql,
+--                  supabase/migrations/0120_the_hot_water_pressure_washer.sql]
 -- Axioms enforced: T0-2 (what parts a machine has follows from its model and
 --                  what was done to it), AR-E5 (the domains are registry rows),
 --                  T0-5 (a part change is a dated entry, never an edit)

@@ -1160,19 +1160,6 @@ behind something that has to be opened on purpose. The evidence for which is whe
 asks about a module they saw greyed out. *Load-bearing:* no, and the counts beside each one are
 there so that a dead entry at least says how much of it exists.
 
-**S-95. A parts decomposition with no way to put one in.**
-`0112` builds the tree, the domains and the derivation, and registers both readables, and
-there is no capability and no screen for any of it. A model's parts can only be entered by
-writing SQL, which means the researched baseline for the press, the thing the whole structure
-exists to hold, cannot be entered by the person who did the research.
-This is the same order of work the shop module itself followed, kernel first and screens
-after, and it was defensible there because the kernel was small. Here the entering is the
-hard part: a press decomposes into a tree somebody has to sit and type, probably from a parts
-manual, probably over an evening. *Resolves when:* `add_model_part` and `change_machine_part`
-exist as capabilities and the shop app can draw and edit a tree, which is a bigger screen
-than anything in that app so far. Until then this schema holds nothing.
-*Load-bearing:* yes, in the sense that the feature does not exist for a user until it is
-closed. Nothing else depends on it.
 
 **S-96. Previous years cannot be imported, and the sheets say why it is not one job.**
 The sheets are at `D:\Vitae Springs Management\Expenses6\Receipts\Incoming\`, three of them,
@@ -1223,7 +1210,36 @@ is wrong, and that is worth knowing before the column goes.
 *Load-bearing:* not yet. It becomes so the moment anybody edits one of them.
 
 
+**S-99. Twelve refusals that nothing tests.**
+`0119` added `add_model_part` and `add_machine_document`, and with them twelve sites to the
+refusal surface: four guards and three raises on the parts capability, two guards and two raises
+on the documents one, and one permissive default. `scripts/guards.sh` enumerates all twelve and
+`docs/review/refusal-sites.tsv` records them, so the gate reconciles at 694 sites. **Enumerating
+a refusal is not testing it.** Nothing in `tests/schema_assertions.sql` calls `add_model_part`
+with a parent belonging to a different model, or with a domain that is not a part domain, and
+nothing calls either capability as somebody who is not a facility user. The code says it would
+refuse; no run has ever made it.
+The consequence is measurable and is currently wrong in the documents: `scripts/ratchet.sh`, the
+mutation harness, has not been run since the surface grew, so every coverage figure in
+`docs/review/CURRENT-BASELINE.md` describes a surface twelve sites smaller than the one that now
+exists. The figures are not false about the sites they measured; they are about a different set
+than the one the repository has.
+*Resolves when:* the twelve sites have assertions that make them fire, and `scripts/ratchet.sh`
+has been run so the coverage figures describe this surface rather than the previous one.
+*Load-bearing:* yes for the ratchet, which is being asked to hold a line drawn against different
+code. Not yet for the capabilities themselves, which have one caller each and that caller is a
+migration.
+
 ## Discharged
+
+**S-95. Discharged 2026-09-19 by `0119` through `0121`.** `add_model_part` and
+`add_machine_document` exist as capabilities with declared fields, and the shop's machine screen
+draws the tree and the papers. The first thing entered was the hot water pressure washer: 72
+parts from a research report, with the report itself kept whole beside them. The entry also
+answered a question the sorry did not ask, which is what a part should carry: not just a number
+and a quantity but a maker, a link, and which document claims it, because two reports on the
+same machine disagreed and the disagreement is worth keeping.
+
 
 **S-98. Discharged 2026-09-18 by `0117`.** The map is loaded: five blocks, 190 rows, 13,539
 plant spaces, one dated observation each. Both questions were answered rather than assumed. The

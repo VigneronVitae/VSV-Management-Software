@@ -32,6 +32,18 @@ add_bins_to_pick:permissive:1	add_bins_to_pick	permissive	and coalesce((attribut
 add_bins_to_pick:raise:6	add_bins_to_pick	raise	raise exception 'that is not a picking bin type, so fruit is not weighed in it';	raise notice 'that is not a picking bin type, so fruit is not weighed in it';	1
 add_bins_to_pick:guard:6	add_bins_to_pick	guard	if lender is not null then	if false then	1
 add_bins_to_pick:guard:7	add_bins_to_pick	guard	elsif p_owner_id is not null and p_owner_id is distinct from facility_party_id() then	elsif false then	1
+add_machine_document:guard:1	add_machine_document	guard	if not is_facility_user() then	if false then	1
+add_machine_document:raise:1	add_machine_document	raise	raise exception 'only this winery may file a document about a machine';	raise notice 'only this winery may file a document about a machine';	1
+add_machine_document:guard:2	add_machine_document	guard	if k is null then	if false then	1
+add_machine_document:raise:2	add_machine_document	raise	raise exception 'there is no kind of document called %', p_kind;	raise notice 'there is no kind of document called %', p_kind;	1
+add_model_part:guard:1	add_model_part	guard	if not is_facility_user() then	if false then	1
+add_model_part:raise:1	add_model_part	raise	raise exception 'only this winery may describe what a machine is made of';	raise notice 'only this winery may describe what a machine is made of';	1
+add_model_part:guard:2	add_model_part	guard	if p_domain is not null then	if false then	1
+add_model_part:guard:3	add_model_part	guard	if dom is null then	if false then	1
+add_model_part:raise:2	add_model_part	raise	raise exception 'there is no part domain called %', p_domain;	raise notice 'there is no part domain called %', p_domain;	1
+add_model_part:head:1	add_model_part	head	if p_parent_id is not null and not exists (\n    select 1 from model_part mp\n     where mp.id = p_parent_id and mp.model_id = p_model_id\n  ) then	if false then	1
+add_model_part:raise:3	add_model_part	raise	raise exception 'that parent part belongs to a different model';	raise notice 'that parent part belongs to a different model';	1
+add_model_part:permissive:1	add_model_part	permissive	coalesce(p_wear, false), p_wear_life, p_url, p_note, p_document_id,	coalesce(p_wear, true), p_wear_life, p_url, p_note, p_document_id,	1
 add_note:guard:1	add_note	guard	if not is_facility_user() then	if false then	1
 add_note:raise:1	add_note	raise	raise exception 'notes are written by people who work here';	raise notice 'notes are written by people who work here';	1
 add_note:guard:2	add_note	guard	if p_body is null or btrim(p_body) = '' then	if false then	1

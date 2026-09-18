@@ -44,6 +44,24 @@ corpus() { case "$1" in
     *) return 1 ;;
   esac; }
 
+# Files that quote somebody else's document verbatim, exempt from the house
+# style rule and from nothing else.
+#
+# **This started as an entry in corpus() and that was wrong.** `corpus()` is read
+# by the header graph as well as by the em dash rule, so exempting a migration
+# from one exempted it from the other, and every edge pointing at 0120 dangled
+# on the next run. Two rules, two lists.
+#
+# 0120 is almost entirely two research reports inside dollar-quoted strings: 278
+# em dashes, every one of them somebody else's punctuation. Editing a quoted
+# document to satisfy a rule about what this repository writes would corrupt the
+# evidence the migration exists to preserve. Checked when this was added: zero
+# em dashes outside the two quoted bodies.
+quoted() { case "$1" in
+    supabase/migrations/0120_the_hot_water_pressure_washer.sql) return 0 ;;
+    *) return 1 ;;
+  esac; }
+
 tracked() { git ls-files; }
 
 # ---------------------------------------------------------------------------
@@ -151,6 +169,7 @@ em=$(printf '\342\200\224')
 before=$fails
 for f in $(tracked); do
   corpus "$f" && continue
+  quoted "$f" && continue
   [ -f "$f" ] || continue
   n=$(grep -c -F "$em" "$f" 2>/dev/null) || n=0
   [ "$n" -gt 0 ] && fail "$f: $n em dash(es)"

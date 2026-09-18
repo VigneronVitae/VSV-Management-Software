@@ -18,7 +18,8 @@
 --                  supabase/migrations/0106_the_acts_a_shop_performs.sql,
 --                  supabase/migrations/0109_a_module_says_where_it_lives.sql,
 --                  supabase/migrations/0114_every_pick_stays_on_the_list.sql,
---                  supabase/migrations/0115_a_vineyard_is_rows_and_plant_spaces.sql]
+--                  supabase/migrations/0115_a_vineyard_is_rows_and_plant_spaces.sql,
+--                  supabase/migrations/0121_the_new_acts_say_what_they_take.sql]
 -- Axioms enforced: AR-Q8 (an interface is a periphery over a read and write
 --                  contract), AR-E6 (the declaration is registry rows, so
 --                  another winery's contract is data), R-4 (a client that

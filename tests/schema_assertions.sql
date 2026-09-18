@@ -81,7 +81,10 @@
 --              supabase/migrations/0112_a_machine_decomposes_into_parts.sql,
 --              supabase/migrations/0115_a_vineyard_is_rows_and_plant_spaces.sql,
 --              supabase/migrations/0116_the_vineyard_is_not_everybodys_business.sql,
---               supabase/migrations/0117_the_vine_map_is_loaded.sql]
+--               supabase/migrations/0117_the_vine_map_is_loaded.sql,
+--               supabase/migrations/0119_a_machine_keeps_its_papers.sql,
+--               supabase/migrations/0120_the_hot_water_pressure_washer.sql,
+--               supabase/migrations/0121_the_new_acts_say_what_they_take.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh, scripts/rpc-args.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -2640,7 +2643,10 @@ begin
   -- three to is_facility_user() rather than adding three more rows to the
   -- finding two screens down. Which vine stands in row 4 of Tudor North is this
   -- winery's business on the same argument 0112 made about the press.
-  want := '126';
+  -- 128 since 0119 added two on `machine_document`: a read and a write, both
+  -- is_facility_user(). Neither reads blanket true. What a machine's manual says
+  -- is this winery's business on the same argument 0112 made about its parts.
+  want := '128';
   if have <> want then
     raise exception
       'FAIL: there are % policies in public and this suite was written against %. If that is deliberate, update this number, and judge the new policy in the disposition list below if it reads or writes blanket true', have, want;
@@ -3021,7 +3027,14 @@ begin
   -- within its row. Seven new keys: each table to its parent, two authors, and
   -- the two composite pins into term(id, kind) for plant state and variety with
   -- their plain ids beside them.
-  want := 'c=64 f=110 p=53 u=25';
+  -- c=64 f=110 p=53 u=25 before 0119, which added `machine_document`. Two new
+  -- checks: a document says what it is, and it is about a model or about one
+  -- machine and never both, which is the constraint that keeps a manual from
+  -- claiming to be a photograph of a particular plate. One new primary key.
+  -- Five new keys: the model, the machine, the author, the composite pin into
+  -- term(id, kind) for the document kind with its plain id beside it, and
+  -- `model_part.document_id` pointing at the document that claims the part.
+  want := 'c=66 f=115 p=54 u=25';
   if have <> want then
     raise exception
       E'FAIL: the constraint inventory changed.\nnow:  %\nwas:  %\nIf that is deliberate, update this line in the same commit that changed the schema.', have, want;
@@ -3056,6 +3069,7 @@ begin
        -- pointer into term has been since 0027: a machine is of a kind, and a
        -- piece of work is of a kind, and neither can be given a term belonging
        -- to some other vocabulary.
+       || 'machine_document.machine_document_kind_is_a_document_kind, '
        || 'machine_model.machine_model_kind_is_a_machine_kind, '
        || 'machine_part_change.machine_part_change_domain_is_a_part_domain, '
        || 'machine_work.machine_work_kind_is_a_work_kind, '
@@ -3110,6 +3124,7 @@ begin
   want := 'event.operation_kind=''operation''::text '
        || 'location.kind_kind=''location_kind''::text '
        -- 0105, the kind halves of the shop's two vocabularies.
+       || 'machine_document.kind_kind=''document_kind''::text '
        || 'machine_model.kind_kind=''machine_kind''::text '
        || 'machine_part_change.domain_kind=''part_domain''::text '
        || 'machine_work.kind_kind=''machine_work_kind''::text '
@@ -3292,7 +3307,14 @@ begin
   -- deliberate. Deleting a block should take its rows and their spaces and their
   -- history, because a block that is gone is a block that was pulled out, and
   -- leaving orphan spaces addressed to nothing would be worse than losing them.
-  want := 'a=63 c=24 n=8 r=15';
+  -- a=63 c=24 n=8 r=15 before 0119. Two new no-actions: the document's kind pin
+  -- into term(id, kind) with its plain id beside it, and its author. Two new
+  -- cascades: a document to the model or to the machine it is about, because a
+  -- manual for a machine nobody owns any more is about nothing. One new set
+  -- null: `model_part.document_id`, because deleting a report must not delete
+  -- the parts list somebody has since been ordering from; the claim survives
+  -- and loses its citation, which is a state worth being able to see.
+  want := 'a=65 c=26 n=9 r=15';
   if have <> want then
     raise exception
       E'FAIL: foreign key delete behaviour changed.\nnow:  %\nwas:  %\na is no action, c is cascade, n is set null, r is restrict.', have, want;
@@ -4313,11 +4335,14 @@ begin
   -- that module has owned: what stands in a plant space, which is a vine or a
   -- young scion or rootstock or nothing. A question about the ground rather
   -- than about wine or about machinery, and the third module to own vocabulary.
-  if (select count(*) from term_kind where module <> 'core') <> 13 then
-    raise exception 'FAIL: % of the kinds are owned by a module other than core, and the claim is thirteen',
+  -- Fourteen since 0119 registered document_kind to `shop`: what kind of paper
+  -- a machine has, a manual or a schematic or a research report. The shop's
+  -- third vocabulary and the first about documents rather than about hardware.
+  if (select count(*) from term_kind where module <> 'core') <> 14 then
+    raise exception 'FAIL: % of the kinds are owned by a module other than core, and the claim is fourteen',
       (select count(*) from term_kind where module <> 'core');
   end if;
-  perform test_ok('the registry says which module owns each kind, and thirteen of them are not core''s');
+  perform test_ok('the registry says which module owns each kind, and fourteen of them are not core''s');
 end $$;
 
 -- A term cannot name a kind nobody registered, and adding a kind is a row.

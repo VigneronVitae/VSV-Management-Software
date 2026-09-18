@@ -8,7 +8,8 @@
 -- Depended on by: [tests/schema_assertions.sql,
 --                  supabase/migrations/0107_the_shop_has_screens_too.sql,
 --                  supabase/migrations/0108_a_model_is_readable_on_its_own.sql,
---                  supabase/migrations/0112_a_machine_decomposes_into_parts.sql]
+--                  supabase/migrations/0112_a_machine_decomposes_into_parts.sql,
+--                  supabase/migrations/0119_a_machine_keeps_its_papers.sql]
 -- Axioms enforced: AR-Q8 (the interface is periphery over a read and write
 --                  contract), T0-5 (work is appended, never edited)
 -- Open sorries: none
