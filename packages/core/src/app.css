@@ -1587,3 +1587,97 @@ body.practising {
 .link:focus-visible {
   text-decoration-thickness: 2px;
 }
+
+/* Not `.sheet`: that is the notes overlay, `position: fixed; inset: 0`, and a
+   table wearing it inherits the overlay and covers the screen. Found by
+   screenshotting this and seeing the table floating at 0,0 over everything.
+   Renaming it also stopped these rules reaching into the real notes sheet.
+
+   A table of fruit, which is the one screen somebody reads the way they read a
+   spreadsheet: across, comparing rows, rather than down a list of cards.
+   Everywhere else in this app a list is `.vessel-row`, and that is right for a
+   thing you tap. It is wrong for six columns you want to sort by. */
+.log-wrap {
+  /* The table decides its own width and this scrolls, rather than the columns
+     squeezing to the phone. Six columns squeezed to 390px is unreadable, and a
+     sideways drag on the one screen that needs it is a fair trade. */
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.log-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.95rem;
+}
+
+.log-table th,
+.log-table td {
+  padding: 0.55rem 0.7rem;
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--rule);
+}
+
+.log-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  /* The whole header is the control, so the target is the cell rather than the
+     word in it: this gets tapped with a wet glove. */
+  user-select: none;
+}
+
+.log-table thead th:hover {
+  color: var(--ink);
+}
+
+/* Which column is sorted and which way. An arrow rather than a colour, because
+   the daylight skin takes the colour out and the arrow still reads. */
+.log-table thead th[aria-sort]::after {
+  content: " \2195";
+  opacity: 0.35;
+}
+.log-table thead th[aria-sort="ascending"]::after {
+  content: " \2191";
+  opacity: 1;
+}
+.log-table thead th[aria-sort="descending"]::after {
+  content: " \2193";
+  opacity: 1;
+}
+
+/* Numbers line up under each other or they cannot be compared down a column. */
+.log-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The total, which is not a row of data and must not look like one. */
+.log-table tfoot td {
+  border-top: 2px solid var(--rule);
+  border-bottom: none;
+  font-weight: 600;
+}
+
+.log-table tbody tr:last-child td {
+  border-bottom: none;
+}
+.log-table tbody tr:hover {
+  background: var(--ground);
+}
+
+/* A pick whose bins are not all weighed. The number in that row is not the
+   whole weight, and a table somebody adds up has to say so in the row rather
+   than in a footnote. */
+.log-table .partial {
+  color: var(--warn);
+}

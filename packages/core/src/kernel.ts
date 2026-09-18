@@ -1371,6 +1371,38 @@ export async function addBlock(block: {
 }
 
 // Picks that are still open: fruit at bin stage that has not been pressed away.
+// Every pick there has ever been, which `openPicks` deliberately is not: that
+// one stops at `status <> 'closed'`, so a pick leaves it the moment it is
+// pressed. 0114.
+export type FruitRow = {
+  id: Uuid;
+  name: string;
+  picked: string;
+  created_at: string;
+  vintage: number | null;
+  non_vintage: boolean;
+  status: string;
+  variety: string | null;
+  vineyard: string | null;
+  block: string | null;
+  lbs: number | null;
+  tons: number | null;
+  bins: number;
+  bins_held: number;
+  bins_weighed: number;
+};
+
+export async function fruitLog(): Promise<FruitRow[]> {
+  const { data, error } = await kernel()
+    .from("fruit_log")
+    .select(
+      "id,name,picked,created_at,vintage,non_vintage,status,variety,vineyard,block,lbs,tons,bins,bins_held,bins_weighed",
+    )
+    .order("created_at", { ascending: false });
+  if (error) throw new KernelError(error);
+  return (data ?? []) as FruitRow[];
+}
+
 export async function openPicks(): Promise<Pick[]> {
   // `open_pick` rather than `node` with three filters. What counts as an open
   // pick is a rule, and it was in this function until 0057 asked what relation

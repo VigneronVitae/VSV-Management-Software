@@ -1174,6 +1174,28 @@ than anything in that app so far. Until then this schema holds nothing.
 *Load-bearing:* yes, in the sense that the feature does not exist for a user until it is
 closed. Nothing else depends on it.
 
+**S-96. Previous years cannot be imported, and the shape they need is decided.**
+`0114` makes every pick readable as a row, and the winemaker's reason for wanting it is that he
+intends to put the back years in beside this one. His logs are not pick totals: "the previous
+weight logs have gross + tare + net + date + variety and stuff", which is one row per bin
+weighed, and is exactly the shape `0092` already models for a bin on the scale. So an imported
+year can carry real bin counts and real per-bin weights rather than one number per pick, and the
+table does not need a second kind of row.
+The open question is what a historical bin *is*. A weighing in this kernel hangs off a
+`placement`, a named vessel holding a pick, and for 2019 nobody knows which physical bin was
+which, and the bins that existed then are in use today. Inventing placements against real
+vessels would write fiction into `placement`, which is the one table `fruit_log` trusts for bin
+counts. Recording weighings with no placement instead makes an imported pick read as zero bins,
+which is the precise A13 failure `0114` was written to remove, reintroduced one migration later.
+Provenance is the other half. `event.provenance` currently holds `observed` and `inferred`, and
+an imported weighing is neither: nobody observed it today and it is not inferred, it is the
+winemaker asserting his own record. T0-4 says the verifier sets that field and an agent may
+never write `confirmed`, so whatever the answer is, he writes it and not me.
+*Resolves when:* a bin that was weighed but not placed can be counted, and an import capability
+exists that records the year, the block, the variety, and one weighing per row, marked as
+imported in a way a person can see in the table.
+*Load-bearing:* yes. The table exists to hold his history and currently holds one vintage.
+
 ## Discharged
 **S-92. A machine model with no machine could not be chosen.** *Discharged by `0108`.*
 `0106` registered two readables and forgot the obvious third, so the add-a-machine screen built

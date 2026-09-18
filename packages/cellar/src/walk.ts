@@ -47,9 +47,11 @@ import {
   drawCut,
   drawToLevel,
   exportCellar,
+  type FruitRow,
   facilityParty,
   fillVessel,
   finishPress,
+  fruitLog,
   type GlycolMachineLoad,
   glycolConflicts,
   glycolMachines,
@@ -391,6 +393,8 @@ async function screenFor(place: Place): Promise<HTMLElement> {
       return binsToReturnScreen();
     case "export":
       return exportScreen();
+    case "fruit":
+      return fruitScreen();
     case "vineyards":
       return vineyardsScreen();
     case "makers":
@@ -9959,6 +9963,221 @@ function siteForm(
         }),
       ),
   };
+}
+
+// Every pick, as a table you sort rather than a list you scroll.
+//
+// "List of fruit like an Excel spreadsheet or table that can be sorted by any
+// metric (date/weight/variety/vineyard/etc)." So it is a real table: columns, a
+// heading you tap to sort, tap again to reverse. Everything else in this app is
+// a list of cards, which is right for a thing you tap and wrong for six numbers
+// you want to compare down a column.
+//
+// The sorting is done here rather than in the query. Six picks today and a few
+// hundred once the back years are imported is a list the phone orders instantly,
+// and a round trip per heading tap would make this feel broken on a bad signal
+// in a barn.
+function fruitScreen(): HTMLElement {
+  const body = el("div", {}, empty("Loading."));
+  const view = screen(
+    "Every pick",
+    lede("All fruit in, open and finished. Tap a heading to sort by it."),
+    body,
+  );
+
+  type Key = keyof FruitRow;
+  // Newest first, because the question is nearly always about this week.
+  let sortBy: Key = "created_at";
+  let descending = true;
+
+  void (async () => {
+    try {
+      const picks = await fruitLog();
+      if (picks.length === 0) {
+        body.replaceChildren(
+          empty("No fruit recorded yet."),
+          button("Back", () => goBack(), "quiet"),
+        );
+        return;
+      }
+
+      const columns: { key: Key; label: string; num?: boolean }[] = [
+        { key: "picked", label: "Date" },
+        { key: "variety", label: "Variety" },
+        { key: "vineyard", label: "Vineyard" },
+        { key: "block", label: "Block" },
+        { key: "vintage", label: "Vintage", num: true },
+        { key: "bins", label: "Bins", num: true },
+        { key: "lbs", label: "Lbs", num: true },
+        { key: "tons", label: "Tons", num: true },
+        { key: "status", label: "Status" },
+      ];
+
+      function draw(): void {
+        const sorted = [...picks].sort((a, b) => {
+          const x = a[sortBy];
+          const y = b[sortBy];
+          // Nulls last whichever way it is sorted. A pick nobody has weighed is
+          // not the lightest pick, it is a pick with no weight, and sorting it
+          // to the top of "lightest first" is the same lie as showing it as 0.
+          if (x === null || x === undefined) return 1;
+          if (y === null || y === undefined) return -1;
+          const cmp =
+            typeof x === "number" && typeof y === "number"
+              ? x - y
+              : String(x).localeCompare(String(y));
+          return descending ? -cmp : cmp;
+        });
+
+        // Only what is actually known. A total that quietly included the picks
+        // with unweighed bins would be a number somebody reads out to a grower.
+        const whole = sorted.filter((r) => r.bins_weighed >= r.bins && r.lbs !== null);
+        const totalLbs = whole.reduce((n, r) => n + Number(r.lbs ?? 0), 0);
+        const totalBins = whole.reduce((n, r) => n + r.bins, 0);
+        const partial = sorted.length - whole.length;
+
+        const head = el(
+          "tr",
+          {},
+          ...columns.map((c) => {
+            const th = el("th", {
+              text: c.label,
+              class: c.num ? "num" : "",
+              scope: "col",
+              tabindex: "0",
+            });
+            th.setAttribute(
+              "aria-sort",
+              c.key === sortBy ? (descending ? "descending" : "ascending") : "none",
+            );
+            const pick = () => {
+              if (sortBy === c.key) {
+                descending = !descending;
+              } else {
+                sortBy = c.key;
+                // Numbers open biggest first, words open A to Z. Both are what
+                // somebody means when they say "sort by this".
+                descending = c.num === true;
+              }
+              draw();
+            };
+            on(th, "click", pick);
+            on(th, "keydown", (ev) => {
+              if (ev.key === "Enter" || ev.key === " ") {
+                ev.preventDefault();
+                pick();
+              }
+            });
+            return th;
+          }),
+        );
+
+        function cell(r: FruitRow, c: { key: Key; num?: boolean }): HTMLElement {
+          const v = r[c.key];
+          let text: string;
+          if (v === null || v === undefined) {
+            // Not "0" and not blank. Blank reads as a missing column, a dash
+            // reads as nobody has said.
+            text = "—";
+          } else if (c.key === "lbs") {
+            text = Number(v).toLocaleString(undefined, {
+              maximumFractionDigits: 0,
+            });
+          } else if (c.key === "tons") {
+            text = Number(v).toFixed(2);
+          } else if (c.key === "vintage") {
+            text = r.non_vintage ? "NV" : String(v);
+          } else {
+            text = String(v);
+          }
+          const td = el("td", { text, class: c.num ? "num" : "" });
+          // The row says its own weight is incomplete, rather than a footnote
+          // saying that some rows are.
+          if ((c.key === "lbs" || c.key === "tons") && r.bins_weighed < r.bins) {
+            td.classList.add("partial");
+            td.title = `${r.bins_weighed} of ${r.bins} bins weighed`;
+          }
+          return td;
+        }
+
+        const table = el(
+          "table",
+          { class: "log-table" },
+          el("thead", {}, head),
+          el(
+            "tbody",
+            {},
+            ...sorted.map((r) => {
+              const tr = el(
+                "tr",
+                { role: "button", tabindex: "0" },
+                ...columns.map((c) => cell(r, c)),
+              );
+              const open = () => go({ at: "pick-bins", id: r.id });
+              on(tr, "click", open);
+              on(tr, "keydown", (ev) => {
+                if (ev.key === "Enter") {
+                  ev.preventDefault();
+                  open();
+                }
+              });
+              return tr;
+            }),
+          ),
+          el(
+            "tfoot",
+            {},
+            el(
+              "tr",
+              {},
+              el("td", { text: `${sorted.length} picks`, colspan: "5" }),
+              el("td", { class: "num", text: String(totalBins) }),
+              el("td", {
+                class: "num",
+                text: totalLbs.toLocaleString(undefined, {
+                  maximumFractionDigits: 0,
+                }),
+              }),
+              el("td", { class: "num", text: (totalLbs / 2000).toFixed(2) }),
+              el("td", { text: "" }),
+            ),
+          ),
+        );
+
+        body.replaceChildren(
+          rows(
+            el("div", { class: "log-wrap" }, table),
+            partial > 0
+              ? el("p", {
+                  class: "field-hint partial",
+                  text:
+                    partial +
+                    " pick" +
+                    (partial === 1 ? " has" : "s have") +
+                    " bins nobody has weighed, so the total leaves " +
+                    (partial === 1 ? "it" : "them") +
+                    " out. Those are the figures in amber.",
+                })
+              : el("span", {}),
+            el("p", {
+              class: "field-hint",
+              text: "Tap a row to open the pick and its bins.",
+            }),
+            button("Back", () => goBack(), "quiet"),
+          ),
+        );
+      }
+
+      draw();
+    } catch (error) {
+      body.replaceChildren(
+        fail(error),
+        button("Back", () => goBack(), "quiet"),
+      );
+    }
+  })();
+
+  return view;
 }
 
 function vineyardsScreen(): HTMLElement {

@@ -54,6 +54,9 @@ export type Place =
   | { at: "press" }
   | { at: "bins-to-return" }
   | { at: "export" }
+  // Every pick there has ever been, as a table rather than a list, because it
+  // is read across and sorted rather than tapped down.
+  | { at: "fruit" }
   | { at: "vineyards" }
   // One vineyard. A vineyard used to be a heading on the list and nothing else,
   // which meant a vineyard with no blocks in it yet was a dead end: nothing to
@@ -121,6 +124,7 @@ const WITHOUT_ID = new Set([
   "bins-to-return",
   "export",
   "vineyards",
+  "fruit",
   "day",
   "paper",
   "makers",
