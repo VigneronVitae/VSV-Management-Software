@@ -8,7 +8,8 @@
 --              supabase/migrations/0057_the_contract.sql,
 --              supabase/migrations/0109_a_module_says_where_it_lives.sql]
 -- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql,
---                  supabase/migrations/0116_the_vineyard_is_not_everybodys_business.sql]
+--                  supabase/migrations/0116_the_vineyard_is_not_everybodys_business.sql,
+--                  supabase/migrations/0117_the_vine_map_is_loaded.sql]
 -- Axioms enforced: T0-2, acreage and plant counts become derivations and stop
 --                  being figures anybody types. T0-5, a vine that died and was
 --                  replanted is two records and not an edit. AR-E5, plant state

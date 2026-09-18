@@ -3,7 +3,8 @@
 -- Purpose: "The three tables 0115 added are readable by this winery rather than
 --           by every signed-in account."
 -- Depends on: [supabase/migrations/0115_a_vineyard_is_rows_and_plant_spaces.sql]
--- Depended on by: [tests/schema_assertions.sql, docs/status-ledger.md]
+-- Depended on by: [tests/schema_assertions.sql, docs/status-ledger.md,
+--                  supabase/migrations/0117_the_vine_map_is_loaded.sql]
 -- Axioms enforced: A5. Three more blanket reads would have widened a gap that
 --                  is already filed rather than approved.
 -- Open sorries: none new.

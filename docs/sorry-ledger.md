@@ -1222,26 +1222,19 @@ the derivation to every decimal place, so a block where they disagree is a block
 is wrong, and that is worth knowing before the column goes.
 *Load-bearing:* not yet. It becomes so the moment anybody edits one of them.
 
-**S-98. The vineyard module has a shape and no vineyard in it.**
-`0115` builds rows, plant spaces and their history, and there are none of any of them. The map
-is decoded and reconciles to the winemaker's own plant counts exactly, so loading it is a
-matter of writing the migration, but two things are unanswered and one of them cannot be
-guessed.
-**Clone is positional in the Overlook Pommard and 777 block.** That sheet paints every Pinot
-Noir the same colour and the two clones are told apart by which rows they are in, which the map
-does not record anywhere a program can read. 3259 Pommard and 3295 of 777 is known; which rows
-are which is not. Only the winemaker can say, and until he does that block can be loaded as
-Pinot Noir with a null clone or not at all.
-**Southeast is one vine out.** Decoded 1731 Pinot Gris plus 22 young scion is 1753 against a
-stated 1754. Every other block reconciles exactly, so this is one cell somewhere and worth
-finding rather than rounding away.
-*Resolves when:* the five blocks, their rows and their spaces are loaded, each space carrying
-one `plant_change` dated to the map with provenance `observed`, and the per-block counts are
-asserted against the legend so a future edit to the map that breaks the reconciliation fails
-the suite rather than passing quietly.
-*Load-bearing:* yes. The module is a schema with nothing in it until this is done.
 
 ## Discharged
+
+**S-98. Discharged 2026-09-18 by `0117`.** The map is loaded: five blocks, 190 rows, 13,539
+plant spaces, one dated observation each. Both questions were answered rather than assumed. The
+winemaker gave the clone split at Overlook from memory, rows 1 to 28 Pommard and 29 to 53 of
+777, and it reproduced his stated 3259 and 3295 to the plant, which is two independent facts
+agreeing. The one-vine gap at Southeast turned out not to be an error in the decode: a
+rootstock-only position counts as a plant in his legend, and once counted that way every block
+reconciles exactly, including the five derived acreages against his own hand arithmetic. The
+reconciliation is asserted inside the migration, so an edit to that data that breaks it fails to
+apply rather than passing quietly.
+
 **S-92. A machine model with no machine could not be chosen.** *Discharged by `0108`.*
 `0106` registered two readables and forgot the obvious third, so the add-a-machine screen built
 its model list out of the machines that already had one. Register a model and then a machine of

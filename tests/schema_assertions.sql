@@ -80,7 +80,8 @@
 --              supabase/migrations/0111_a_count_that_reads_zero_is_a_lie.sql,
 --              supabase/migrations/0112_a_machine_decomposes_into_parts.sql,
 --              supabase/migrations/0115_a_vineyard_is_rows_and_plant_spaces.sql,
---              supabase/migrations/0116_the_vineyard_is_not_everybodys_business.sql]
+--              supabase/migrations/0116_the_vineyard_is_not_everybodys_business.sql,
+--               supabase/migrations/0117_the_vine_map_is_loaded.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh, scripts/rpc-args.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
