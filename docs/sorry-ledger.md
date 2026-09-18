@@ -1174,26 +1174,36 @@ than anything in that app so far. Until then this schema holds nothing.
 *Load-bearing:* yes, in the sense that the feature does not exist for a user until it is
 closed. Nothing else depends on it.
 
-**S-96. Previous years cannot be imported, and the shape they need is decided.**
-`0114` makes every pick readable as a row, and the winemaker's reason for wanting it is that he
-intends to put the back years in beside this one. His logs are not pick totals: "the previous
-weight logs have gross + tare + net + date + variety and stuff", which is one row per bin
-weighed, and is exactly the shape `0092` already models for a bin on the scale. So an imported
-year can carry real bin counts and real per-bin weights rather than one number per pick, and the
-table does not need a second kind of row.
-The open question is what a historical bin *is*. A weighing in this kernel hangs off a
-`placement`, a named vessel holding a pick, and for 2019 nobody knows which physical bin was
-which, and the bins that existed then are in use today. Inventing placements against real
-vessels would write fiction into `placement`, which is the one table `fruit_log` trusts for bin
-counts. Recording weighings with no placement instead makes an imported pick read as zero bins,
-which is the precise A13 failure `0114` was written to remove, reintroduced one migration later.
-Provenance is the other half. `event.provenance` currently holds `observed` and `inferred`, and
-an imported weighing is neither: nobody observed it today and it is not inferred, it is the
-winemaker asserting his own record. T0-4 says the verifier sets that field and an agent may
-never write `confirmed`, so whatever the answer is, he writes it and not me.
-*Resolves when:* a bin that was weighed but not placed can be counted, and an import capability
-exists that records the year, the block, the variety, and one weighing per row, marked as
-imported in a way a person can see in the table.
+**S-96. Previous years cannot be imported, and the sheets say why it is not one job.**
+The sheets are at `D:\Vitae Springs Management\Expenses6\Receipts\Incoming\`, three of them,
+2023 and 2024 and 2025, about 145 rows in total. They are three different schemas.
+- **2023** is the richest: date, time, varietal, gross, total tare, net, weighed by, vineyard,
+  winery, picked by, date picked, price per ton. No bin count: the number of bins is only
+  recoverable by dividing the tare total by a per-bin tare that is not written down and that
+  changes between years (92, 95 and 96 all appear).
+- **2025**: time, picked date, processed date, varietal, gross, bins, per-bin tare, net,
+  destination. The only year where bins and tare are both explicit.
+- **2024**: date, varietal, gross, bins. No tare and therefore no net weight at all.
+**A row is a weighing of several bins at once, not of one bin.** 2591 lb gross, 3 bins, 92 lb
+tare, 2315 net. That is the opposite of what 0092 models, where a weighing is one bin on a
+scale, and it settles the question this entry used to ask: an imported weighing should say how
+many bins it covered rather than pretend to name them, and no placement need be invented.
+**The varietal column is not a variety.** It carries vineyard, block and clone jumbled together
+and spelled differently between years: `Royer Chardonnay` in 2025 is `Chardonnay (Royer)` in
+2024, beside `Old Oaks Chardonnay`, `Chardonnay (Elkton)`, `Zenith Chardonnay`,
+`VSV Pinot Noir 777` and `Pinot Noir Self-Rooted`. Which Royer is which block is the
+winemaker's knowledge and not mine to infer.
+**Destination is the custom crush client**, which `owner_id` already models: VS Winery, Amica
+Luna, Cynic, Terrance David Wines.
+**Some rows are not measurements and he has already marked them.** `Est for Jose`,
+`Missing 5 bin weights from`, `Sum into 777`. That annotation is provenance he wrote himself
+and flattening it into a number would destroy the one thing that distinguishes an estimate from
+a weighing. There is also at least one plain error to raise rather than import: a 2025 row with
+a picked date of 47022, which is 2028.
+*Resolves when:* a weighing can say how many bins it covered, a varietal-to-block mapping he has
+confirmed exists, and an import capability records one weighing per row with the year's own
+fidelity rather than a common denominator. 2024 has no net weight and inventing one at 92 a bin
+is `inferred` under T0-4, which is his call and not mine.
 *Load-bearing:* yes. The table exists to hold his history and currently holds one vintage.
 
 ## Discharged
