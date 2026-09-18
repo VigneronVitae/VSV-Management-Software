@@ -872,7 +872,7 @@ IndexedDB, in a scratch directory outside the repository:
 
 - plpgsql is present, roles can be created, and `SET ROLE` works, so row level security is
   live rather than inert. That was the thing most likely to disqualify it.
-- All 112 migrations apply, with `tests/shim.sql` in front exactly as `scripts/green.sh` uses
+- All 116 migrations apply, with `tests/shim.sql` in front exactly as `scripts/green.sh` uses
   it against a bare Postgres. 57 plpgsql functions, 93 policies, 19 views, 37 tables, and a
   constraint census identical to Postgres 17 with the same shim.
 - `contract()` executes.

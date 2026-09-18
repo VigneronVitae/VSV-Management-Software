@@ -1206,6 +1206,41 @@ fidelity rather than a common denominator. 2024 has no net weight and inventing 
 is `inferred` under T0-4, which is his call and not mine.
 *Load-bearing:* yes. The table exists to hold his history and currently holds one vintage.
 
+**S-97. Acreage is now derived and typed at the same time.**
+`0115` adds `block_planting`, which counts plant spaces and divides by `block.vines_per_acre`,
+and that is where acreage comes from once the map is loaded. `block.acres` and `planting.acres`
+still exist and are still typed by hand, and the cellar reads them. Two answers to one question
+is the shape T0-2 exists to prevent, and the two will disagree the first time a row is pulled
+out and only one of them is updated.
+They are not dropped in `0115` because the derived figure reads null until the map is in and
+the density is set, and replacing a number people rely on with a null in the middle of harvest
+is worse than carrying both for a fortnight.
+*Resolves when:* the map is loaded, `vines_per_acre` is set on all five blocks, the derived
+figure is checked against the typed one block by block, and `block.acres` and `planting.acres`
+are dropped in favour of the view. The check is the point: his own sheet already agrees with
+the derivation to every decimal place, so a block where they disagree is a block where the map
+is wrong, and that is worth knowing before the column goes.
+*Load-bearing:* not yet. It becomes so the moment anybody edits one of them.
+
+**S-98. The vineyard module has a shape and no vineyard in it.**
+`0115` builds rows, plant spaces and their history, and there are none of any of them. The map
+is decoded and reconciles to the winemaker's own plant counts exactly, so loading it is a
+matter of writing the migration, but two things are unanswered and one of them cannot be
+guessed.
+**Clone is positional in the Overlook Pommard and 777 block.** That sheet paints every Pinot
+Noir the same colour and the two clones are told apart by which rows they are in, which the map
+does not record anywhere a program can read. 3259 Pommard and 3295 of 777 is known; which rows
+are which is not. Only the winemaker can say, and until he does that block can be loaded as
+Pinot Noir with a null clone or not at all.
+**Southeast is one vine out.** Decoded 1731 Pinot Gris plus 22 young scion is 1753 against a
+stated 1754. Every other block reconciles exactly, so this is one cell somewhere and worth
+finding rather than rounding away.
+*Resolves when:* the five blocks, their rows and their spaces are loaded, each space carrying
+one `plant_change` dated to the map with provenance `observed`, and the per-block counts are
+asserted against the legend so a future edit to the map that breaks the reconciliation fails
+the suite rather than passing quietly.
+*Load-bearing:* yes. The module is a schema with nothing in it until this is done.
+
 ## Discharged
 **S-92. A machine model with no machine could not be chosen.** *Discharged by `0108`.*
 `0106` registered two readables and forgot the obvious third, so the add-a-machine screen built

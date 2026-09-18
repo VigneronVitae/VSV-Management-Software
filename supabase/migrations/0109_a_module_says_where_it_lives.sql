@@ -5,7 +5,8 @@
 -- Depends on: [supabase/migrations/0057_the_contract.sql,
 --              supabase/migrations/0108_a_model_is_readable_on_its_own.sql]
 -- Depended on by: [tests/schema_assertions.sql,
---                  supabase/migrations/0110_the_front_door_opens_before_you_sign_in.sql]
+--                  supabase/migrations/0110_the_front_door_opens_before_you_sign_in.sql,
+--                  supabase/migrations/0115_a_vineyard_is_rows_and_plant_spaces.sql]
 -- Axioms enforced: AR-E5 (a registry row rather than a list in a client), T0-2
 --                  (whether a module has anything in it is counted from the
 --                  contract, not declared twice)

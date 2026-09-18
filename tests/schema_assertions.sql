@@ -78,7 +78,9 @@
 --              supabase/migrations/0109_a_module_says_where_it_lives.sql,
 --              supabase/migrations/0110_the_front_door_opens_before_you_sign_in.sql,
 --              supabase/migrations/0111_a_count_that_reads_zero_is_a_lie.sql,
---              supabase/migrations/0112_a_machine_decomposes_into_parts.sql]
+--              supabase/migrations/0112_a_machine_decomposes_into_parts.sql,
+--              supabase/migrations/0115_a_vineyard_is_rows_and_plant_spaces.sql,
+--              supabase/migrations/0116_the_vineyard_is_not_everybodys_business.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh, scripts/rpc-args.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -2631,7 +2633,13 @@ begin
   -- a read and a write on each, both scoped to is_facility_user(). None reads
   -- blanket true. What the press is made of is this winery's business and a
   -- custom crush client has no use for it.
-  want := '120';
+  -- 126 since 0115 started the vineyard module: two each on `vine_row`,
+  -- `plant_space` and `plant_change`. None reads blanket true. 0115 first wrote
+  -- them that way, copying `vineyard_read` from 0039, and 0116 tightened all
+  -- three to is_facility_user() rather than adding three more rows to the
+  -- finding two screens down. Which vine stands in row 4 of Tudor North is this
+  -- winery's business on the same argument 0112 made about the press.
+  want := '126';
   if have <> want then
     raise exception
       'FAIL: there are % policies in public and this suite was written against %. If that is deliberate, update this number, and judge the new policy in the disposition list below if it reads or writes blanket true', have, want;
@@ -3003,7 +3011,16 @@ begin
   -- removal names no replacement, plus a quantity check), and five keys: the
   -- work that did it, the stock part, the earlier change it is about, and the
   -- domain pin.
-  want := 'c=60 f=103 p=50 u=23';
+  -- c=60 f=103 p=50 u=23 before 0115, which started the vineyard module with
+  -- three tables. Four new checks: a row number and a plant space number are
+  -- both positive, a row length is positive if it is given at all, and an empty
+  -- space names no clone, because a clone with no vine is a claim about a plant
+  -- that is not there. Three new primary keys and two new uniques, a row being
+  -- unique within its block by the number on its end post and a space unique
+  -- within its row. Seven new keys: each table to its parent, two authors, and
+  -- the two composite pins into term(id, kind) for plant state and variety with
+  -- their plain ids beside them.
+  want := 'c=64 f=110 p=53 u=25';
   if have <> want then
     raise exception
       E'FAIL: the constraint inventory changed.\nnow:  %\nwas:  %\nIf that is deliberate, update this line in the same commit that changed the schema.', have, want;
@@ -3053,6 +3070,8 @@ begin
        || 'paper_record_operation.paper_record_operation_is_an_operation, '
        -- 0039. A block is planted to a variety, pinned the same way every other
        -- pointer into term has been since 0027.
+       || 'plant_change.plant_change_state_is_a_plant_state, '
+       || 'plant_change.plant_change_variety_is_a_variety, '
        || 'planting.planting_variety_is_a_variety, '
        || 'procedure_step.step_material_is_a_material, '
        -- 0046. A supply is of material kinds, plural: the vocabulary 0027
@@ -3102,6 +3121,8 @@ begin
        -- 0043, pinning a form's operation list to the operation vocabulary.
        || 'paper_record_operation.operation_kind=''operation''::text '
        -- 0039, pinning a planting's term to the variety vocabulary.
+       || 'plant_change.state_kind=''plant_state''::text '
+       || 'plant_change.variety_kind=''variety''::text '
        || 'planting.variety_kind=''variety''::text '
        || 'procedure_step.material_kind=''material_kind''::text '
        -- 0046, pinning a supply's sorts to the material vocabulary.
@@ -3262,7 +3283,15 @@ begin
   -- of the three means anything once its owner is gone. Two new set nulls: a
   -- change pointing at a stock part and at an earlier change, both of which can
   -- go while the record that something happened stays.
-  want := 'a=59 c=21 n=8 r=15';
+  -- a=59 c=21 n=8 r=15 before 0115. Four new no-actions: the two composite term
+  -- pins on `plant_change` with their plain ids beside them, because a plant
+  -- state or a variety is retired by deactivating the term rather than by
+  -- deleting it out from under the vines that are it. Three new cascades: a row
+  -- to its block, a space to its row, and a change to its space. That chain is
+  -- deliberate. Deleting a block should take its rows and their spaces and their
+  -- history, because a block that is gone is a block that was pulled out, and
+  -- leaving orphan spaces addressed to nothing would be worse than losing them.
+  want := 'a=63 c=24 n=8 r=15';
   if have <> want then
     raise exception
       E'FAIL: foreign key delete behaviour changed.\nnow:  %\nwas:  %\na is no action, c is cascade, n is set null, r is restrict.', have, want;
@@ -4279,14 +4308,15 @@ begin
   -- module, `shop`. What kind of thing a tractor is, and what kind of work was
   -- done to it, are not questions the cellar or core has an opinion about, and
   -- this is the first module that is not about wine at all.
-  -- Twelve since 0112 registered part_domain, also to `shop`: what kind of part
-  -- something is, mechanical or electrical or software, which is a question
-  -- about machines rather than about wine.
-  if (select count(*) from term_kind where module <> 'core') <> 12 then
-    raise exception 'FAIL: % of the kinds are owned by a module other than core, and the claim is twelve',
+  -- Thirteen since 0115 registered plant_state to `vineyard`, the first kind
+  -- that module has owned: what stands in a plant space, which is a vine or a
+  -- young scion or rootstock or nothing. A question about the ground rather
+  -- than about wine or about machinery, and the third module to own vocabulary.
+  if (select count(*) from term_kind where module <> 'core') <> 13 then
+    raise exception 'FAIL: % of the kinds are owned by a module other than core, and the claim is thirteen',
       (select count(*) from term_kind where module <> 'core');
   end if;
-  perform test_ok('the registry says which module owns each kind, and twelve of them are not core''s, across five modules');
+  perform test_ok('the registry says which module owns each kind, and thirteen of them are not core''s');
 end $$;
 
 -- A term cannot name a kind nobody registered, and adding a kind is a row.

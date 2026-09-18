@@ -4,7 +4,8 @@
 --           filters typed into a client."
 -- Depends on: [supabase/migrations/0033_intake.sql,
 --              supabase/migrations/0057_the_contract.sql]
--- Depended on by: [tests/schema_assertions.sql]
+-- Depended on by: [tests/schema_assertions.sql,
+--                  supabase/migrations/0114_every_pick_stays_on_the_list.sql]
 -- Axioms enforced: R-4 (a client that hardcodes what the kernel could answer is
 --                  a rule the next client gets wrong)
 -- ---------------------------------------------------------------------------

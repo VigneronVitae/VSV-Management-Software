@@ -4,7 +4,9 @@
 # Purpose: "Every screen the client can route to has a row in `screen`, so a
 #           note about wording has something to point at."
 # Depends on: [supabase/migrations/0101_a_note_can_be_about_a_screen.sql,
-#              supabase/migrations/0107_the_shop_has_screens_too.sql]
+#              supabase/migrations/0107_the_shop_has_screens_too.sql,
+#              supabase/migrations/0113_a_vineyard_is_a_place_you_can_open.sql,
+#              supabase/migrations/0114_every_pick_stays_on_the_list.sql]
 # Depended on by: [scripts/green.sh]
 # ---------------------------------------------------------------------------
 #

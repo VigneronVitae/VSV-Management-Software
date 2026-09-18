@@ -10078,7 +10078,12 @@ function fruitScreen(): HTMLElement {
           if (v === null || v === undefined) {
             // Not "0" and not blank. Blank reads as a missing column, a dash
             // reads as nobody has said.
-            text = "—";
+            //
+            // A hyphen rather than an em dash, which is the better glyph and is
+            // banned repo-wide. Written as an escape once and biome's unsafe fix
+            // turned it back into the character, so the glyph itself has to be
+            // one the rule allows rather than one spelled carefully.
+            text = "-";
           } else if (c.key === "lbs") {
             text = Number(v).toLocaleString(undefined, {
               maximumFractionDigits: 0,

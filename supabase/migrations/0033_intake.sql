@@ -10,7 +10,8 @@
 --              supabase/migrations/0027_term_kind_registry.sql,
 --              supabase/migrations/0032_vessel_maker_and_room_temperature.sql,
 --              packages/cellar/docs/spec.md]
--- Depended on by: [tests/schema_assertions.sql, supabase/migrations/0034_press.sql, supabase/migrations/0035_bins_in_bulk.sql, supabase/migrations/0038_cancel_a_pick.sql, supabase/migrations/0042_weighing_photo.sql, supabase/migrations/0044_finishing_a_pick.sql, supabase/migrations/0049_every_lot_says_its_vintage.sql, supabase/migrations/0058_an_open_pick_is_a_view.sql]
+-- Depended on by: [tests/schema_assertions.sql, supabase/migrations/0034_press.sql, supabase/migrations/0035_bins_in_bulk.sql, supabase/migrations/0038_cancel_a_pick.sql, supabase/migrations/0042_weighing_photo.sql, supabase/migrations/0044_finishing_a_pick.sql, supabase/migrations/0049_every_lot_says_its_vintage.sql, supabase/migrations/0058_an_open_pick_is_a_view.sql,
+--                  supabase/migrations/0114_every_pick_stays_on_the_list.sql]
 -- Axioms enforced: T0-1 (one node type: a bin of fruit is a node like any
 --                  other), T0-2 (composition is derived, never stored),
 --                  T0-5 (events are append only, a correction is a new event),
