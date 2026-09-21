@@ -1,3 +1,9 @@
+// ---------------------------------------------------------------------------
+// Type: source
+// Purpose: "The shop shell. Mounts one module and holds no domain logic."
+// Depends on: [packages/shop/src/index.ts]
+// Depended on by: [docs/status-ledger.md]
+// ---------------------------------------------------------------------------
 // The shop shell. Mounts one module and holds no domain logic, the same way the
 // cellar shell does.
 //

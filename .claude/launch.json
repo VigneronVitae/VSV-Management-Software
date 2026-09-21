@@ -6,6 +6,18 @@
       "runtimeExecutable": "bun",
       "runtimeArgs": ["run", "--cwd", "apps/web", "dev"],
       "port": 5173
+    },
+    {
+      "name": "books",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "--cwd", "apps/books", "dev"],
+      "port": 5181
+    },
+    {
+      "name": "inventory",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "--cwd", "apps/inventory", "dev"],
+      "port": 5182
     }
   ]
 }

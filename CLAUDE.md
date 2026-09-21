@@ -2,7 +2,9 @@
 Type: contract
 Purpose: "The working contract for any agent operating in this repository: what to read, what is forbidden, and what done means."
 Depends on: [packages/cellar/docs/spec.md, docs/status-ledger.md, docs/sorry-ledger.md, docs/compost-ledger.md, docs/methodology-lineage.md]
-Depended on by: [README.md, scripts/verify.sh, scripts/db-backup.sh, scripts/watchdog.ps1]
+Depended on by: [README.md, scripts/verify.sh, scripts/db-backup.sh, scripts/watchdog.ps1,
+                 scripts/data-surface.py,
+                 packages/core/src/ui.ts]
 ---
 
 # CLAUDE.md: agent contract

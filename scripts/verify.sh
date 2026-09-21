@@ -6,7 +6,8 @@
 #           here corresponds to something CLAUDE.md or a ledger asserts and
 #           nothing enforced."
 # Depends on: [CLAUDE.md, docs/sorry-ledger.md, docs/compost-ledger.md,
-#              docs/status-ledger.md, docs/findings-ledger.md]
+#              docs/status-ledger.md, docs/findings-ledger.md,
+#              scripts/data-surface.py]
 # Depended on by: [docs/status-ledger.md, scripts/green.sh]
 # ---------------------------------------------------------------------------
 #
@@ -83,7 +84,19 @@ for f in $(tracked); do
   # .sh is scanned too. It was not until now, which meant this script's own
   # typed header was the one header in the tree nothing checked, and it named
   # package.json, a file that carries no header and never could.
-  case "$f" in *.md|*.sql|*.sh|*.ps1) ;; *) continue ;; esac
+  #
+  # .py is scanned too, and this is the third time the same thing has happened:
+  # a tool arrives in a language the list does not mention, carries a header
+  # nobody reads, and declares dependencies that cannot be reciprocated because
+  # the other half of the edge is invisible. The importers under data/ found it.
+  #
+  # .ts is the fourth. Five TypeScript files carry a typed header and this list
+  # has never included them, so every edge they declared was invisible in one
+  # direction and the migrations naming them failed the reciprocity check with
+  # nothing the author could do about it from that end. The pattern is now clear
+  # enough to state: the list is the bug, and the next language added to this
+  # repository will arrive the same way unless somebody thinks to come here.
+  case "$f" in *.md|*.sql|*.sh|*.ps1|*.py|*.ts) ;; *) continue ;; esac
   grep -q 'Depends on:' "$f" 2>/dev/null || continue
   echo "$f" >> "$headered"
 
@@ -93,7 +106,7 @@ for f in $(tracked); do
   if [ "$(head -1 "$f" | tr -d '\r')" = "---" ]; then
     hdr=$(sed -n '2,/^---[[:space:]]*$/p' "$f")
   else
-    hdr=$(awk '/^#!/ {next} /^(--|#)/ {print; next} {exit}' "$f" | sed 's/^\(--\|#\)[[:space:]]*//')
+    hdr=$(awk '/^#!/ {next} /^(--|#|\/\/)/ {print; next} {exit}' "$f" | sed 's/^\(--\|#\|\/\/\)[[:space:]]*//')
   fi
   hdr=$(printf '%s' "$hdr" | tr '\r\n' '  ')
 
@@ -409,6 +422,33 @@ elif [ "$pairs" -eq 0 ]; then
   pass "the module import rule holds vacuously: $(printf '%s\n' "$modules" | grep -cv '^core$') module besides core, so there is no sibling to import from"
 else
   pass "no module package imports from a sibling across $pairs ordered pair(s); core is the only shared floor"
+fi
+
+# ---------------------------------------------------------------------------
+head_ "8. the data surface"
+# ---------------------------------------------------------------------------
+# The repository says what can exist. It does not say what does. A migration may
+# carry a table, a vocabulary, a capability or a screen; it may not carry one
+# winery's vineyard, its machines, its suppliers or its books.
+#
+# This was not always true. Two migrations held a vine map and a machine, 129 KB
+# of one winery's records, and the argument for taking them out is the project's
+# own: CLAUDE.md says the system is meant to be handed to other winemakers, and a
+# repository containing one winery's vineyard cannot be handed to anybody.
+#
+# scripts/data-surface.py enumerates every insert into a table that holds
+# instances, and docs/review/data-dispositions.tsv judges each one. Unjudged
+# fails. Judged `local` and still here fails.
+if command -v python >/dev/null 2>&1; then
+  ds_out=$(python scripts/data-surface.py 2>&1) || true
+  if printf '%s' "$ds_out" | grep -q '^ok'; then
+    pass "$(printf '%s' "$ds_out" | sed 's/^ok *//')"
+  else
+    fail "$(printf '%s' "$ds_out" | head -1 | sed 's/^FAIL *//')"
+    printf '%s\n' "$ds_out" | tail -n +2 | head -6 | sed 's/^/      /'
+  fi
+else
+  fail "no python, so the data surface was not checked"
 fi
 
 # ---------------------------------------------------------------------------

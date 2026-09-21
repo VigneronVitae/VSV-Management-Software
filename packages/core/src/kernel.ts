@@ -2194,15 +2194,28 @@ export async function suppliesBelowLevel(): Promise<SupplyOnHand[]> {
   return (data ?? []) as SupplyOnHand[];
 }
 
+// Through the capability rather than into the table. This wrote straight to
+// `supply` until 0136, which is a client reaching past the contract: AR-Q8 says
+// a periphery reads and writes through declared capabilities, and a second
+// periphery built from `contract()` would have found no way to add a thing at
+// all, because there was none. The id is now the kernel's, matching all thirty
+// nine other capabilities, none of which takes one.
 export async function addSupply(supply: {
-  id: Uuid;
   name: string;
-  unit: string;
+  unit?: string | null;
   reorder_level?: number | null;
   supplier?: string | null;
-}): Promise<void> {
-  const { error } = await kernel().from("supply").insert(supply);
+  homeId?: Uuid | null;
+}): Promise<{ id: Uuid; name: string }> {
+  const { data, error } = await kernel().rpc("add_supply", {
+    p_name: supply.name,
+    p_unit: supply.unit ?? null,
+    p_reorder_level: supply.reorder_level ?? null,
+    p_supplier: supply.supplier ?? null,
+    p_home_id: supply.homeId ?? null,
+  });
   if (error) throw new KernelError(error);
+  return data as { id: Uuid; name: string };
 }
 
 export async function updateSupply(
@@ -2636,4 +2649,297 @@ export async function unwatchSubject(
   });
   if (error) throw new KernelError(error);
   return data as { event: Uuid; watching: boolean };
+}
+
+// ---------------------------------------------------------------------------
+// Books. Money that has already moved.
+// ---------------------------------------------------------------------------
+//
+// Three readables and one capability, all of them admin-only at the policy
+// level, which is stricter than anything else in this schema and deliberately
+// so: what the winery spent is not a thing a cellar hand or a custom crush
+// client has any use for.
+
+export type MoneyLine = {
+  id: Uuid;
+  at: string;
+  account: string | null;
+  amount: number;
+  direction: string;
+  signed_amount: number;
+  description: string | null;
+  txn_type: string | null;
+  check_number: string | null;
+  bank_category: string | null;
+  class: string | null;
+  class_label: string | null;
+  provenance: string | null;
+  said_at: string | null;
+  verified: boolean;
+  attestations: number;
+  disputed: boolean;
+  queue: string;
+  suggested: string | null;
+  suggested_label: string | null;
+  suggested_on: number | null;
+  // What the bank itself sent. `raw` is the OFX memo block, kept whole and
+  // deliberately unparsed: see 0130 for why splitting it is a business rule.
+  row_no: number;
+  txn_group: string | null;
+  currency: string;
+  external_id: string | null;
+  raw: Record<string, string> | null;
+};
+
+// Paged, because there are eight hundred of these before the first one is
+// typed and a phone that fetches all of them to draw twenty has spent the
+// barn's wifi for nothing.
+export async function moneyQueue(args?: {
+  queue?: string;
+  search?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<MoneyLine[]> {
+  let q = kernel()
+    .from("money_queue")
+    // Written out rather than hoisted to a const: supabase-js types the row
+    // from this literal, and a variable here returns GenericStringError.
+    .select(
+      "id,at,account,amount,direction,signed_amount,description,txn_type,check_number,bank_category,class,class_label,provenance,said_at,verified,attestations,disputed,queue,suggested,suggested_label,suggested_on,row_no,txn_group,currency,external_id,raw",
+    );
+  if (args?.queue) q = q.eq("queue", args.queue);
+  if (args?.search) q = q.ilike("description", `%${args.search}%`);
+  const from = args?.offset ?? 0;
+  const to = from + (args?.limit ?? 50) - 1;
+  const { data, error } = await q
+    .order("at", { ascending: false })
+    .order("id", { ascending: true })
+    .range(from, to);
+  if (error) throw new KernelError(error);
+  return (data ?? []) as MoneyLine[];
+}
+
+export async function moneyLine(id: Uuid): Promise<MoneyLine | null> {
+  const { data, error } = await kernel()
+    .from("money_queue")
+    .select(
+      "id,at,account,amount,direction,signed_amount,description,txn_type,check_number,bank_category,class,class_label,provenance,said_at,verified,attestations,disputed,queue,suggested,suggested_label,suggested_on,row_no,txn_group,currency,external_id,raw",
+    )
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw new KernelError(error);
+  return (data ?? null) as MoneyLine | null;
+}
+
+// How many are in each pile. The front of the books app is this and nothing
+// else, because the useful question on a phone is which pile to open.
+export type MoneyTally = { queue: string; lines: number; net: number };
+
+export async function moneyTally(): Promise<MoneyTally[]> {
+  const { data, error } = await kernel()
+    .from("money_queue")
+    .select("queue,signed_amount");
+  if (error) throw new KernelError(error);
+  const by = new Map<string, MoneyTally>();
+  for (const r of (data ?? []) as { queue: string; signed_amount: number }[]) {
+    const t = by.get(r.queue) ?? { queue: r.queue, lines: 0, net: 0 };
+    t.lines += 1;
+    t.net += Number(r.signed_amount ?? 0);
+    by.set(r.queue, t);
+  }
+  return [...by.values()].sort((a, b) => b.lines - a.lines);
+}
+
+export type MerchantSuggestion = {
+  description: string;
+  class: string;
+  class_label: string;
+  times: number;
+  last_said: string;
+};
+
+export async function merchantSuggestions(): Promise<MerchantSuggestion[]> {
+  const { data, error } = await kernel()
+    .from("merchant_suggestion")
+    .select("description,class,class_label,times,last_said")
+    .order("times", { ascending: false });
+  if (error) throw new KernelError(error);
+  return (data ?? []) as MerchantSuggestion[];
+}
+
+export type LedgerAccount = { id: Uuid; name: string; kind: string };
+
+export async function ledgerAccounts(): Promise<LedgerAccount[]> {
+  const { data, error } = await kernel()
+    .from("ledger_account")
+    .select("id,name,kind")
+    .order("name");
+  if (error) throw new KernelError(error);
+  return (data ?? []) as LedgerAccount[];
+}
+
+// The one write. `confirm` is required rather than defaulted: 0126 made the
+// kernel treat silence as a guess, so a screen that does not ask writes
+// `inferred`, which is the only thing T0-4 lets a caller with nobody behind it
+// write.
+export async function attestLine(args: {
+  lineId: Uuid;
+  klass: string;
+  note?: string | null;
+  confirm: boolean;
+}): Promise<{ id: Uuid; provenance: string }> {
+  const { data, error } = await kernel().rpc("attest_line", {
+    p_line_id: args.lineId,
+    p_class: args.klass,
+    p_note: args.note ?? null,
+    p_confirm: args.confirm,
+  });
+  if (error) throw new KernelError(error);
+  return data as { id: Uuid; provenance: string };
+}
+
+// ---------------------------------------------------------------------------
+// Places and stock. Where things are, and what we have.
+// ---------------------------------------------------------------------------
+
+export type Place = {
+  id: Uuid;
+  name: string;
+  parent_id: Uuid | null;
+  depth: number;
+  address: string;
+  controlled: boolean;
+  kind: string | null;
+  kind_label: string | null;
+  domains: string[];
+};
+
+export async function places(): Promise<Place[]> {
+  const { data, error } = await kernel()
+    .from("location_tree")
+    .select("id,name,parent_id,depth,address,controlled,kind,kind_label,domains")
+    .order("address");
+  if (error) throw new KernelError(error);
+  return (data ?? []) as Place[];
+}
+
+export async function addPlace(args: {
+  name: string;
+  kind?: string | null;
+  parentId?: Uuid | null;
+}): Promise<{ id: Uuid; name: string }> {
+  const { data, error } = await kernel().rpc("add_place", {
+    p_name: args.name,
+    p_kind: args.kind ?? null,
+    p_parent_id: args.parentId ?? null,
+  });
+  if (error) throw new KernelError(error);
+  return data as { id: Uuid; name: string };
+}
+
+export async function tagPlace(locationId: Uuid, domain: string): Promise<void> {
+  const { error } = await kernel().rpc("tag_place", {
+    p_location_id: locationId,
+    p_domain: domain,
+  });
+  if (error) throw new KernelError(error);
+}
+
+// Where a thing lives: the address in words for somebody who knows the building,
+// and the photograph with a coordinate for somebody who does not. 0135, and the
+// review that argued for answering both at once rather than choosing.
+export type Whereabouts = {
+  supply_id: Uuid;
+  name: string;
+  home_id: Uuid | null;
+  home_address: string | null;
+  home_domains: string[] | null;
+  attachment_id: Uuid | null;
+  photo_path: string | null;
+  at_x: number | null;
+  at_y: number | null;
+  radius: number | null;
+};
+
+export async function whereabouts(supplyId?: Uuid): Promise<Whereabouts[]> {
+  let q = kernel()
+    .from("supply_whereabouts")
+    .select(
+      "supply_id,name,home_id,home_address,home_domains,attachment_id,photo_path,at_x,at_y,radius",
+    );
+  if (supplyId) q = q.eq("supply_id", supplyId);
+  const { data, error } = await q.order("name");
+  if (error) throw new KernelError(error);
+  return (data ?? []) as Whereabouts[];
+}
+
+// Everything marked on one photograph, which is the shelf view: one picture,
+// every thing on it, each with the spot to draw a circle at.
+export type Mark = {
+  id: Uuid;
+  attachment_id: Uuid;
+  path: string;
+  caption: string | null;
+  picture_of_type: string;
+  picture_of_id: Uuid;
+  subject_type: string;
+  subject_id: Uuid;
+  subject_name: string | null;
+  at_x: number;
+  at_y: number;
+  radius: number | null;
+  note: string | null;
+};
+
+export async function marksOn(attachmentId: Uuid): Promise<Mark[]> {
+  const { data, error } = await kernel()
+    .from("attachment_marked")
+    .select(
+      "id,attachment_id,path,caption,picture_of_type,picture_of_id,subject_type,subject_id,subject_name,at_x,at_y,radius,note",
+    )
+    .eq("attachment_id", attachmentId);
+  if (error) throw new KernelError(error);
+  return (data ?? []) as Mark[];
+}
+
+export async function setSupplyHome(
+  supplyId: Uuid,
+  locationId: Uuid | null,
+): Promise<void> {
+  const { error } = await kernel().rpc("set_supply_home", {
+    p_supply_id: supplyId,
+    p_location_id: locationId,
+  });
+  if (error) throw new KernelError(error);
+}
+
+export async function tagSupply(supplyId: Uuid, domain: string): Promise<void> {
+  const { error } = await kernel().rpc("tag_supply", {
+    p_supply_id: supplyId,
+    p_domain: domain,
+  });
+  if (error) throw new KernelError(error);
+}
+
+// The coordinates are fractions of the picture, never pixels: a re-encoded
+// photograph and a thumbnail both keep proportions and neither keeps pixels.
+export async function markAttachment(args: {
+  attachmentId: Uuid;
+  subjectType: string;
+  subjectId: Uuid;
+  x: number;
+  y: number;
+  radius?: number | null;
+  note?: string | null;
+}): Promise<void> {
+  const { error } = await kernel().rpc("mark_attachment", {
+    p_attachment_id: args.attachmentId,
+    p_subject_type: args.subjectType,
+    p_subject_id: args.subjectId,
+    p_x: args.x,
+    p_y: args.y,
+    p_radius: args.radius ?? null,
+    p_note: args.note ?? null,
+  });
+  if (error) throw new KernelError(error);
 }

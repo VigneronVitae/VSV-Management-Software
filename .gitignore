@@ -51,3 +51,13 @@ npm-debug.log*
 .cache/
 coverage/
 backups/
+
+# One winery's own records: its vineyard, its machines, its books. Excluded by
+# contents rather than by directory, because git will not descend into an
+# ignored directory and the README would be unreachable.
+/data/*
+!/data/README.md
+
+# Python leaves these beside the scripts.
+__pycache__/
+*.pyc

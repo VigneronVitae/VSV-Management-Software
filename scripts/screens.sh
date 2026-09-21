@@ -7,7 +7,11 @@
 #              supabase/migrations/0107_the_shop_has_screens_too.sql,
 #              supabase/migrations/0113_a_vineyard_is_a_place_you_can_open.sql,
 #              supabase/migrations/0114_every_pick_stays_on_the_list.sql,
-#              supabase/migrations/0118_the_vineyard_has_a_door.sql]
+#              supabase/migrations/0118_the_vineyard_has_a_door.sql,
+#              supabase/migrations/0127_the_books_have_a_door.sql,
+#              packages/books/src/places.ts,
+#              supabase/migrations/0136_the_stores_have_a_door.sql,
+#              packages/inventory/src/places.ts]
 # Depended on by: [scripts/green.sh]
 # ---------------------------------------------------------------------------
 #
@@ -36,7 +40,13 @@ DB="${1:-postgres}"
 # be registered for the same reason the cellar's are: a note about wording needs
 # something to point at, and the person most likely to have wording feedback is
 # the one using the newest screens.
-SRC="${VSV_PLACES_SRC:-packages/cellar/src/places.ts packages/shop/src/places.ts packages/vineyard/src/places.ts}"
+# Every module that has a place list. Books was added this morning and missed
+# here, so its four screens were checked against the registry by nobody for a
+# day: a hardcoded list of sources is the same failure shape as verify.sh's
+# hardcoded list of extensions, which has now been wrong four times. Kept as a
+# list rather than a glob because a module without a router legitimately has no
+# places.ts and a glob could not tell that apart from a missing one.
+SRC="${VSV_PLACES_SRC:-packages/cellar/src/places.ts packages/shop/src/places.ts packages/vineyard/src/places.ts packages/books/src/places.ts packages/inventory/src/places.ts}"
 
 for f in $SRC; do
   if [ ! -f "$f" ]; then

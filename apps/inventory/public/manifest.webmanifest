@@ -1,0 +1,21 @@
+{
+  "name": "Vitae Springs Stores",
+  "short_name": "Stores",
+  "description": "Things we have, where they live, and what each place is for.",
+  "id": "/inventory/",
+  "start_url": "/inventory/",
+  "scope": "/inventory/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f6f5f3",
+  "theme_color": "#6b5a3f",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

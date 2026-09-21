@@ -1,3 +1,9 @@
+// ---------------------------------------------------------------------------
+// Type: source
+// Purpose: "The cellar shell. Mounts one module and holds no domain logic."
+// Depends on: [packages/cellar/src/index.ts]
+// Depended on by: [docs/status-ledger.md]
+// ---------------------------------------------------------------------------
 // The PWA shell that mounts modules. Holds routing and the shell itself, and
 // no domain logic: that belongs to the module it came from.
 //

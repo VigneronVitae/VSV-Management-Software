@@ -9,6 +9,28 @@
         "typescript": "^5.9.3",
       },
     },
+    "apps/books": {
+      "name": "books-app",
+      "version": "0.0.0",
+      "dependencies": {
+        "books": "workspace:*",
+        "core": "workspace:*",
+      },
+      "devDependencies": {
+        "vite": "^7.1.0",
+      },
+    },
+    "apps/inventory": {
+      "name": "inventory-app",
+      "version": "0.0.0",
+      "dependencies": {
+        "core": "workspace:*",
+        "inventory": "workspace:*",
+      },
+      "devDependencies": {
+        "vite": "^7.1.0",
+      },
+    },
     "apps/launcher": {
       "name": "launcher",
       "version": "0.0.0",
@@ -59,6 +81,13 @@
         "vite": "^7.1.0",
       },
     },
+    "packages/books": {
+      "name": "books",
+      "version": "0.0.0",
+      "dependencies": {
+        "core": "workspace:*",
+      },
+    },
     "packages/cellar": {
       "name": "cellar",
       "version": "0.0.0",
@@ -72,6 +101,13 @@
       "version": "0.0.0",
       "dependencies": {
         "@supabase/supabase-js": "^2.58.0",
+      },
+    },
+    "packages/inventory": {
+      "name": "inventory",
+      "version": "0.0.0",
+      "dependencies": {
+        "core": "workspace:*",
       },
     },
     "packages/shop": {
@@ -232,6 +268,10 @@
 
     "@zxing/text-encoding": ["@zxing/text-encoding@0.9.0", "", {}, "sha512-U/4aVJ2mxI0aDNI8Uq0wEhMgY+u4CNtEb0om3+y3+niDAsoTCOB33UF0sxpzqzdqXLqmvc+vZyAt4O8pPdfkwA=="],
 
+    "books": ["books@workspace:packages/books"],
+
+    "books-app": ["books-app@workspace:apps/books"],
+
     "cellar": ["cellar@workspace:packages/cellar"],
 
     "core": ["core@workspace:packages/core"],
@@ -243,6 +283,10 @@
     "fsevents": ["fsevents@2.3.3", "", { "os": "darwin" }, "sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw=="],
 
     "iceberg-js": ["iceberg-js@0.8.1", "", {}, "sha512-1dhVQZXhcHje7798IVM+xoo/1ZdVfzOMIc8/rgVSijRK38EDqOJoGula9N/8ZI5RD8QTxNQtK/Gozpr+qUqRRA=="],
+
+    "inventory": ["inventory@workspace:packages/inventory"],
+
+    "inventory-app": ["inventory-app@workspace:apps/inventory"],
 
     "launcher": ["launcher@workspace:apps/launcher"],
 

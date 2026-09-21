@@ -1799,3 +1799,364 @@ body.practising {
     transition: none;
   }
 }
+
+/* --- the books ------------------------------------------------------------
+
+   Worked through on a phone, standing up, and the row is the control. The
+   deliberate thing here is that the confirm button is full width under each
+   transaction rather than a small chip beside it: eight hundred of these get
+   confirmed by thumb, and a target you have to aim at is the difference between
+   an evening and a project. */
+
+.piles {
+  display: grid;
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+
+.pile {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.85rem;
+  width: 100%;
+  min-height: var(--tap);
+  padding: 0.85rem 1rem;
+  text-align: left;
+  font: inherit;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 0.5rem;
+}
+
+.pile:disabled {
+  opacity: 0.45;
+}
+
+.pile-count {
+  font-size: 1.6rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  min-width: 2.5ch;
+  text-align: right;
+}
+
+.pile-body {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.pile-title {
+  font-weight: 600;
+}
+
+.pile-blurb {
+  font-size: 0.8rem;
+  color: var(--ink-faint);
+}
+
+.pile-net {
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+}
+
+/* The pile that is the work gets the accent. The other three do not, because
+   three highlighted things is no highlighted thing. */
+.pile-unexplained .pile-count {
+  color: var(--accent);
+}
+
+.ledger {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0.75rem 0;
+}
+
+.entry {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 0.5rem;
+  /* Which way the money went, readable before any of the text is. */
+  border-left: 3px solid var(--rule);
+}
+
+.entry-out {
+  border-left-color: var(--bad);
+}
+
+.entry-in {
+  border-left-color: var(--good);
+}
+
+.entry-open {
+  display: grid;
+  gap: 0.25rem;
+  width: 100%;
+  padding: 0;
+  text-align: left;
+  font: inherit;
+  color: var(--ink);
+  background: none;
+  border: 0;
+}
+
+.entry-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: baseline;
+}
+
+.entry-when {
+  font-size: 0.8rem;
+  color: var(--ink-faint);
+}
+
+.entry-sum {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.entry-what {
+  /* A bank description is one unbroken token often enough that this matters.
+     Without it the card scrolls sideways on a phone. */
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+
+.entry-tag,
+.entry-why {
+  font-size: 0.75rem;
+  color: var(--ink-faint);
+}
+
+.entry-why {
+  text-align: center;
+}
+
+.entry-yes {
+  width: 100%;
+  min-height: var(--tap);
+}
+
+.classes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  gap: 0.5rem;
+  margin: 1rem 0 2rem;
+}
+
+.class-chip {
+  min-height: var(--tap);
+  font-size: 0.85rem;
+}
+
+/* Money in and money out are different questions wearing the same list, and
+   picking an income line for a debit is the mistake this colouring is for. */
+.class-in {
+  border-color: var(--good);
+}
+
+.class-out {
+  border-color: var(--rule);
+}
+
+/* What it would already be filed as, so the chip to confirm is findable in a
+   grid of thirty. */
+.class-standing {
+  border-color: var(--accent);
+  border-width: 2px;
+  font-weight: 600;
+}
+
+.crumb {
+  margin: 0 0 0.5rem;
+}
+
+.banner-slot:empty {
+  display: none;
+}
+
+/* What the bank sent, on a transaction. Its own block rather than a `.more`,
+   because it opens by default: it is the thing being identified, not a detail
+   under the thing. */
+
+.bank {
+  margin: 0 0 1rem;
+  padding: 0.75rem 0.9rem;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 0.5rem;
+}
+
+/* Its own class rather than `.bank > summary`, which sits at a lower
+   specificity than a cellar-skin rule further up that it can never collide
+   with. The linter cannot know that and it is right to say so. */
+.bank-head {
+  cursor: pointer;
+  min-height: var(--tap);
+  display: flex;
+  align-items: center;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+/* A bank reference is 32 hex characters with no spaces in it, and the shared
+   `.summary-value` neither wraps nor shrinks, so it ran off the right edge of
+   the phone while its label wrapped to three lines beside it. Found by
+   screenshotting a real one.
+
+   `min-width: 0` is the half that matters: a flex item defaults to `auto`,
+   which refuses to shrink below its content, so no amount of wrapping helps
+   until the item is allowed to be narrower than the unbroken string it holds. */
+.bank .summary-label {
+  min-width: 0;
+}
+
+.bank .summary-value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.memo-block {
+  margin-top: 0.75rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--rule);
+  display: grid;
+  gap: 0.3rem;
+}
+
+.memo-label {
+  font-size: 0.75rem;
+  color: var(--ink-faint);
+}
+
+/* pre-wrap, not pre: the bank wraps the merchant line at its own width and the
+   lines matter, but a reference number 23 digits long would otherwise push the
+   card sideways on a phone. Monospace because two of the four lines are
+   identifiers and a digit that lines up is a digit you can read back. */
+.memo {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--ink-soft);
+}
+
+/* --- the stores ------------------------------------------------------------
+
+   A photograph of a shelf with things circled on it. The circle is drawn here
+   from a coordinate rather than baked into a second image, which is 0135's
+   argument: one picture of a shelf carries a mark for each of twenty things on
+   it, and re-photographing the shelf is one upload rather than twenty.
+
+   Everything is positioned in percentages because the marks are stored as
+   fractions of the picture, so the same coordinates land correctly at thumbnail
+   size, at full width, and on a screen half as wide as the one they were placed
+   on. A pixel anywhere in this block would break that. */
+
+.shelf {
+  position: relative;
+  display: block;
+  margin: 0 0 1rem;
+  border: 1px solid var(--rule);
+  border-radius: 0.5rem;
+  overflow: hidden;
+  background: var(--surface);
+  /* Something to look at while the signed url resolves, so the marks do not
+     briefly sit on nothing. */
+  min-height: 8rem;
+}
+
+.shelf-img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.spot {
+  position: absolute;
+  /* The stored coordinate is the centre of the thing, not its corner. */
+  transform: translate(-50%, -50%);
+  border: 3px solid var(--accent);
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px rgb(0 0 0 / 0.35);
+  pointer-events: none;
+}
+
+/* A mark with no radius is a point rather than a circle, which is the
+   difference between pointing at a thing and circling it. */
+.spot-point {
+  width: 0.9rem;
+  height: 0.9rem;
+  background: var(--accent);
+}
+
+/* Everything that is not the thing you asked for. Still drawn, because knowing
+   what else is on the shelf is useful, and quiet, because it is not the
+   answer. */
+.spot-dim {
+  border-color: var(--ink-faint);
+  border-width: 2px;
+  opacity: 0.45;
+  box-shadow: none;
+}
+
+.spot-label {
+  position: absolute;
+  /* Hung off the bottom of the circle it belongs to, so it never needs to know
+     how tall the picture is. */
+  top: 100%;
+  left: 50%;
+  transform: translate(-50%, 0.3rem);
+  padding: 0.1rem 0.35rem;
+  font-size: 0.7rem;
+  white-space: nowrap;
+  color: var(--accent-ink);
+  background: var(--accent);
+  border-radius: 0.25rem;
+  pointer-events: none;
+}
+
+.domains {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.domain {
+  font-size: 0.7rem;
+  padding: 0.05rem 0.4rem;
+  border: 1px solid var(--rule);
+  border-radius: 1rem;
+  color: var(--ink-faint);
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.5rem 0;
+}
+
+.filter {
+  min-height: 2.25rem;
+  font-size: 0.85rem;
+}
+
+.filter.on {
+  border-color: var(--accent);
+  border-width: 2px;
+  font-weight: 600;
+}

@@ -19,7 +19,13 @@
 --                  supabase/migrations/0109_a_module_says_where_it_lives.sql,
 --                  supabase/migrations/0114_every_pick_stays_on_the_list.sql,
 --                  supabase/migrations/0115_a_vineyard_is_rows_and_plant_spaces.sql,
---                  supabase/migrations/0121_the_new_acts_say_what_they_take.sql]
+--                  supabase/migrations/0121_the_new_acts_say_what_they_take.sql,
+--                  supabase/migrations/0122_money_that_has_already_moved.sql,
+--                  docs/review/2026-09-20-one-kernel-many-peripheries.md,
+--                  supabase/migrations/0131_work_is_not_only_done_to_wine.sql,
+--                  supabase/migrations/0132_a_place_is_inside_another_place.sql,
+--                  supabase/migrations/0135_a_photograph_can_point_at_something.sql,
+--                  supabase/migrations/0137_harvest_so_far.sql]
 -- Axioms enforced: AR-Q8 (an interface is a periphery over a read and write
 --                  contract), AR-E6 (the declaration is registry rows, so
 --                  another winery's contract is data), R-4 (a client that

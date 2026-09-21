@@ -1154,7 +1154,11 @@ the chooser as things that cannot be opened, and Marketing in particular has not
 the kernel behind it: it is there because the winemaker named it.
 The risk is the ordinary one for a list of things that do not work yet. A person who taps three
 dead entries learns to stop reading the list, and by the time Stores is real they have stopped
-looking. *Resolves when:* either those modules get peripheries, at which point the problem solves
+looking.
+*Narrowed 2026-09-19 by `0127`.* Books has a periphery, so the list is down to two dead entries,
+Stores and Marketing. The evidence the sorry asked for arrived in the meantime and it was exactly
+what it predicted: he tapped Vineyards, found it greyed out, and asked why. So the mechanism is
+real and the count is the thing to keep watching. *Resolves when:* either those modules get peripheries, at which point the problem solves
 itself, or somebody notices they are being ignored and the honest answer becomes hiding them
 behind something that has to be opened on purpose. The evidence for which is whether anybody ever
 asks about a module they saw greyed out. *Load-bearing:* no, and the counts beside each one are
@@ -1229,6 +1233,65 @@ has been run so the coverage figures describe this surface rather than the previ
 *Load-bearing:* yes for the ratchet, which is being asked to hold a line drawn against different
 code. Not yet for the capabilities themselves, which have one caller each and that caller is a
 migration.
+
+**S-100. The books module holds nothing, because nothing imports a file.**
+`0122` and `0123` build the accounts, the batches, the immutable bank lines, the attestations,
+the merchant memory and the queue, and there is no importer, so all of it is empty. Several
+years of transactions sit in spreadsheets and most have never been typed, which is the backlog
+this exists to attack and currently does not.
+Two paths have to be written and they are not the same. **OFX**, from the credit union's Quicken or
+QuickBooks download, carries `FITID`, so a line has the bank's own identity and `0123`'s unique
+index makes a repeated import land once. **Spreadsheet**, which is what exists today and what a
+check register or a second institution may be limited to, carries no identifier at all, so an
+overlapping range has to be settled by counting rows with the same date, amount and description
+and escalating any count that cannot be explained. The second path is the one that can be got
+quietly wrong, and it is the one that must refuse rather than guess.
+Not yet established, and it decides whether the spreadsheet path can be retired: OFX commonly
+truncates the payee to 32 characters, while the spreadsheet's `Description` carries the whole
+string including embedded newlines. If the QFX description is degraded, the better identity
+comes at the cost of the better text, and both files may be worth importing.
+*Resolves when:* a QFX and a CSV can both be imported, the same transaction from both lands
+once, and a count that cannot be explained stops the import and asks.
+*Narrowed 2026-09-19.* `scripts/import-qfx.py` exists and 799 transactions are loaded, so the
+module is no longer empty and the OFX half is done. The spreadsheet half is not, and it is the
+half that can be got quietly wrong.
+*Load-bearing:* yes, still. His own classified ledger for this year is a spreadsheet, and until
+it can be read the eight hundred transactions all start from nothing.
+
+
+**S-101. Nothing brings his existing classifications in, so every transaction starts from zero.**
+`0127` gives the books a periphery whose whole design rests on the suggestion being right most of
+the time, and the suggestion comes from `merchant_suggestion`, which is a view over attestations
+somebody has already confirmed. On an empty memory there are no suggestions, so the first pass
+through the pile is eight hundred transactions at four taps each rather than at one, which is the
+work nobody finishes and the reason this is filed rather than left implied.
+The material to prevent it exists: a 2026 expenses spreadsheet with 493 rows already classified,
+covering the same window as the imported QFX. Matching those to bank lines and writing each as an
+`inferred` attestation would put them in the `unconfirmed` pile with the category already on them,
+which is the state the one-tap confirm was built for, and `0126` makes it impossible for that
+importer to mark any of them confirmed on his behalf.
+Three things about the matching are not yet established and a guess at any of them writes wrong
+history: his `Date Paid` is not always the bank's posting date, so the match needs a window rather
+than an equality; one ledger row can be part of a bank line and several ledger rows can share one,
+because a single shop trip gets split across categories; and his own category names are not the
+Schedule F vocabulary and the mapping between them has not been read by anybody.
+*Resolves when:* the ledger can be imported, every row it matches lands as `inferred`, every row
+it cannot match is reported rather than dropped, and the count of each is shown before anything is
+written.
+*Mostly discharged 2026-09-19 by `scripts/import-ledger.py`.* 79 attestations written, all
+`inferred` and none carrying anybody's name, which is the correct provenance for a reason worth
+recording: every row of that workbook carries `Creator: Claude`, so it is a previous agent's
+proposal that nobody has checked, and importing it as a person's word would launder a guess into a
+confirmation. This is the case T0-4 was written for.
+Two of the three unknowns the sorry named turned out to be answerable from the data rather than by
+asking. **The date question is settled and the answer is that there is no window**: exact date and
+exact amount put 348 of 381 rows on exactly one bank line, and widening to a day either side drops
+that to 336, to five days 329, because every extra day adds ambiguity and resolves nothing. The 20
+that match nothing match nothing at any width. **The many-to-one question was smaller than
+feared**: only six groups in the year have two ledger rows on one day for one amount, every group
+agrees with itself about the category, so pairing them off is a question with no consequences.
+The third is still open and it is the only thing between here and the rest. See S-102.
+*Load-bearing:* no longer. The path exists and works; what is left is one answer.
 
 ## Discharged
 
@@ -1343,3 +1406,90 @@ the rest of that lot, open, at a reduced volume: 228 L off a 2000 L lot leaves
 `lineage_closes_parent` is gone and lineage goes back to recording only where
 material came from. The old rule was also written into spec.md, which has been
 corrected rather than left disagreeing with the schema.
+
+
+**S-102. Four category codes in the 2026 workbook mean something and nobody has said what.**
+The workbook files each row under a numeric code in the column the header calls `Received`.
+Thirteen codes are in use. Nine of them are not a matter of opinion: the total of every row
+carrying the code reconciles **to the cent** against the Summary Pivot Table in his own workbook,
+which is the same kind of proof the vine map decode rested on, and those nine are imported.
+Four do not reconcile, and they are the four that matter, because they carry 219 of the 381 rows.
+- **10**, 93 rows. Marketing and software and travel merchants together. Its total lands a little
+  under the Marketing line of his pivot, by well under a percent.
+- **13**, 29 rows. Hardware, motor factors and county works. A little under Repairs and
+  Maintenance, by an amount about the size of one row with no amount on it.
+- **15**, 85 rows. General retail and winery supply. A little under Supplies Purchased, and by far
+  the largest of the four gaps, big enough to be a set of rows filed somewhere else rather than a
+  rounding.
+- **41**, 12 rows. Cash withdrawals and shared branch withdrawals. No pivot line matches at all and
+  the merchants are not merchants.
+
+*Amounts and merchant names are deliberately absent from this entry.* They were here until
+2026-09-20, when he read what was about to be pushed and said "no financial info at all". The shape
+of the problem is what a later session needs: four codes, three near-misses of very different sizes,
+one residual bucket. The figures live in `data/`, which is not committed, and AR-J4 is the rule.
+The merchant evidence points the same way as the near-miss in all three of the first cases, which
+is exactly why it is not enough. The smallest near-miss is about the size of one row with a blank
+amount; the largest is big enough to be a set of rows filed somewhere this mapping does not know
+about, and guessing through it would write 85 wrong attestations that read as right.
+*Three of the four answered 2026-09-19, and the fourth is now a different question.* He put 13
+and 15 both under Supplies Purchased, overriding the Repairs and Maintenance proposal for 13, which
+means the pivot's Repairs and Maintenance line is fed by something other than these codes. Recorded rather than argued with: he wrote the sheet. 41 is `uncategorised`, which did not
+exist as an active class and now does, by `0129`. 205 of 799 transactions carry a category as a
+result.
+**Code 10 is deliberately left unmapped and that is the finding.** He answered that one of the three merchants he was shown was
+plainly marketing and the other two were software subscriptions, "so whatever that is", which is
+two answers to a question that assumed one, and he was answering from the three merchants he was
+shown. The code actually spans 29 merchants and at least four different things: marketing
+(social, email and design tools), subscriptions (several software vendors), travel and meals (several airlines, a rail operator, two ride services, a booking site, a motel and four restaurants), and a single liquor licence that is the largest row under the code.
+Mapping all 93 to one class would file airline tickets as marketing. The lesson is about the
+question rather than the answer: three sample merchants were not enough to characterise a bucket,
+and the reconciliation that proved nine codes was exactly what failed to prove this one.
+*Resolves when:* the 93 rows are typed through the app one merchant at a time, which is what the
+merchant memory is for, or he says what the subscriptions line should be and the code is split by
+merchant. The first is probably right: a code that means four things should stop being one code.
+*Load-bearing:* no.
+
+**S-138. Nothing in this system says where juice becomes wine.**
+`0137` reports harvest volumes per stage, load and ferment and maturation, because it was asked for
+"volume of juice and wine" and there is no fact in the schema answering which is which. The stages
+are about where a lot is in the process, not about what the liquid is: a tank at `ferment` on its
+first morning is juice with yeast in it and the same tank three weeks later is wine, and the stage
+does not change in between. `finished` is about being ready to leave, not about having become wine.
+The reason this is filed rather than guessed is that the answer is a winemaking judgement with more
+than one defensible boundary. Dryness is one, the end of primary is another, and some of the
+industry says a wine is wine when the sugar is gone while some says at pressing for a white. A view
+that quietly picked one would put that judgement in a column where nobody would see it, and every
+number downstream would inherit it.
+It matters more than it looks. "How much wine do we have" is the question a cellar gets asked by
+everybody, and the honest answer today is three numbers rather than one.
+*Resolves when:* the winemaker says what makes a lot wine rather than juice, and it becomes either a
+derived predicate or a fact somebody records. If it is derivable from something already recorded, a
+Brix reading below some threshold, it is a view; if it is a judgement made per lot, it is an event.
+That question decides the shape and he is the only one who can answer it.
+*Load-bearing:* no. Three numbers where somebody wanted one is a nuisance, not a wrong answer, and
+nothing is recorded incorrectly in the meantime.
+
+
+**S-139. AR-J4 is enforced against rows and not against prose.**
+`scripts/data-surface.py` enumerates every `insert into` a table that holds instances and refuses
+anything unjudged. It has never looked at a comment, a ledger entry or a review document, and on
+2026-09-20 that turned out to matter: the first push to a public remote was held while a card's
+last four digits, a point-of-sale authorisation reference, a merchant's street address, a year of
+category spending totals and a list of the merchants behind them were removed from migrations and
+from this file. Every one of them was prose. The linter reported 41 insert sites, all judged
+universal, and was correct about all 41.
+The vendor names were worse than an oversight, because the instruction had been given in as many
+words on 2026-09-19, when he named the credit union and the till and said each should appear at the
+type level as what it is rather than as who it is. `0125` shipped six money classes named after
+companies anyway, and `0138`
+renamed them. A rule stated once in conversation and enforced nowhere is a rule that holds until
+somebody is busy.
+*Resolves when:* the check reads prose as well as rows. The hard part is that it cannot work the
+way the row check does: that one is structural, counting inserts, and deliberately never names the
+private strings it protects. A prose check needs to recognise a dollar amount, a card fragment, a
+long authorisation reference and a company name, and the last of those is not mechanically
+decidable. A useful first cut is the three that are: currency amounts, runs of twelve or more
+digits, and `Card \d{4}`.
+*Load-bearing:* yes, and it is the only sorry in this ledger whose failure mode is publishing
+something that cannot be unpublished. Every other one costs a session.

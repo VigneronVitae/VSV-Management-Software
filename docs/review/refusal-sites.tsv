@@ -50,6 +50,25 @@ add_note:guard:2	add_note	guard	if p_body is null or btrim(p_body) = '' then	if 
 add_note:raise:2	add_note	raise	raise exception 'there is nothing here to say';	raise notice 'there is nothing here to say';	1
 add_note:guard:3	add_note	guard	if not exists (select 1 from subject_resolver where subject_type = p_subject_type) then	if false then	1
 add_note:raise:3	add_note	raise	raise exception 'nothing in this system is a %, so a note cannot be about one',	raise notice 'nothing in this system is a %, so a note cannot be about one',	1
+add_note:guard:4	add_note	guard	if p_provenance not in ('observed', 'inferred') then	if false then	1
+add_note:raise:4	add_note	raise	raise exception	raise notice	4
+add_place:guard:1	add_place	guard	if not is_facility_user() then	if false then	1
+add_place:raise:1	add_place	raise	raise exception 'places are added by people who work here';	raise notice 'places are added by people who work here';	1
+add_place:guard:2	add_place	guard	if p_name is null or btrim(p_name) = '' then	if false then	1
+add_place:raise:2	add_place	raise	raise exception 'a place needs a name somebody could say out loud';	raise notice 'a place needs a name somebody could say out loud';	1
+add_place:guard:3	add_place	guard	if p_kind is not null then	if false then	1
+add_place:guard:4	add_place	guard	if k is null then	if false then	1
+add_place:raise:3	add_place	raise	raise exception 'there is no kind of place called %', p_kind;	raise notice 'there is no kind of place called %', p_kind;	1
+add_place:head:1	add_place	head	if p_parent_id is not null\n     and not exists (select 1 from location where id = p_parent_id) then	if false then	1
+add_place:raise:4	add_place	raise	raise exception 'there is no place to put that inside';	raise notice 'there is no place to put that inside';	1
+add_supply:guard:1	add_supply	guard	if not is_facility_user() then	if false then	1
+add_supply:raise:1	add_supply	raise	raise exception 'stock is added by people who work here';	raise notice 'stock is added by people who work here';	1
+add_supply:guard:2	add_supply	guard	if p_name is null or btrim(p_name) = '' then	if false then	1
+add_supply:raise:2	add_supply	raise	raise exception 'a thing needs a name somebody would call it';	raise notice 'a thing needs a name somebody would call it';	1
+add_supply:guard:3	add_supply	guard	if p_reorder_level is not null and p_reorder_level < 0 then	if false then	1
+add_supply:raise:3	add_supply	raise	raise exception 'a reorder level below zero is not a level to reorder at';	raise notice 'a reorder level below zero is not a level to reorder at';	1
+add_supply:head:1	add_supply	head	if p_home_id is not null\n     and not exists (select 1 from location where id = p_home_id) then	if false then	1
+add_supply:raise:4	add_supply	raise	raise exception 'there is no such place to keep it';	raise notice 'there is no such place to keep it';	1
 add_to_wine:guard:1	add_to_wine	guard	if n_vessels = 0 then	if false then	1
 add_to_wine:raise:1	add_to_wine	raise	raise exception 'no vessel was named, so there is nothing for this to go into';	raise notice 'no vessel was named, so there is nothing for this to go into';	1
 add_to_wine:guard:2	add_to_wine	guard	if p_amount is null or p_amount <= 0 then	if false then	1
@@ -106,6 +125,12 @@ attachment_event_matches_subject:guard:3	attachment_event_matches_subject	guard	
 attachment_event_matches_subject:raise:2	attachment_event_matches_subject	raise	raise exception	raise notice	2
 attachment_is_not_rewritten:head:1	attachment_is_not_rewritten	head	if new.path <> old.path\n     or new.subject_type <> old.subject_type\n     or new.subject_id <> old.subject_id\n     or new.about_event is distinct from old.about_event\n     or new.by_user is distinct from old.by_user\n     or new.at <> old.at then	if false then	1
 attachment_is_not_rewritten:raise:1	attachment_is_not_rewritten	raise	raise exception	raise notice	1
+attest_line:guard:1	attest_line	guard	if not is_admin() then	if false then	1
+attest_line:raise:1	attest_line	raise	raise exception 'only an administrator may say what a transaction was for';	raise notice 'only an administrator may say what a transaction was for';	1
+attest_line:guard:2	attest_line	guard	if cls is null then	if false then	1
+attest_line:raise:2	attest_line	raise	raise exception 'there is no class of transaction called %', p_class;	raise notice 'there is no class of transaction called %', p_class;	1
+attest_line:guard:3	attest_line	guard	if not exists (select 1 from bank_line where id = p_line_id) then	if false then	1
+attest_line:raise:3	attest_line	raise	raise exception 'that transaction is not there to say anything about';	raise notice 'that transaction is not there to say anything about';	1
 bin_tare_lbs:guard:1	bin_tare_lbs	guard	if t is null then	if false then	1
 bin_tare_lbs:raise:1	bin_tare_lbs	raise	raise exception 'no vessel with id %', p_vessel_id;	raise notice 'no vessel with id %', p_vessel_id;	1
 bin_tare_lbs:guard:2	bin_tare_lbs	guard	if coalesce((t ->> 'intake_bin')::boolean, false) is not true then	if false then	1
@@ -273,9 +298,27 @@ hook_up_glycol:guard:7	hook_up_glycol	guard	if open_machine = p_machine_id then	
 hook_up_glycol:guard:8	hook_up_glycol	guard	if open_id is not null then	if false then	1
 hook_up_glycol:guard:9	hook_up_glycol	guard	if when_ < open_from then	if false then	1
 hook_up_glycol:raise:7	hook_up_glycol	raise	raise exception	raise notice	7
+location_stays_a_tree:guard:1	location_stays_a_tree	guard	if up = new.id then	if false then	1
+location_stays_a_tree:raise:1	location_stays_a_tree	raise	raise exception	raise notice	1
+location_stays_a_tree:guard:2	location_stays_a_tree	guard	if hops > 20 then	if false then	1
+location_stays_a_tree:raise:2	location_stays_a_tree	raise	raise exception 'places are nested more than twenty deep, which is a mistake';	raise notice 'places are nested more than twenty deep, which is a mistake';	1
 machine_spec:permissive:1	machine_spec	permissive	and coalesce((t.attributes ->> 'changes_spec')::boolean, false)	and coalesce((t.attributes ->> 'changes_spec')::boolean, true)	1
 make_invite:guard:1	make_invite	guard	if not is_admin() then	if false then	1
 make_invite:raise:1	make_invite	raise	raise exception 'only an administrator lets somebody in';	raise notice 'only an administrator lets somebody in';	1
+mark_attachment:guard:1	mark_attachment	guard	if not is_facility_user() then	if false then	1
+mark_attachment:raise:1	mark_attachment	raise	raise exception 'photographs are marked by people who work here';	raise notice 'photographs are marked by people who work here';	1
+mark_attachment:guard:2	mark_attachment	guard	if not exists (select 1 from attachment where id = p_attachment_id) then	if false then	1
+mark_attachment:raise:2	mark_attachment	raise	raise exception 'there is no such photograph to mark';	raise notice 'there is no such photograph to mark';	1
+mark_attachment:guard:3	mark_attachment	guard	if not exists (select 1 from subject_resolver where subject_type = p_subject_type) then	if false then	1
+mark_attachment:raise:3	mark_attachment	raise	raise exception 'nothing in this system is a %, so a mark cannot point at one',	raise notice 'nothing in this system is a %, so a mark cannot point at one',	1
+mark_attachment:guard:4	mark_attachment	guard	if p_x is null or p_y is null or p_x < 0 or p_x > 1 or p_y < 0 or p_y > 1 then	if false then	1
+mark_attachment:raise:4	mark_attachment	raise	raise exception	raise notice	4
+move_place:guard:1	move_place	guard	if not is_facility_user() then	if false then	1
+move_place:raise:1	move_place	raise	raise exception 'places are moved by people who work here';	raise notice 'places are moved by people who work here';	1
+move_place:guard:2	move_place	guard	if not exists (select 1 from location where id = p_location_id) then	if false then	1
+move_place:raise:2	move_place	raise	raise exception 'there is no such place to move';	raise notice 'there is no such place to move';	1
+move_place:head:1	move_place	head	if p_parent_id is not null\n     and not exists (select 1 from location where id = p_parent_id) then	if false then	1
+move_place:raise:3	move_place	raise	raise exception 'there is no place to put that inside';	raise notice 'there is no place to put that inside';	1
 move_vessels:guard:1	move_vessels	guard	if not is_facility_user() then	if false then	1
 move_vessels:raise:1	move_vessels	raise	raise exception 'only somebody who works here moves vessels'	raise notice 'only somebody who works here moves vessels'	1
 move_vessels:guard:2	move_vessels	guard	if coalesce(array_length(p_vessel_ids, 1), 0) = 0 then	if false then	1
@@ -436,6 +479,16 @@ record_machine_work:guard:6	record_machine_work	guard	if when_ > current_date th
 record_machine_work:raise:6	record_machine_work	raise	raise exception 'that date has not happened yet, so it is not work that was done';	raise notice 'that date has not happened yet, so it is not work that was done';	1
 record_vessel_note:guard:1	record_vessel_note	guard	if op is null then	if false then	1
 record_vessel_note:raise:1	record_vessel_note	raise	raise exception 'there is no operation called %', p_operation;	raise notice 'there is no operation called %', p_operation;	1
+record_work:guard:1	record_work	guard	if not is_facility_user() then	if false then	1
+record_work:raise:1	record_work	raise	raise exception 'work is recorded by people who work here';	raise notice 'work is recorded by people who work here';	1
+record_work:guard:2	record_work	guard	if p_provenance not in ('observed', 'inferred') then	if false then	1
+record_work:raise:2	record_work	raise	raise exception	raise notice	2
+record_work:guard:3	record_work	guard	if not exists (select 1 from subject_resolver where subject_type = p_subject_type) then	if false then	1
+record_work:raise:3	record_work	raise	raise exception 'nothing in this system is a %, so work cannot be done to one',	raise notice 'nothing in this system is a %, so work cannot be done to one',	1
+record_work:guard:4	record_work	guard	if p_subject_type = 'node' then	if false then	1
+record_work:raise:4	record_work	raise	raise exception	raise notice	4
+record_work:guard:5	record_work	guard	if op is null then	if false then	1
+record_work:raise:5	record_work	raise	raise exception 'there is no operation called %', p_operation;	raise notice 'there is no operation called %', p_operation;	1
 refuse_forking_a_pick:head:1	refuse_forking_a_pick	head	if (select stage from node where id = new.parent_id) = 'bin'\n     and (select stage from node where id = new.child_id) = 'bin' then	if false then	1
 refuse_forking_a_pick:raise:1	refuse_forking_a_pick	raise	raise exception	raise notice	1
 refuse_self_granted_standing:guard:1	refuse_self_granted_standing	guard	if new.provenance = 'confirmed' then	if false then	1
@@ -560,6 +613,12 @@ set_room_climate:raise:1	set_room_climate	raise	raise exception 'only somebody w
 set_room_climate:guard:2	set_room_climate	guard	if l.id is null then	if false then	1
 set_room_climate:raise:2	set_room_climate	raise	raise exception 'no room with id %', p_location_id;	raise notice 'no room with id %', p_location_id;	1
 set_room_climate:raise:3	set_room_climate	raise	raise exception	raise notice	3
+set_supply_home:guard:1	set_supply_home	guard	if not is_facility_user() then	if false then	1
+set_supply_home:raise:1	set_supply_home	raise	raise exception 'stock is put away by people who work here';	raise notice 'stock is put away by people who work here';	1
+set_supply_home:head:1	set_supply_home	head	if p_location_id is not null\n     and not exists (select 1 from location where id = p_location_id) then	if false then	1
+set_supply_home:raise:2	set_supply_home	raise	raise exception 'there is no such place to keep it';	raise notice 'there is no such place to keep it';	1
+set_supply_home:guard:2	set_supply_home	guard	if s.id is null then	if false then	1
+set_supply_home:raise:3	set_supply_home	raise	raise exception 'there is no such thing to put away';	raise notice 'there is no such thing to put away';	1
 set_vintage:guard:1	set_vintage	guard	if n.id is null then	if false then	1
 set_vintage:raise:1	set_vintage	raise	raise exception 'no lot with id %', p_node_id;	raise notice 'no lot with id %', p_node_id;	1
 set_vintage:guard:2	set_vintage	guard	if p_non_vintage and p_vintage is not null then	if false then	1
@@ -598,6 +657,18 @@ start_press:guard:9	start_press	guard	if press_room is not null then	if false th
 start_press:silent:1	start_press	silent	and not exists (	and true	1
 start_procedure_session:guard:1	start_procedure_session	guard	if coalesce(array_length(p_vessel_ids, 1), 0) = 0 then	if false then	1
 start_procedure_session:raise:1	start_procedure_session	raise	raise exception 'a session needs at least one vessel';	raise notice 'a session needs at least one vessel';	1
+tag_place:guard:1	tag_place	guard	if not is_facility_user() then	if false then	1
+tag_place:raise:1	tag_place	raise	raise exception 'places are tagged by people who work here';	raise notice 'places are tagged by people who work here';	1
+tag_place:guard:2	tag_place	guard	if not exists (select 1 from location where id = p_location_id) then	if false then	1
+tag_place:raise:2	tag_place	raise	raise exception 'there is no such place to tag';	raise notice 'there is no such place to tag';	1
+tag_place:guard:3	tag_place	guard	if d is null then	if false then	1
+tag_place:raise:3	tag_place	raise	raise exception 'there is no domain called %', p_domain;	raise notice 'there is no domain called %', p_domain;	1
+tag_supply:guard:1	tag_supply	guard	if not is_facility_user() then	if false then	1
+tag_supply:raise:1	tag_supply	raise	raise exception 'stock is tagged by people who work here';	raise notice 'stock is tagged by people who work here';	1
+tag_supply:guard:2	tag_supply	guard	if not exists (select 1 from supply where id = p_supply_id) then	if false then	1
+tag_supply:raise:2	tag_supply	raise	raise exception 'there is no such thing to tag';	raise notice 'there is no such thing to tag';	1
+tag_supply:guard:3	tag_supply	guard	if d is null then	if false then	1
+tag_supply:raise:3	tag_supply	raise	raise exception 'there is no domain called %', p_domain;	raise notice 'there is no domain called %', p_domain;	1
 take_sample:guard:1	take_sample	guard	if not is_facility_user() then	if false then	1
 take_sample:raise:1	take_sample	raise	raise exception 'samples are taken by people who work here';	raise notice 'samples are taken by people who work here';	1
 take_sample:guard:2	take_sample	guard	if not exists (select 1 from subject_resolver where subject_type = p_subject_type) then	if false then	1
@@ -619,6 +690,16 @@ unhook_glycol:raise:2	unhook_glycol	raise	raise exception 'no vessel with id %',
 unhook_glycol:guard:3	unhook_glycol	guard	if open_id is not null and coalesce(p_at, now()) < started then	if false then	1
 unhook_glycol:raise:3	unhook_glycol	raise	raise exception	raise notice	3
 unhook_glycol:guard:4	unhook_glycol	guard	if open_id is null then	if false then	1
+untag_place:guard:1	untag_place	guard	if not is_facility_user() then	if false then	1
+untag_place:raise:1	untag_place	raise	raise exception 'places are tagged by people who work here';	raise notice 'places are tagged by people who work here';	1
+untag_place:guard:2	untag_place	guard	if d is null then	if false then	1
+untag_place:raise:2	untag_place	raise	raise exception 'there is no domain called %', p_domain;	raise notice 'there is no domain called %', p_domain;	1
+untag_place:silent:1	untag_place	silent	where location_id = p_location_id and domain_id = d;	where location_id = p_location_id and true;	1
+untag_place:guard:3	untag_place	guard	if gone = 0 then	if false then	1
+untag_place:head:1	untag_place	head	if exists (select 1 from location_domain_effective\n                where location_id = p_location_id and domain = p_domain and inherited) then	if false then	1
+untag_place:silent:2	untag_place	silent	where location_id = p_location_id and domain = p_domain and inherited) then	where location_id = p_location_id and true	1
+untag_place:raise:3	untag_place	raise	raise exception	raise notice	3
+untag_place:raise:4	untag_place	raise	raise exception 'that place was not tagged %', p_domain;	raise notice 'that place was not tagged %', p_domain;	1
 unwatch_subject:guard:1	unwatch_subject	guard	if not is_facility_user() then	if false then	1
 unwatch_subject:raise:1	unwatch_subject	raise	raise exception 'only somebody who works here decides what is worth watching'	raise notice 'only somebody who works here decides what is worth watching'	1
 unwatch_subject:head:1	unwatch_subject	head	if not exists (\n    select 1 from event\n     where subject_type = p_subject_type and subject_id = p_subject_id\n       and operation_id = term_id('operation', 'watch')\n  ) then	if false then	1

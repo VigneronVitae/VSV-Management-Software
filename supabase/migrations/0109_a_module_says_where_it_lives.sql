@@ -7,7 +7,10 @@
 -- Depended on by: [tests/schema_assertions.sql,
 --                  supabase/migrations/0110_the_front_door_opens_before_you_sign_in.sql,
 --                  supabase/migrations/0115_a_vineyard_is_rows_and_plant_spaces.sql,
---                  supabase/migrations/0118_the_vineyard_has_a_door.sql]
+--                  supabase/migrations/0118_the_vineyard_has_a_door.sql,
+--                  supabase/migrations/0122_money_that_has_already_moved.sql,
+--                  supabase/migrations/0127_the_books_have_a_door.sql,
+--                  supabase/migrations/0136_the_stores_have_a_door.sql]
 -- Axioms enforced: AR-E5 (a registry row rather than a list in a client), T0-2
 --                  (whether a module has anything in it is counted from the
 --                  contract, not declared twice)

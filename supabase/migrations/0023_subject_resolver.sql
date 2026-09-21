@@ -9,7 +9,9 @@
 --              supabase/migrations/0004_terms_and_effects.sql,
 --              supabase/migrations/0022_admission_and_authorship.sql,
 --              docs/architecture-rulings.md]
--- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql, supabase/migrations/0024_task_board_via_registry.sql, supabase/migrations/0026_subject_type_registry.sql, supabase/migrations/0047_attachments.sql, supabase/migrations/0062_a_note_on_anything.sql]
+-- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql, supabase/migrations/0024_task_board_via_registry.sql, supabase/migrations/0026_subject_type_registry.sql, supabase/migrations/0047_attachments.sql, supabase/migrations/0062_a_note_on_anything.sql,
+--                  supabase/migrations/0131_work_is_not_only_done_to_wine.sql,
+--                  supabase/migrations/0135_a_photograph_can_point_at_something.sql]
 -- Axioms enforced: T0-2, in that what a subject is called is derived on read
 --                  rather than copied onto the task.
 -- Open sorries: S-41, S-42

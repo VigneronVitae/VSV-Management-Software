@@ -1,3 +1,9 @@
+// ---------------------------------------------------------------------------
+// Type: source
+// Purpose: "The vineyard shell. Mounts one module and holds no domain logic."
+// Depends on: [packages/vineyard/src/index.ts]
+// Depended on by: [docs/status-ledger.md]
+// ---------------------------------------------------------------------------
 // The vineyard shell. Mounts one module and holds no domain logic, the same way
 // the cellar and shop shells do.
 import { MissingConfig, readConfig } from "core";

@@ -11486,7 +11486,6 @@ function storesScreen(): HTMLElement {
                   }
                   try {
                     await addSupply({
-                      id: newId(),
                       name: newName.value(),
                       unit: newUnit.value(),
                       reorder_level: newLevel.value() ? Number(newLevel.value()) : null,

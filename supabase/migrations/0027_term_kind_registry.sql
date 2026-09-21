@@ -14,7 +14,10 @@
 --                  supabase/migrations/0032_vessel_maker_and_room_temperature.sql, supabase/migrations/0033_intake.sql, supabase/migrations/0043_record_propagation.sql, supabase/migrations/0045_press_detail.sql, supabase/migrations/0046_supply_inventory.sql, supabase/migrations/0057_the_contract.sql, supabase/migrations/0064_typing_a_note.sql,
 --                  supabase/migrations/0071_a_wine_says_its_colour.sql,
 --                  supabase/migrations/0105_a_machine_is_a_departure_from_its_model.sql,
---                  supabase/migrations/0115_a_vineyard_is_rows_and_plant_spaces.sql]
+--                  supabase/migrations/0115_a_vineyard_is_rows_and_plant_spaces.sql,
+--                  supabase/migrations/0122_money_that_has_already_moved.sql,
+--                  scripts/seed-terms.py,
+--                  supabase/migrations/0132_a_place_is_inside_another_place.sql]
 -- Axioms enforced: none new. Like 0026 this removes a wrong-way edge rather than
 --                  adding a rule.
 -- Open sorries: none new. A16 is untouched and is neither better nor worse; see

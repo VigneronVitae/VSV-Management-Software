@@ -25,7 +25,11 @@ export type TermKind =
   // against `term_kind` and nothing checks it, so a vocabulary added by a
   // migration is invisible here until somebody remembers.
   | "fact_kind"
-  | "wine_colour";
+  | "wine_colour"
+  // The books module's one vocabulary. Added here rather than cast at the call
+  // site, which is what the shop and the vineyard did with theirs, and is why
+  // S-61 is still open five vocabularies later.
+  | "money_class";
 
 export type Effect = "measurement" | "treatment" | "movement" | "transformation";
 

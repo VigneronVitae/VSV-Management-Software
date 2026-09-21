@@ -1,0 +1,49 @@
+# The data surface, judged. One line per insert site in a migration that puts
+# rows into a table holding the winery's records rather than the system's.
+#
+# The question for each: **would another winery installing this system have this
+# row?** `universal` yes, and it ships. `local` no, it is this winery's own, and
+# it belongs in a seed outside the repository. scripts/data-surface.py fails on
+# anything unjudged, and on anything judged `local` that is still here.
+#
+# file	table	verdict	reason
+0004_terms_and_effects.sql	term	universal	Winemaking vocabulary: operations, vessel types, varieties, product types. Any winery has these.
+0019_procedures.sql	procedure	universal	A worked example of the procedure mechanism rather than this winery's own SOP. Review if it becomes one.
+0019_procedures.sql	procedure_step	universal	Steps of the same worked example. Review if this winery writes its own into a migration.
+0019_procedures.sql	term	universal	Winemaking vocabulary: operations, vessel types, varieties, product types. Any winery has these.
+0033_intake.sql	term	universal	Winemaking vocabulary: operations, vessel types, varieties, product types. Any winery has these.
+0039_vineyard.sql	planting	universal	insert ... select: moves what a block already said into the planting table. Carries nothing new.
+0039_vineyard.sql	vineyard	universal	insert ... select: makes a vineyard row for each distinct name already in block.vineyard. Carries nothing new.
+0044_finishing_a_pick.sql	term	universal	Winemaking vocabulary: operations, vessel types, varieties, product types. Any winery has these.
+0045_press_detail.sql	term	universal	Press cuts. Free run, first press and the rest are the trade's words, not this winery's.
+0046_supply_inventory.sql	term	universal	Kinds of material. Universal.
+0053_a_press_is_a_vessel.sql	term	universal	Winemaking vocabulary: operations, vessel types, varieties, product types. Any winery has these.
+0064_typing_a_note.sql	term	universal	Kinds of fact a note can be. Universal.
+0071_a_wine_says_its_colour.sql	term	universal	Wine colours. Universal.
+0072_a_barrel_remembers.sql	term	universal	Winemaking vocabulary: operations, vessel types, varieties, product types. Any winery has these.
+0077_a_barrel_can_arrive_red.sql	term	universal	Winemaking vocabulary: operations, vessel types, varieties, product types. Any winery has these.
+0080_whose_wine_it_is_can_be_corrected.sql	term	universal	Winemaking vocabulary: operations, vessel types, varieties, product types. Any winery has these.
+0096_what_you_are_watching.sql	term	universal	Winemaking vocabulary: operations, vessel types, varieties, product types. Any winery has these.
+0105_a_machine_is_a_departure_from_its_model.sql	term	universal	Kinds of machine and kinds of work done to one. Universal.
+0112_a_machine_decomposes_into_parts.sql	term	universal	Part domains: mechanical, electrical, hydraulic. Universal engineering vocabulary.
+0115_a_vineyard_is_rows_and_plant_spaces.sql	term	universal	What can stand in a plant space: a vine, a young scion, rootstock, nothing. Universal viticulture.
+0117_the_vine_map_is_loaded.sql	_map_block	local	Names the five blocks of this vineyard.
+0117_the_vine_map_is_loaded.sql	_vine_key	local	The colour key the map is decoded with. Meaningless away from the map.
+0117_the_vine_map_is_loaded.sql	_vine_map	local	The vine map itself: 191 encoded rows, one per vineyard row, this winery's planting.
+0117_the_vine_map_is_loaded.sql	block	local	Names this vineyard's blocks.
+0117_the_vine_map_is_loaded.sql	plant_change	local	What stands in each of them.
+0117_the_vine_map_is_loaded.sql	plant_space	local	This vineyard's 13,539 plant spaces.
+0117_the_vine_map_is_loaded.sql	term	universal	Grape varieties: Pinot Meunier, Gamay, Pinot Blanc, table grapes. Wine grapes are not this winery's data, whoever happens to have planted them.
+0117_the_vine_map_is_loaded.sql	vine_row	local	This vineyard's rows.
+0117_the_vine_map_is_loaded.sql	vineyard	local	Names this vineyard.
+0119_a_machine_keeps_its_papers.sql	term	universal	Kinds of document: manual, schematic, datasheet. Universal.
+0120_the_hot_water_pressure_washer.sql	_washer_part	local	The decomposition of one machine this winery owns.
+0120_the_hot_water_pressure_washer.sql	machine	local	The machine itself, with its condition and its serials.
+0120_the_hot_water_pressure_washer.sql	machine_document	local	Two research reports about this winery's machine.
+0120_the_hot_water_pressure_washer.sql	machine_model	local	A model, entered because this winery bought one.
+0120_the_hot_water_pressure_washer.sql	term	universal	A pressure washer is a kind of machine. Any winery may own one; that this one does is recorded elsewhere.
+0125_the_categories_are_schedule_f.sql	term	universal	IRS Schedule F, a public tax form, the same for every farm in the country, plus the money-in and transfer classes any set of books needs. What one winery adds to it is loaded from data/ by scripts/seed-terms.py.
+0129_not_yet_decided_is_an_answer.sql	term	universal	One class meaning the transaction was looked at and deliberately not named. Universal because it is a fact about the state of the knowing rather than about how this farm is run: every set of books has money the bank line alone cannot explain. Without it such a row can never leave the unexplained pile and the count of that pile stops meaning anything.
+0131_work_is_not_only_done_to_wine.sql	term	universal	One operation, prune. Every vineyard in the world prunes, so it ships. The seven neighbouring operations this vineyard also performs do not ship, because which distinctions a given operation draws between suckering, hedging, tying down and thinning is a fact about how that vineyard is run, and AR-E5 means each is later a row rather than a migration.
+0132_a_place_is_inside_another_place.sql	term	universal	Three kinds of place: building, room, storage. Every operation has buildings, rooms, and somewhere inside a room where things sit. What this winery calls a particular one, Bay 3 or the woodshed or halfway down the sheds, is the location name and does not ship.
+0133_a_place_can_be_for_more_than_one_thing.sql	term	universal	Three place tags: winery, tools, vineyard. Every installation of a winery management system has somewhere wine is made, somewhere tools live, and ground the fruit comes off. Which of this winery's rooms carries which does not ship: those are rows in location_tag written through the capability.

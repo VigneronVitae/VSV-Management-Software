@@ -84,7 +84,19 @@
 --               supabase/migrations/0117_the_vine_map_is_loaded.sql,
 --               supabase/migrations/0119_a_machine_keeps_its_papers.sql,
 --               supabase/migrations/0120_the_hot_water_pressure_washer.sql,
---               supabase/migrations/0121_the_new_acts_say_what_they_take.sql]
+--               supabase/migrations/0121_the_new_acts_say_what_they_take.sql,
+--              supabase/migrations/0122_money_that_has_already_moved.sql,
+--              supabase/migrations/0123_the_bank_can_name_its_own_transactions.sql,
+--              supabase/migrations/0124_a_bank_import_is_not_a_proposal.sql,
+--              supabase/migrations/0126_only_a_person_confirms.sql,
+--              supabase/migrations/0128_three_categories_nobody_issues.sql,
+--              supabase/migrations/0131_work_is_not_only_done_to_wine.sql,
+--              supabase/migrations/0132_a_place_is_inside_another_place.sql,
+--              supabase/migrations/0133_a_place_can_be_for_more_than_one_thing.sql,
+--              supabase/migrations/0134_a_domain_tags_a_place_and_a_thing.sql,
+--              supabase/migrations/0135_a_photograph_can_point_at_something.sql,
+--              supabase/migrations/0137_harvest_so_far.sql,
+--              supabase/migrations/0138_the_repository_names_no_vendor.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh, scripts/rpc-args.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -1077,13 +1089,21 @@ end $$;
 -- A cooper that says so. francois_freres is added at runtime by this file with
 -- no contract, and a maker with no contract satisfies every contract by design,
 -- so it would be accepted here and correctly.
+--
+-- The name is a fixture name and it used to be `seguin_moreau`, which is a real
+-- cooper. That worked until 2026-09-21, when somebody added a real Seguin Moreau
+-- barrel through the app and this bare insert began colliding with the winery's
+-- own vocabulary. A suite that fails because the winery bought a barrel is not
+-- testing the thing it claims to test, and the failure names a unique constraint
+-- rather than the cause. `fixture_` is the convention two fixtures above this one
+-- already use for exactly this reason.
 insert into term (kind, value, label, attributes)
-  values ('vessel_maker', 'seguin_moreau', 'Seguin Moreau', '{"contract":"cooper"}');
+  values ('vessel_maker', 'fixture_cooper', 'Fixture Cooper', '{"contract":"cooper"}');
 
 do $$
 declare maker_id uuid;
 begin
-  select id into maker_id from term where kind = 'vessel_maker' and value = 'seguin_moreau';
+  select id into maker_id from term where kind = 'vessel_maker' and value = 'fixture_cooper';
   begin
     insert into vessel (type_id, name, attributes)
       values (term_id('vessel_type','tank'), 'Wrong maker',
@@ -2646,12 +2666,69 @@ begin
   -- 128 since 0119 added two on `machine_document`: a read and a write, both
   -- is_facility_user(). Neither reads blanket true. What a machine's manual says
   -- is this winery's business on the same argument 0112 made about its parts.
-  want := '128';
+  -- 136 since the books module: eight across ledger_account, bank_import,
+  -- bank_line and line_attestation, a read and a write on each, all scoped to
+  -- is_admin() rather than is_facility_user(). None reads blanket true, and
+  -- these are the strictest policies in the schema. What the winery spent is
+  -- not a thing a cellar hand has any use for, and a custom crush client
+  -- reading it would be a considerably worse disclosure than any A5 finding
+  -- below. If somebody who is not an administrator has to confirm a receipt,
+  -- that is a change to make deliberately, here, with a reason.
+  -- 138 since 0133 added two on `location_tag`: a read and a write, both
+  -- is_facility_user(). Neither reads blanket true. `location` itself is judged
+  -- permissive below, on the grounds that a room and its temperature are
+  -- infrastructure anybody standing in the barn can read off a thermometer.
+  -- What a room is *used for* is a slightly different fact, and it is scoped
+  -- rather than permissive because the narrower answer needs no argument and a
+  -- custom crush client has no use for knowing which shed holds the hammers.
+  -- 140 since 0134 added two on `supply_domain`, a read and a write, both
+  -- is_facility_user(), matching the two on `location_domain` it is the twin of.
+  -- Neither reads blanket true. What the winery keeps in its sheds is not a
+  -- custom crush client's business on the same argument 0112 made about what the
+  -- press is made of.
+  -- 143 since 0135 added three on `attachment_mark`, deliberately mirroring
+  -- `attachment`'s own: read by the facility, insert only under your own name,
+  -- delete only by an administrator. None reads blanket true. A mark is part of
+  -- the photograph in every sense that matters, so it is governed like one.
+  want := '143';
   if have <> want then
     raise exception
       'FAIL: there are % policies in public and this suite was written against %. If that is deliberate, update this number, and judge the new policy in the disposition list below if it reads or writes blanket true', have, want;
   end if;
   perform test_ok('the number of policies in public is what this suite was written against');
+end $$;
+
+-- Two active terms in one vocabulary carrying the same label.
+--
+-- 0128 is the case that prompted this: three money classes existed twice under
+-- different values, because a migration was edited after it had already applied
+-- and `term` is keyed on (kind, value) rather than on what the row means. It was
+-- invisible everywhere except in a picker, where it would have shown as one
+-- category listed twice and nothing else.
+--
+-- Stated for every vocabulary rather than for money classes, because nothing
+-- about the failure is specific to money. Not gated by snapshots_on(): it is an
+-- invariant, and it does not need updating when a vocabulary grows.
+do $$
+declare
+  dup text;
+begin
+  select string_agg(kind || '.' || label, ', ')
+    into dup
+    from (
+      select kind, label
+        from term
+       where active
+       group by kind, label
+      having count(*) > 1
+    ) s;
+
+  if dup is not null then
+    raise exception
+      E'FAIL: one vocabulary carries the same label on two active terms, which a picker draws as one entry twice and a person cannot choose between:
+  %', dup;
+  end if;
+  perform test_ok('no vocabulary offers the same label under two active terms');
 end $$;
 
 -- The blanket reads, named, and judged. This is ledger A5's surface.
@@ -3034,7 +3111,45 @@ begin
   -- Five new keys: the model, the machine, the author, the composite pin into
   -- term(id, kind) for the document kind with its plain id beside it, and
   -- `model_part.document_id` pointing at the document that claims the part.
-  want := 'c=66 f=115 p=54 u=25';
+  -- c=66 f=115 p=54 u=25 before the books module, which added four tables and
+  -- exactly this: six checks (an import names a format this repo can read and
+  -- says what it read, a bank line says what it was and carries a direction and
+  -- a non-negative amount, an account says what it is), six keys (each table to
+  -- its author or its parent, and the composite pin holding a line attestation's
+  -- class to a money class), four primary keys, and two uniques: an account name,
+  -- and a line's row within its import.
+  --
+  -- What is deliberately absent is a unique on `line_attestation`. Several people
+  -- may attest the same line and each attestation stands; the row is what somebody
+  -- said, not what the line is. The partial unique making a re-import impossible
+  -- lives on `bank_line.external_id` and is an index rather than a constraint, so
+  -- it is not in this count. Check `bank_line_external_id_is_unique` if this
+  -- number is what brought you here.
+  -- c=72 f=121 p=58 u=27 before 0132, which let a place be inside another place:
+  -- one check that a place is not its own parent, and one key from a location to
+  -- the location containing it. The rest of that guard is a trigger rather than a
+  -- constraint and so is not counted here, because a cycle of length two or more
+  -- cannot be expressed in a check: it has to be walked.
+  -- c=73 f=122 p=58 u=27 before 0133, which added `location_tag`: one primary
+  -- key over the pair, and three keys, the place, the author, and the composite
+  -- pin into term(id, kind) holding a tag to the place-tag vocabulary. No new
+  -- check, because everything this table needs to refuse is expressed by the
+  -- primary key and the pin.
+  -- c=73 f=125 p=59 u=27 before 0134, which added `supply_domain` and gave a
+  -- supply a home: one primary key over the pair, and four keys, the supply, the
+  -- author, the composite pin into term(id, kind), and `supply.home_id` pointing
+  -- at the place the thing lives. The rename of location_tag to location_domain
+  -- moves constraint names without changing any count.
+  -- c=73 f=129 p=60 u=27 before 0135, which added `attachment_mark`: two checks
+  -- that a mark is inside the picture and that a radius is a fraction, three
+  -- keys to the photograph, the subject registry and the author, one primary
+  -- key, and one unique saying a thing is circled once per picture.
+  --
+  -- Worth knowing for the first of those checks: `numeric(6,5)` already refuses
+  -- anything with an absolute value of ten or more, so a coordinate in pixels
+  -- never reaches the constraint. The check earns its place on 1.5, which the
+  -- type accepts and the picture does not contain.
+  want := 'c=75 f=132 p=61 u=28';
   if have <> want then
     raise exception
       E'FAIL: the constraint inventory changed.\nnow:  %\nwas:  %\nIf that is deliberate, update this line in the same commit that changed the schema.', have, want;
@@ -3064,7 +3179,17 @@ begin
      and pg_get_constraintdef(c.oid) like '%REFERENCES term(id, kind)%';
 
   want := 'event.event_operation_is_an_operation, '
+       -- The books module. An attestation says what a bank line was for, and the
+       -- category it names has to come from the money vocabulary rather than from
+       -- any other. This is the only pointer into term the books module has, and
+       -- it is the one that stops a receipt being filed under a grape variety.
+       || 'line_attestation.line_attestation_class_is_a_money_class, '
        || 'location.location_kind_is_a_location_kind, '
+       -- 0133. What a place is used for, pinned the same way what it is already
+       -- was. The second many-to-many tag in the schema after
+       -- supply_material_kind, and for the same reason: a place, like a hose
+       -- head, can be two things at once.
+       || 'location_domain.location_domain_is_a_domain, '
        -- 0105. The shop's two vocabularies, pinned exactly as every other
        -- pointer into term has been since 0027: a machine is of a kind, and a
        -- piece of work is of a kind, and neither can be given a term belonging
@@ -3092,6 +3217,10 @@ begin
        -- 0046. A supply is of material kinds, plural: the vocabulary 0027
        -- registered to the inventory module and nothing had used until now, on a
        -- join table so a hose head can be two things at once.
+       -- 0134. The twin of location_domain, one line up in this list and one
+       -- table away: the same vocabulary tags a place and a thing, which is what
+       -- makes "winery inventory" a union of the two rather than a choice.
+       || 'supply_domain.supply_domain_is_a_domain, '
        || 'supply_material_kind.supply_kind_is_a_material, '
        || 'task.task_operation_is_an_operation, '
        || 'template.template_applies_to_a_registered_kind, '
@@ -3122,7 +3251,13 @@ begin
   -- rather than dropped and re-added, because vessel_state reads visible_node
   -- through a positional alias list and reordering node silently rebinds it.
   want := 'event.operation_kind=''operation''::text '
+       -- The books module, the generated half of the composite pin two
+       -- assertions up. The column exists so the foreign key has something to
+       -- point with, and it is generated so nobody can set it by hand.
+       || 'line_attestation.class_kind=''money_class''::text '
        || 'location.kind_kind=''location_kind''::text '
+       -- 0133, the generated half of the pin above.
+       || 'location_domain.domain_kind=''domain''::text '
        -- 0105, the kind halves of the shop's two vocabularies.
        || 'machine_document.kind_kind=''document_kind''::text '
        || 'machine_model.kind_kind=''machine_kind''::text '
@@ -3142,6 +3277,7 @@ begin
        || 'planting.variety_kind=''variety''::text '
        || 'procedure_step.material_kind=''material_kind''::text '
        -- 0046, pinning a supply's sorts to the material vocabulary.
+       || 'supply_domain.domain_kind=''domain''::text '
        || 'supply_material_kind.kind_kind=''material_kind''::text '
        || 'task.operation_kind=''operation''::text '
        || 'template_step.operation_kind=''operation''::text '
@@ -3314,7 +3450,45 @@ begin
   -- null: `model_part.document_id`, because deleting a report must not delete
   -- the parts list somebody has since been ordering from; the claim survives
   -- and loses its citation, which is a state worth being able to see.
-  want := 'a=65 c=26 n=9 r=15';
+  -- a=65 c=26 n=9 r=15 before the books module, which added four no-actions and
+  -- two cascades. The cascades are deliberate and they are the only two places
+  -- money is deletable: an import cascades to its lines, and a line cascades to
+  -- its attestations. An import is undoable as a unit because a file can be the
+  -- wrong file, and a bank line with no import behind it is a claim about the
+  -- bank that nothing backs. Attestations follow their line for the same reason:
+  -- what somebody said a transaction was for means nothing once the transaction
+  -- is gone.
+  --
+  -- This is not a hole in T0-5. Nothing in the client deletes either one; the
+  -- capability surface offers `attest_line` and no remover, and an attestation
+  -- is corrected by adding another. The cascade exists so that an import made in
+  -- error can be taken back at the console before anybody has attested against
+  -- it, which is the one case where the alternative is worse.
+  -- a=69 c=28 n=9 r=15 before 0132, whose one new key is a location to the
+  -- location it is inside. No action rather than cascade on purpose: deleting a
+  -- building should not silently delete every room in it, and rather than
+  -- choosing between that and orphaning the rooms, the delete is refused and
+  -- somebody has to say what they meant.
+  -- a=70 c=28 n=9 r=15 before 0133, whose three new keys are two no-actions and
+  -- one cascade. The cascade is `location_tag` to `location`: deleting a place
+  -- should take its tags with it, because a tag on a place that no longer exists
+  -- is not a fact about anything. The two no-actions are the tag's own pointer
+  -- into the vocabulary and its author, and both refuse rather than cascade for
+  -- the usual reason: retiring a term or an account must not silently rewrite
+  -- what rooms are for.
+  -- a=72 c=29 n=9 r=15 before 0134. Three new no-actions and one new cascade.
+  -- The cascade is supply_domain to supply, for the same reason location_domain
+  -- cascades from location: a domain tag on a thing that no longer exists is not
+  -- a fact about anything. `supply.home_id` is a no-action, deliberately: a place
+  -- cannot be deleted while things still live there, and the alternative would be
+  -- stock quietly losing its address.
+  -- a=75 c=30 n=9 r=15 before 0135. One new cascade, a mark following the
+  -- photograph it is drawn on, because a circle on a picture that no longer
+  -- exists points at nothing. Two new restricts, the subject registry and the
+  -- author: retiring a subject type must not silently erase what was pointed
+  -- at. The author key is a plain no-action, matching `attachment.by_user`
+  -- rather than inventing a stricter rule for the mark than the picture has.
+  want := 'a=76 c=31 n=9 r=16';
   if have <> want then
     raise exception
       E'FAIL: foreign key delete behaviour changed.\nnow:  %\nwas:  %\na is no action, c is cascade, n is set null, r is restrict.', have, want;
@@ -3349,6 +3523,10 @@ begin
   -- something somebody proposed: worth a refusal rather than a dangling key.
   want := 'attachment.attachment_about_event_fkey, '
        || 'attachment.attachment_subject_type_fkey, '
+       -- 0135. A mark points at a subject through the same registry a photograph
+       -- does, and restricts for the same reason: retiring a kind of thing must
+       -- not quietly leave circles pointing at nothing.
+       || 'attachment_mark.attachment_mark_subject_type_fkey, '
        || 'capability.capability_subject_fkey, '
        || 'event.event_subject_type_is_registered, '
        || 'import_step.import_step_capability_fkey, '
@@ -4207,7 +4385,19 @@ declare
     -- Exercised in the glycol block below in both directions: a tank on a
     -- cooler-only machine is refused, and the same tank once unhooked is
     -- allowed through.
-    'glycol_mode_fits_machine'
+    'glycol_mode_fits_machine',
+    -- `location_stays_a_tree` has two nulls and both permit deliberately. A row
+    -- whose `parent_id` is null skips the walk entirely, which is correct
+    -- because a place with no parent is the outermost thing and cannot be in a
+    -- cycle. And the walk ends when `select parent_id into up` finds a null,
+    -- which is the root: that is the loop's exit condition rather than a guard
+    -- falling through. The third null it might have had cannot occur, because
+    -- `location.parent_id` is `no action` on delete, so a parent cannot vanish
+    -- from under a child mid-walk. The hop limit is the backstop for a cycle
+    -- that somehow already exists in the table, where the walk would otherwise
+    -- not terminate at all. Exercised in the 0132 block below, which builds
+    -- three levels, renames the top and refuses a cycle.
+    'location_stays_a_tree'
   ];
 begin
   for r in
@@ -4338,8 +4528,13 @@ begin
   -- Fourteen since 0119 registered document_kind to `shop`: what kind of paper
   -- a machine has, a manual or a schematic or a research report. The shop's
   -- third vocabulary and the first about documents rather than about hardware.
-  if (select count(*) from term_kind where module <> 'core') <> 14 then
-    raise exception 'FAIL: % of the kinds are owned by a module other than core, and the claim is fourteen',
+  -- Fifteen since the books module registered money_class: what a transaction
+  -- was for. Owned by `books` rather than core because core has no opinion about
+  -- how a farm files its spending, and the members are mostly the lines of IRS
+  -- Schedule F, which is a public form and therefore shippable. What this
+  -- particular farm adds to it is not, and lives in data/ under AR-J4.
+  if (select count(*) from term_kind where module <> 'core') <> 15 then
+    raise exception 'FAIL: % of the kinds are owned by a module other than core, and the claim is fifteen',
       (select count(*) from term_kind where module <> 'core');
   end if;
   perform test_ok('the registry says which module owns each kind, and fourteen of them are not core''s');
@@ -11896,6 +12091,500 @@ begin
   -- A schematic can hang on a single part, which is what 0101's registry was for.
   perform add_note('model_part', pump, 'CP the seal kit is discontinued.');
   perform test_ok('a note or a document can be about one part rather than about the whole machine, which is what a schematic of the hydraulic circuit actually is');
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 0131. Work is not only done to wine, and a note can say where its words came
+-- from.
+-- ---------------------------------------------------------------------------
+--
+-- The subject of these is T0-4 arriving at a new door. `record_work` and
+-- `add_note` both take a provenance from a periphery, and the thing that must
+-- never be true is that a periphery can write `confirmed`. Confirming is a
+-- person's act and it has its own verbs.
+do $$
+declare
+  u   uuid;
+  vy  uuid := gen_random_uuid();
+  bk  uuid := gen_random_uuid();
+  r   uuid := gen_random_uuid();
+  res jsonb;
+begin
+  select id into u from app_user where role = 'admin' limit 1;
+  perform test_act_as(u);
+
+  -- Its own row rather than whichever one happens to be loaded. The first
+  -- version of this read `vine_row limit 1` and skipped when there was none,
+  -- which from empty meant seven assertions running against the cellar copy and
+  -- not against the fresh build. The gate's own reconciliation caught it, which
+  -- is the reconciliation doing exactly what it is for: a suite that tests more
+  -- when there is more data is a suite whose result depends on the database it
+  -- was pointed at.
+  insert into vineyard (id, name) values (vy, 'Assert Vineyard 0131');
+  insert into block (id, vineyard_id, name) values (bk, vy, 'Assert Block 0131');
+  insert into vine_row (id, block_id, number) values (r, bk, 1);
+
+  begin
+    perform record_work('vine_row', r, 'prune', '{}'::jsonb, null, 'confirmed');
+    raise exception 'FAIL: record_work accepted confirmed, which T0-4 reserves for a person';
+  exception when others then
+    if sqlerrm not like '%confirming is its own act%' then raise; end if;
+  end;
+  perform test_ok('a periphery may not record work as confirmed, however it came by the fact');
+
+  begin
+    perform add_note('vine_row', r, 'spoken', null, null, 'confirmed');
+    raise exception 'FAIL: add_note accepted confirmed, so a transcription could claim to be checked';
+  exception when others then
+    if sqlerrm not like '%confirming is its own act%' then raise; end if;
+  end;
+  perform test_ok('a periphery may not write a note as confirmed, which is what a transcription would otherwise do');
+
+  -- The separation that keeps lot identity in one place. `record_event` decides
+  -- whether recording against some of a lot's vessels forks the lot; a second
+  -- door reaching `event` without that decision would lose lots quietly.
+  begin
+    perform record_work('node', gen_random_uuid(), 'prune');
+    raise exception 'FAIL: record_work accepted a lot, so two functions now decide whether a lot forks';
+  exception when others then
+    if sqlerrm not like '%goes through record_event%' then raise; end if;
+  end;
+  perform test_ok('record_work refuses a lot and names record_event, so forking stays one function''s decision');
+
+  begin
+    perform record_work('haircut', gen_random_uuid(), 'prune');
+    raise exception 'FAIL: record_work accepted a subject type nothing resolves';
+  exception when others then
+    if sqlerrm not like '%nothing in this system is a%' then raise; end if;
+  end;
+  perform test_ok('record_work refuses a subject type the registry has never heard of');
+
+  -- Provenance arrives as written rather than as defaulted, both ways.
+  res := record_work('vine_row', r, 'prune', '{"canes": 2}'::jsonb);
+  if res ->> 'provenance' <> 'observed' then
+    raise exception 'FAIL: work recorded without a provenance came back as %', res ->> 'provenance';
+  end if;
+  res := add_note('vine_row', r, 'crown gall, third vine in', null, null, 'inferred');
+  if res ->> 'provenance' <> 'inferred' then
+    raise exception 'FAIL: a note written as inferred came back as %', res ->> 'provenance';
+  end if;
+  perform test_ok('a spoken note can be written inferred and a watched one observed, which is the whole reason the field exists');
+
+  perform test_act_as(null);
+end $$;
+
+do $$
+begin
+  if not exists (select 1 from subject_resolver where subject_type = 'vine_row') then
+    raise exception 'FAIL: a vine row is not a registered subject, so nothing can be said about a row';
+  end if;
+  perform test_ok('a vine row is a subject, which is the granularity somebody pruning actually works at');
+
+  -- Without this a periphery has to hardcode the subject list, which is exactly
+  -- the drift AR-Q8 exists to prevent.
+  if not exists (select 1 from readable where key = 'core.subject_types') then
+    raise exception 'FAIL: the contract does not say which subject types exist, so record_work cannot be offered by a periphery built from it';
+  end if;
+  perform test_ok('the contract says which kinds of thing exist, so a periphery can offer record_work without hardcoding the list');
+
+  -- The vineyard shipped with four readables and no verbs, so a periphery built
+  -- from the registry drew a correct read-only app.
+  if not exists (select 1 from capability where module = 'vineyard') then
+    raise exception 'FAIL: the vineyard module has no capabilities, so a periphery built from the contract can only read';
+  end if;
+  perform test_ok('the vineyard has at least one verb of its own');
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 0132. A place is inside another place.
+-- ---------------------------------------------------------------------------
+do $$
+declare
+  u     uuid;
+  shed  uuid;
+  bay   uuid;
+  shelf uuid;
+begin
+  select id into u from app_user where role = 'admin' limit 1;
+  perform test_act_as(u);
+
+  shed  := (add_place('ASSERT shed 0132',  'building')            ->> 'id')::uuid;
+  bay   := (add_place('ASSERT bay 0132',   'storage', shed)       ->> 'id')::uuid;
+  shelf := (add_place('ASSERT shelf 0132', 'storage', bay)        ->> 'id')::uuid;
+
+  if (select depth from location_tree where id = shelf) <> 3 then
+    raise exception 'FAIL: a place three deep did not report depth 3';
+  end if;
+  if (select address from location_tree where id = shelf)
+     <> 'ASSERT shed 0132 > ASSERT bay 0132 > ASSERT shelf 0132' then
+    raise exception 'FAIL: the walked address is %',
+      (select address from location_tree where id = shelf);
+  end if;
+  perform test_ok('a place can be inside a place inside a place, and its address reads as the walk');
+
+  -- T0-2, demonstrated rather than asserted in the abstract. This is the whole
+  -- reason the address is walked and not a column: a stored path would now be
+  -- wrong in two rows and nothing would say so.
+  update location set name = 'ASSERT renamed 0132' where id = shed;
+  if (select address from location_tree where id = shelf)
+     not like 'ASSERT renamed 0132 >%' then
+    raise exception 'FAIL: renaming a building did not fix the address of what is inside it';
+  end if;
+  perform test_ok('renaming a place fixes the address of everything inside it, because the path is never stored');
+
+  -- A cycle would hang the recursive view rather than return a wrong row, which
+  -- is a worse failure than the usual kind, so it is refused in a trigger that
+  -- holds for a console session too.
+  begin
+    update location set parent_id = shelf where id = shed;
+    raise exception 'FAIL: a place was put inside something already inside it';
+  exception when others then
+    if sqlerrm not like '%already inside it%' then raise; end if;
+  end;
+  perform test_ok('a place cannot be put inside something that is already inside it');
+
+  begin
+    perform add_place('ASSERT nowhere 0132', 'room', gen_random_uuid());
+    raise exception 'FAIL: add_place accepted a parent that does not exist';
+  exception when others then
+    if sqlerrm not like '%no place to put that inside%' then raise; end if;
+  end;
+  begin
+    perform add_place('ASSERT aquarium 0132', 'aquarium');
+    raise exception 'FAIL: add_place accepted a kind of place that is not in the vocabulary';
+  exception when others then
+    if sqlerrm not like '%no kind of place called%' then raise; end if;
+  end;
+  perform test_ok('add_place refuses a parent that is not there and a kind nobody registered');
+
+  perform test_act_as(null);
+end $$;
+
+do $$
+begin
+  -- 0027 registered this vocabulary and nothing filled it for a hundred
+  -- migrations, so every location in the database was of no kind at all.
+  if not exists (select 1 from term where kind = 'location_kind' and active) then
+    raise exception 'FAIL: the location_kind vocabulary is empty, so no place can say what it is';
+  end if;
+  if not exists (select 1 from capability where key = 'core.add_place') then
+    raise exception 'FAIL: nothing in the contract creates a place, so a new shed cannot be written down';
+  end if;
+  perform test_ok('a place says what kind it is, and the contract can make one');
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 0133. A place can be for more than one thing.
+-- ---------------------------------------------------------------------------
+do $$
+declare
+  u    uuid;
+  shed uuid;
+  bay  uuid;
+  big  uuid;
+begin
+  select id into u from app_user where role = 'admin' limit 1;
+  perform test_act_as(u);
+
+  shed := (add_place('ASSERT shed 0133', 'building')      ->> 'id')::uuid;
+  bay  := (add_place('ASSERT bay 0133', 'storage', shed)  ->> 'id')::uuid;
+  big  := (add_place('ASSERT big 0133', 'room')           ->> 'id')::uuid;
+
+  perform tag_place(shed, 'tools');
+  -- The case the winemaker described: a shared room carrying two tags at once.
+  perform tag_place(big, 'winery');
+  perform tag_place(big, 'tools');
+
+  if (select domains from location_tree where id = big) <> array['tools', 'winery'] then
+    raise exception 'FAIL: a place could not carry two tags at once, it has %',
+      (select domains from location_tree where id = big);
+  end if;
+  perform test_ok('a shared place carries more than one tag, which is the whole reason a tag is not a kind');
+
+  -- The property that makes tagging five places do the work of tagging fifty.
+  if (select domains from location_tree where id = bay) <> array['tools'] then
+    raise exception 'FAIL: a place inside a tagged place did not inherit the tag';
+  end if;
+  if exists (select 1 from location_domain_effective
+              where location_id = shed and domain = 'tools' and inherited) then
+    raise exception 'FAIL: a place reported its own tag as inherited';
+  end if;
+  perform test_ok('a place inherits the tags of everything it is inside, and knows which are its own');
+
+  -- A13. Three different failures that must not read the same to the person who
+  -- asked, and the inherited one is the case that would otherwise look like a
+  -- silent success.
+  begin
+    perform untag_place(bay, 'tools');
+    raise exception 'FAIL: untagging an inherited tag reported success while changing nothing';
+  exception when others then
+    if sqlerrm not like '%has to come off there%' then raise; end if;
+  end;
+  begin
+    perform untag_place(shed, 'winery');
+    raise exception 'FAIL: untagging a tag a place never had reported success';
+  exception when others then
+    if sqlerrm not like '%was not tagged%' then raise; end if;
+  end;
+  begin
+    perform tag_place(shed, 'spaceport');
+    raise exception 'FAIL: a tag outside the vocabulary was accepted';
+  exception when others then
+    if sqlerrm not like '%no domain called%' then raise; end if;
+  end;
+  perform test_ok('removing an inherited domain, one that was never there, and one nobody registered each refuse differently');
+
+  -- What a tools periphery actually asks, and the reason any of this exists.
+  if (select count(*) from location_tree where 'tools' = any(domains)) < 3 then
+    raise exception 'FAIL: asking for every tools place did not find the shed, the bay inside it and the shared room';
+  end if;
+  perform test_ok('a periphery can ask for every place tagged for it, inherited ones included, in one read');
+
+  perform test_act_as(null);
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 0134. A domain tags a place and a thing, and an inventory is the union.
+-- ---------------------------------------------------------------------------
+--
+-- "Cellar/winery inventory should be a subset of total inventory", then "maybe
+-- winery carries winery tagged tools plus tools in winery tagged locations?"
+-- These assert that second sentence, because it is the rule and it is not
+-- obvious from reading the view.
+do $$
+declare
+  u      uuid;
+  big    uuid;
+  bent   uuid;
+  hammer uuid;
+  gloves uuid;
+begin
+  select id into u from app_user where role = 'admin' limit 1;
+  perform test_act_as(u);
+
+  big := (add_place('ASSERT big room 0134', 'room') ->> 'id')::uuid;
+  perform tag_place(big, 'winery');
+  perform tag_place(big, 'tools');
+
+  insert into supply (name, unit) values ('ASSERT bentonite 0134', 'kg')  returning id into bent;
+  insert into supply (name, unit) values ('ASSERT hammer 0134', 'ea')     returning id into hammer;
+  insert into supply (name, unit) values ('ASSERT gloves 0134', 'box')    returning id into gloves;
+
+  perform tag_supply(bent, 'winery');
+  perform tag_supply(hammer, 'tools');
+  -- One box of gloves belonging to two domains, which is the whole reason a
+  -- thing carries several: there is one box and one count.
+  perform tag_supply(gloves, 'winery');
+  perform tag_supply(gloves, 'tools');
+
+  -- The hammer is left in the winery room. It is a tool, and it is in here.
+  perform set_supply_home(hammer, big);
+
+  if not exists (select 1 from inventory_for_domain
+                  where domain = 'winery' and supply_id = hammer and because = 'present') then
+    raise exception 'FAIL: a tool sitting in a winery room is not findable from the winery';
+  end if;
+  if exists (select 1 from inventory_for_domain
+              where domain = 'winery' and supply_id = hammer and because = 'tagged') then
+    raise exception 'FAIL: a tool sitting in a winery room was counted as winery stock';
+  end if;
+  perform test_ok('a thing in a place belonging to a domain shows up in that inventory as present, not as its stock');
+
+  -- A13, and the reason `because` exists at all: a reorder report takes the
+  -- tagged rows and must not put hammers on the winery's shopping list.
+  if exists (select 1 from inventory_for_domain
+              where domain = 'winery' and because = 'tagged' and supply_id = hammer) then
+    raise exception 'FAIL: the hammer reached the winery reorder list';
+  end if;
+  if not exists (select 1 from inventory_for_domain
+                  where domain = 'winery' and because = 'tagged' and supply_id = bent) then
+    raise exception 'FAIL: winery stock did not reach the winery reorder list';
+  end if;
+  perform test_ok('filtering an inventory to what is tagged gives the reorder list, which is what because is for');
+
+  -- One thing, two inventories, and the same row in both.
+  if (select count(*) from inventory_for_domain
+       where supply_id = gloves and because = 'tagged') <> 2 then
+    raise exception 'FAIL: a thing belonging to two domains did not appear in both inventories';
+  end if;
+  perform test_ok('one thing can belong to two domains and is the same stock in both, counted once each');
+
+  -- Tagged beats present, so a thing is never listed twice for one domain.
+  perform set_supply_home(bent, big);
+  if (select count(*) from inventory_for_domain
+       where domain = 'winery' and supply_id = bent) <> 1 then
+    raise exception 'FAIL: a thing both tagged for a domain and living in it was listed twice';
+  end if;
+  perform test_ok('a thing both tagged for a domain and living in one of its places is listed once, as tagged');
+
+  perform test_act_as(null);
+end $$;
+
+do $$
+begin
+  if exists (select 1 from term_kind where kind = 'location_tag') then
+    raise exception 'FAIL: the old vocabulary name survived the rename, so places and things draw from two lists';
+  end if;
+  -- The union in inventory_for_domain only type-checks if both sides draw the
+  -- word from one vocabulary, which is why the rename happened at all.
+  if not exists (select 1 from term_kind where kind = 'domain' and module = 'core') then
+    raise exception 'FAIL: there is no shared domain vocabulary for a place and a thing to share';
+  end if;
+  if not exists (select 1 from capability where module = 'inventory')
+     or not exists (select 1 from readable where module = 'inventory') then
+    raise exception 'FAIL: the inventory module still owns neither a verb nor a view';
+  end if;
+  if not exists (select 1 from subject_resolver where subject_type = 'supply') then
+    raise exception 'FAIL: a thing still cannot carry a note or a photograph';
+  end if;
+  perform test_ok('places and things share one domain vocabulary, and inventory owns its own surface at last');
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 0135. A photograph can point at something.
+-- ---------------------------------------------------------------------------
+--
+-- "Maybe the photo for each object can capture the photo then also prompt
+-- something like circling or pointing to the particular location? So then the
+-- app had the photo of shelf + photo of shelf with item circled/pointed to?"
+--
+-- These assert the answer that says the two pictures are one picture and one
+-- circle, which is the thing somebody would otherwise undo by storing the
+-- circled image as a second file.
+do $$
+declare
+  u      uuid;
+  shed   uuid;
+  bay    uuid;
+  photo  uuid;
+  hammer uuid;
+  saw    uuid;
+begin
+  select id into u from app_user where role = 'admin' limit 1;
+  perform test_act_as(u);
+
+  shed := (add_place('ASSERT shed 0135', 'building')     ->> 'id')::uuid;
+  bay  := (add_place('ASSERT bay 0135', 'storage', shed) ->> 'id')::uuid;
+  photo := (attach_photo('location', bay, 'assert/0135-bay.jpg', 'the bay') ->> 'id')::uuid;
+
+  insert into supply (name, unit) values ('ASSERT hammer 0135', 'ea') returning id into hammer;
+  insert into supply (name, unit) values ('ASSERT saw 0135', 'ea')    returning id into saw;
+  perform set_supply_home(hammer, bay);
+  perform set_supply_home(saw, bay);
+
+  perform mark_attachment(photo, 'supply', hammer, 0.22, 0.61, 0.08, 'on the hook');
+  perform mark_attachment(photo, 'supply', saw,    0.74, 0.30, 0.10);
+
+  -- The property that makes one photograph enough: a shelf holds many things and
+  -- each gets a mark rather than its own near-identical picture.
+  if (select count(*) from attachment_marked where attachment_id = photo) <> 2 then
+    raise exception 'FAIL: one photograph could not carry a mark for each of two things on it';
+  end if;
+  perform test_ok('one photograph carries a mark for every thing on the shelf, which is why the circled image is never stored');
+
+  -- Both rungs of the wayfinding ladder in one read: words for the person who
+  -- knows the building, a picture for the person who does not.
+  if (select home_address from supply_whereabouts where supply_id = hammer)
+     not like '%ASSERT bay 0135' then
+    raise exception 'FAIL: a thing did not report the address of where it lives';
+  end if;
+  if (select at_x from supply_whereabouts where supply_id = hammer) is null then
+    raise exception 'FAIL: a thing with a marked photograph did not report where to point';
+  end if;
+  perform test_ok('asking where a thing is returns the address in words and the spot in the picture together');
+
+  -- Dragging the circle moves it rather than leaving two.
+  perform mark_attachment(photo, 'supply', hammer, 0.25, 0.65, 0.08);
+  if (select count(*) from attachment_mark
+       where attachment_id = photo and subject_id = hammer) <> 1 then
+    raise exception 'FAIL: marking the same thing twice on one picture left two marks';
+  end if;
+  if (select at_x from attachment_mark
+       where attachment_id = photo and subject_id = hammer) <> 0.25 then
+    raise exception 'FAIL: moving a mark did not move it';
+  end if;
+  perform test_ok('marking the same thing again moves the mark, which is what dragging a circle should do');
+
+  -- A13. A client that sent pixels would otherwise be told a constraint name.
+  begin
+    perform mark_attachment(photo, 'supply', saw, 412, 300);
+    raise exception 'FAIL: a mark in pixels was accepted';
+  exception when others then
+    if sqlerrm not like '%not in pixels%' then raise; end if;
+  end;
+  -- And the case the column type cannot catch, because 1.5 fits in numeric(6,5)
+  -- and does not fit in a picture.
+  begin
+    insert into attachment_mark (attachment_id, subject_type, subject_id, at_x, at_y, by_user)
+    values (photo, 'supply', saw, 1.5, 0.5, u);
+    raise exception 'FAIL: a mark past the right edge of the picture was accepted';
+  exception when others then
+    if sqlerrm not like '%attachment_mark_is_inside_the_picture%' then raise; end if;
+  end;
+  perform test_ok('a mark in pixels is refused in words, and a mark outside the picture is refused by constraint');
+
+  perform test_act_as(null);
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 0137. Harvest so far.
+-- ---------------------------------------------------------------------------
+--
+-- "All of the picks with the current status of that wine", and "it should
+-- include weights of bins and volume of juice and wine". Two properties make
+-- that list trustworthy rather than merely present, and both are asserted here
+-- because both would fail silently.
+do $$
+declare
+  picks int;
+  rows_ int;
+begin
+  select count(*) into picks from fruit_log;
+  select count(*) into rows_ from harvest_so_far;
+
+  -- Every pick appears, including one whose fruit has gone nowhere yet. An inner
+  -- join here would drop exactly the picks somebody is checking this list to
+  -- find, and it would do it most during picking. A13.
+  if picks <> rows_ then
+    raise exception
+      'FAIL: harvest_so_far has % rows against % picks, so a pick is missing from the list', rows_, picks;
+  end if;
+  perform test_ok('every pick reaches the harvest list, including one whose fruit has gone nowhere yet');
+
+  -- A pick with no fruit anywhere reports no yield rather than a yield of zero.
+  -- Zero litres per ton is a claim about a pressing that has not happened.
+  if exists (select 1 from harvest_so_far
+              where coalesce(litres_now, 0) = 0 and litres_per_ton is not null) then
+    raise exception
+      'FAIL: a pick with no wine anywhere reported a yield, which is a claim about a pressing that has not happened';
+  end if;
+  perform test_ok('a pick whose fruit has not been pressed reports no yield rather than a yield of nothing');
+end $$;
+
+do $$
+declare
+  n int;
+begin
+  -- Only open lots. A closed lot's contents went somewhere else and that
+  -- somewhere else is itself in this list, so counting both would report the
+  -- vintage twice.
+  select count(*) into n from harvest_lot_now where status <> 'open';
+  if n <> 0 then
+    raise exception
+      'FAIL: % closed lots reached harvest_lot_now, so the vintage is counted more than once', n;
+  end if;
+  perform test_ok('only open lots reach the harvest detail, so a vintage is never counted twice');
+
+  -- The property that makes a blend readable: fruit that converged is still
+  -- attributed to each pick by its lineage fraction, never wholly to one.
+  select count(*) into n
+    from harvest_lot_now
+   where share > 1 or share <= 0;
+  if n <> 0 then
+    raise exception
+      'FAIL: % rows carry a share outside zero to one, so lineage fractions are being multiplied wrongly', n;
+  end if;
+  perform test_ok('every share of a pick in a lot is a fraction, which is what keeps a blend from being credited to one pick');
 end $$;
 
 do $$ begin raise notice '--- all assertions passed'; end $$;

@@ -6,7 +6,8 @@
 -- Depends on: [supabase/migrations/0057_the_contract.sql,
 --              supabase/migrations/0047_attachments.sql]
 -- Depended on by: [tests/schema_assertions.sql,
---                  supabase/migrations/0095_what_is_running.sql]
+--                  supabase/migrations/0095_what_is_running.sql,
+--                  supabase/migrations/0124_a_bank_import_is_not_a_proposal.sql]
 -- Axioms enforced: T0-4 (a reader proposes and only a person confirms; nothing
 --                  imported passes as witnessed), T0-3 (every imported row says
 --                  which document it came from and who let it in), AR-Q8 (the

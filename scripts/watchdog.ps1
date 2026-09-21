@@ -64,13 +64,23 @@ param(
   # reports health during an outage, which is worse than none.
   #
   # The ports are not a choice made here. They are what `tailscale serve status`
-  # already proxies to: / -> 5177, /shop -> 5175, /cellar -> 5176. Changing one
+  # already proxies to: / -> 5177, /shop -> 5175, /cellar -> 5176,
+  # /vineyard -> 5179, /books -> 5178. Changing one
   # means changing the serve config too, and a mismatch shows up as this script
   # starting a server nobody can reach.
+  #
+  # The vineyard was missing from this list for a day after it shipped, and the
+  # books would have been missing the same way. Both are proxied and neither was
+  # watched, which is the exact shape of the outage the paragraph above is about:
+  # a watchdog that knows about three of five servers reports ok while two of
+  # them are down. When an app gets a tailscale route it belongs here in the same
+  # change.
   [object[]] $Apps = @(
     @{ name = "cellar";   dir = "apps\web";      port = 5176 },
     @{ name = "shop";     dir = "apps\shop";     port = 5175 },
-    @{ name = "launcher"; dir = "apps\launcher"; port = 5177 }
+    @{ name = "launcher"; dir = "apps\launcher"; port = 5177 },
+    @{ name = "vineyard"; dir = "appsineyard"; port = 5179 },
+    @{ name = "books";    dir = "appsooks";    port = 5178 }
   ),
 
   # Where the daily copy of everything lands.

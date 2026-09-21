@@ -6,7 +6,10 @@
 -- Depends on: [supabase/migrations/0027_term_kind_registry.sql,
 --              supabase/migrations/0045_press_detail.sql]
 -- Depended on by: [tests/schema_assertions.sql, supabase/migrations/0050_additions.sql, supabase/migrations/0051_supplies_for_addition.sql,
---                  docs/review/2026-09-17-shop-and-inventory-elsewhere.md]
+--                  docs/review/2026-09-17-shop-and-inventory-elsewhere.md,
+--                  supabase/migrations/0133_a_place_can_be_for_more_than_one_thing.sql,
+--                  supabase/migrations/0134_a_domain_tags_a_place_and_a_thing.sql,
+--                  supabase/migrations/0136_the_stores_have_a_door.sql]
 -- Axioms enforced: T0-2 (on hand is derived and never stored), T0-3 (a count is
 --                  an observation and the gap it reveals is kept, not smoothed
 --                  away), T0-5 (movements are appended; the shopping list is an

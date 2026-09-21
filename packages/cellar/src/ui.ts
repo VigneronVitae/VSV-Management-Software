@@ -1,3 +1,10 @@
+// ---------------------------------------------------------------------------
+// Type: source
+// Purpose: "The cellar's own chrome, and a named re-export of everything
+//           generic that moved down into core when the shop arrived."
+// Depends on: [packages/core/src/ui.ts]
+// Depended on by: [packages/cellar/src/index.ts]
+// ---------------------------------------------------------------------------
 import type { Child } from "core";
 import { currentBackend, el } from "core";
 

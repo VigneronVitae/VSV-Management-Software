@@ -1,9 +1,12 @@
 ---
 Type: ruling
-Version: 2.2
+Version: 2.3
 Purpose: "Records every architectural decision governing the decomposition of this system into installable modules, with the reasoning, the falsifier, and the condition under which each ruling would be wrong."
 Depends on: [packages/cellar/docs/spec.md, docs/methodology-lineage.md]
-Depended on by: [docs/findings-ledger.md, docs/status-ledger.md, docs/session-reports/modularization-progress.md, supabase/migrations/0023_subject_resolver.sql, supabase/migrations/0024_task_board_via_registry.sql, supabase/migrations/0026_subject_type_registry.sql, supabase/migrations/0027_term_kind_registry.sql, scripts/status.sh, docs/practice-mode.md, docs/review/2026-09-15-what-other-apps-do.md]
+Depended on by: [docs/findings-ledger.md, docs/status-ledger.md, docs/session-reports/modularization-progress.md, supabase/migrations/0023_subject_resolver.sql, supabase/migrations/0024_task_board_via_registry.sql, supabase/migrations/0026_subject_type_registry.sql, supabase/migrations/0027_term_kind_registry.sql, scripts/status.sh, docs/practice-mode.md, docs/review/2026-09-15-what-other-apps-do.md,
+                 supabase/migrations/0122_money_that_has_already_moved.sql,
+                 scripts/data-surface.py,
+                 docs/review/2026-09-20-one-kernel-many-peripheries.md]
 ---
 
 # Architecture Rulings
@@ -872,7 +875,7 @@ IndexedDB, in a scratch directory outside the repository:
 
 - plpgsql is present, roles can be created, and `SET ROLE` works, so row level security is
   live rather than inert. That was the thing most likely to disqualify it.
-- All 121 migrations apply, with `tests/shim.sql` in front exactly as `scripts/green.sh` uses
+- All 138 migrations apply, with `tests/shim.sql` in front exactly as `scripts/green.sh` uses
   it against a bare Postgres. 57 plpgsql functions, 93 policies, 19 views, 37 tables, and a
   constraint census identical to Postgres 17 with the same shim.
 - `contract()` executes.
@@ -934,9 +937,63 @@ An open question opening or a status note changing is not a version bump.
 Each entry below names what changed and what caused it. A change with no cause recorded is a
 preference, and should be marked as one.
 
+
+**AR-J4. The repository says what can exist, not what does. Settled.**
+*Status:* ruled, 2026-09-19, by the winemaker.
+*Raised when a books module proposed to record bank transactions and he asked whether any of it
+was going to GitHub: "the stuff going to GitHub should be type level", and then, sharpening it,
+"even the wwoof expenses should be abstracted to a custom type".*
+
+**The test, and it is answerable in one reading.** Would another winery installing this system
+have this row? A grape variety, yes. A part domain, yes. A line of IRS Schedule F, yes, because
+it is a public form and the same for every farm in the country. The name of a block, no. A
+category named after the person it pays, no. A bank transaction, obviously no.
+
+**Why the line is there rather than somewhere else.** CLAUDE.md says this vintage is the worked
+case and the system is meant to be handed to other winemakers once the harvest proves it. A
+repository that contains one winery's vineyard cannot be handed to anybody, and S-77 cannot be
+discharged while it is true. So this is not tidiness. It is the stated purpose of the project
+made checkable.
+
+**What it cost to adopt.** Two migrations were carrying 129 KB of one winery's records: a vine
+map of 13,539 plant spaces and a machine with its serials and two research reports about it.
+Both were rewritten to carry structure only, and the records moved to `data/`, which is not
+committed, with importers in `scripts/`. The reconciliation that ran inside the vine map
+migration moved with it and still refuses if the decode stops matching the winemaker's own
+legend, which matters because that check had already caught a migration that applied cleanly and
+loaded nothing.
+
+**What it does not cover.** Vocabulary is the interesting case. The kind exists in a migration;
+its members mostly do not. Schedule F ships because it is public. What one farm adds to Schedule
+F does not, because those names say how that operation is run and sometimes who it pays.
+`scripts/seed-terms.py` loads them from `data/`.
+
+*What would show this wrong:* a fresh clone that cannot be made useful without data nobody is
+allowed to ship, or a check that fires so often on legitimate structure that people start
+judging rows `universal` to make it quiet.
+
+*Enforcement:* `scripts/data-surface.py`, step 8 of `scripts/verify.sh`. It enumerates every
+insert into a table that holds instances and fails on two things: a site nobody has judged, and
+a site judged `local` that is still in the tree. The judgements are in
+`docs/review/data-dispositions.tsv`, one line each, in the same shape as the refusal
+dispositions. The check is structural on purpose: it counts rows into instance tables and cannot
+tell a variety from a block name, because a check that listed the private names it was looking
+for would publish them in the course of protecting them.
+
+
 ---
 
 ## Changelog
+
+### 2.3 (2026-09-19)
+
+*Cause: a books module proposed to record bank transactions, and the question of what may be
+committed had never been ruled on.*
+
+**Added AR-J4,** which says the repository carries what can exist and not what does. Minor
+rather than patch because it adds a ruling. AR-J3 is untouched and still holds: recording money
+that has already moved is not taking money, which is the integration AR-J3 itself named as
+unbuilt.
 
 ### 2.2 (2026-09-17)
 

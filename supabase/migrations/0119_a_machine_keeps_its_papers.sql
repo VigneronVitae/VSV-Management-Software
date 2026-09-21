@@ -7,7 +7,8 @@
 --              supabase/migrations/0112_a_machine_decomposes_into_parts.sql]
 -- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql,
 --                  supabase/migrations/0120_the_hot_water_pressure_washer.sql,
---                  supabase/migrations/0121_the_new_acts_say_what_they_take.sql]
+--                  supabase/migrations/0121_the_new_acts_say_what_they_take.sql,
+--                  scripts/import-machine.py]
 -- Axioms enforced: T0-4. A parts list produced by a model is `inferred` and the
 --                  document that produced it is named, so the claim can be
 --                  traced back and argued with.
