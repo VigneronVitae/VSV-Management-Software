@@ -6,7 +6,8 @@ Depends on: [packages/cellar/docs/spec.md, docs/methodology-lineage.md]
 Depended on by: [docs/findings-ledger.md, docs/status-ledger.md, docs/session-reports/modularization-progress.md, supabase/migrations/0023_subject_resolver.sql, supabase/migrations/0024_task_board_via_registry.sql, supabase/migrations/0026_subject_type_registry.sql, supabase/migrations/0027_term_kind_registry.sql, scripts/status.sh, docs/practice-mode.md, docs/review/2026-09-15-what-other-apps-do.md,
                  supabase/migrations/0122_money_that_has_already_moved.sql,
                  scripts/data-surface.py,
-                 docs/review/2026-09-20-one-kernel-many-peripheries.md]
+                 docs/review/2026-09-20-one-kernel-many-peripheries.md,
+                 docs/review/2026-09-21-where-this-is-going.md]
 ---
 
 # Architecture Rulings
