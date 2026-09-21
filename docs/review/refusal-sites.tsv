@@ -237,6 +237,23 @@ draw_to_level:guard:4	draw_to_level	guard	if increment < 0 then	if false then	1
 draw_to_level:raise:3	draw_to_level	raise	raise exception	raise notice	3
 draw_to_level:guard:5	draw_to_level	guard	if increment = 0 then	if false then	1
 draw_to_level:raise:4	draw_to_level	raise	raise exception	raise notice	4
+dump_wine:guard:1	dump_wine	guard	if not is_facility_user() then	if false then	1
+dump_wine:raise:1	dump_wine	raise	raise exception 'wine is dumped by people who work here';	raise notice 'wine is dumped by people who work here';	1
+dump_wine:guard:2	dump_wine	guard	if p_sources is null or jsonb_array_length(p_sources) = 0 then	if false then	1
+dump_wine:raise:2	dump_wine	raise	raise exception 'a dump needs somewhere to come from';	raise notice 'a dump needs somewhere to come from';	1
+dump_wine:guard:3	dump_wine	guard	if v_name is null then	if false then	1
+dump_wine:raise:3	dump_wine	raise	raise exception 'no vessel with id %', v_id;	raise notice 'no vessel with id %', v_id;	1
+dump_wine:guard:4	dump_wine	guard	if vol is null or vol <= 0 then	if false then	1
+dump_wine:raise:4	dump_wine	raise	raise exception 'how much came out of % is not recorded', v_name;	raise notice 'how much came out of % is not recorded', v_name;	1
+dump_wine:guard:5	dump_wine	guard	if held is null then	if false then	1
+dump_wine:raise:5	dump_wine	raise	raise exception '% is empty, so nothing can be dumped out of it', v_name;	raise notice '% is empty, so nothing can be dumped out of it', v_name;	1
+dump_wine:guard:6	dump_wine	guard	if vol - held > 0.0001 then	if false then	1
+dump_wine:raise:6	dump_wine	raise	raise exception '% holds % L and this pours % L out of it', v_name, held, vol;	raise notice '% holds % L and this pours % L out of it', v_name, held, vol;	1
+dump_wine:guard:7	dump_wine	guard	if held - vol <= 0.0001 then	if false then	1
+dump_wine:silent:1	dump_wine	silent	where vessel_id = v_id and to_at is null;	where vessel_id = v_id and true;	1
+dump_wine:silent:2	dump_wine	silent	where vessel_id = v_id and to_at is null;	where vessel_id = v_id and true;	2
+dump_wine:silent:3	dump_wine	silent	where id = n_id and quantity is not null;	where id = n_id and true;	1
+dump_wine:guard:8	dump_wine	guard	if not (n_id = any(touched)) then	if false then	1
 end_run_step:silent:1	end_run_step	silent	where run_id = p_run_id and step_id = p_step_id	where run_id = p_run_id and true	1
 end_run_step:notfound:1	end_run_step	notfound	if not found then	if false then	1
 end_run_step:raise:1	end_run_step	raise	raise exception 'that step was never started, so there is nothing to time';	raise notice 'that step was never started, so there is nothing to time';	1

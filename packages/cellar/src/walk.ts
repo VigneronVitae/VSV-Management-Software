@@ -46,6 +46,7 @@ import {
   declareBarrelColour,
   drawCut,
   drawToLevel,
+  dumpWine,
   exportCellar,
   type FruitRow,
   facilityParty,
@@ -3305,6 +3306,118 @@ function legList(
   };
 }
 
+// Racking from one lot, which is the source half of the second racking layout.
+//
+// "Select a lot I'm racking from and then rack until it's empty. Instead of
+// choosing both vessels each time."
+//
+// The old layout asks for vessels on both sides of every rack, which is right
+// when you are consolidating three barrels into a tank and wrong for the common
+// case: one lot, several barrels, emptied over an afternoon. Here the source is
+// answered once and the screen carries what is left of it, so the question the
+// person is actually holding, "is it empty yet", is on the screen rather than in
+// their head.
+//
+// It produces the same legs the other layout does and calls the same kernel
+// function, which is AR-Q8's point: this is a different set of questions in a
+// different order about the same event, and the contract does not move.
+function lotSource(
+  kit: VesselState[],
+  onChange: () => void,
+): {
+  root: HTMLElement;
+  legs: () => Leg[];
+  remaining: () => number;
+  refresh: () => void;
+} {
+  // Lots with wine somewhere, each with every vessel holding some of it.
+  const byLot = new Map<string, { name: string; vessels: VesselState[] }>();
+  for (const v of kit) {
+    if (v.is_empty || !v.node_id) continue;
+    const seen = byLot.get(v.node_id) ?? {
+      name: v.lot_name ?? "Unnamed lot",
+      vessels: [],
+    };
+    seen.vessels.push(v);
+    byLot.set(v.node_id, seen);
+  }
+
+  const choose = el("select", { class: "input" });
+  choose.append(el("option", { value: "", text: "Which lot" }));
+  for (const [id, lot] of byLot) {
+    const total = lot.vessels.reduce((a, v) => a + (v.current_volume_l ?? 0), 0);
+    choose.append(
+      el("option", {
+        value: id,
+        text: `${lot.name}, ${Math.round(total)} L in ${lot.vessels.length}`,
+      }),
+    );
+  }
+
+  const held = el("div", { class: "rows" });
+  // Which of the lot's vessels this rack is drawing from, and how much of each.
+  // Everything is ticked and full by default, because "rack until it is empty"
+  // is the case this layout exists for and the other cases are edits to it.
+  const taking = new Map<string, { on: boolean; l: number; max: number }>();
+
+  function drawHeld(): void {
+    const lot = byLot.get(choose.value);
+    if (!lot) {
+      held.replaceChildren(empty("Pick a lot and its vessels appear here."));
+      return;
+    }
+    held.replaceChildren(
+      ...lot.vessels.map((v) => {
+        const have = v.current_volume_l ?? 0;
+        const state = taking.get(v.id) ?? { on: true, l: have, max: have };
+        taking.set(v.id, state);
+
+        const tick = checkbox(`${v.name}, ${Math.round(have)} L`, state.on);
+        const amount = field({
+          label: "Taking, litres",
+          type: "number",
+          value: String(state.l),
+        });
+        on(tick.input, "change", () => {
+          state.on = tick.input.checked;
+          onChange();
+        });
+        on(amount.input, "input", () => {
+          state.l = Number(amount.value()) || 0;
+          onChange();
+        });
+        return el("div", { class: "rows" }, tick.root, amount.root);
+      }),
+    );
+  }
+
+  on(choose, "change", () => {
+    taking.clear();
+    drawHeld();
+    onChange();
+  });
+  drawHeld();
+
+  return {
+    root: el(
+      "div",
+      {},
+      el("h2", { class: "section-head", text: "Out of" }),
+      el("p", { class: "field-hint", text: "One lot, and as much of it as is going." }),
+      choose,
+      held,
+    ),
+    legs: () =>
+      [...taking.entries()]
+        .filter(([, t]) => t.on && t.l > 0)
+        .map(([vessel_id, t]) => ({ vessel_id, volume_l: t.l })),
+    // What stays behind, which is the number this layout exists to show.
+    remaining: () =>
+      [...taking.values()].reduce((a, t) => a + (t.on ? t.max - t.l : t.max), 0),
+    refresh: drawHeld,
+  };
+}
+
 function rackScreen(): HTMLElement {
   const message = el("div", {});
   const holder = el("div", { class: "rows" });
@@ -3324,12 +3437,23 @@ function rackScreen(): HTMLElement {
   void (async () => {
     kit = await vessels();
 
-    const sources = legList(
+    // Two ways of answering the source half, chosen per device and remembered.
+    // AR-Q8 and the press screen's precedent: a different set of questions in a
+    // different order about the same event is a periphery concern, and shipping
+    // both is how anybody finds out which is right.
+    const layout = pref("rack_layout", "both");
+    const fromLot = layout === "lot";
+
+    const byVessel = legList(
       "Out of",
       "Vessels with wine in them.",
       () => kit.filter((v) => !v.is_empty),
       () => void refreshPlan(),
     );
+    const byLot = lotSource(kit, () => void refreshPlan());
+    const sources = fromLot
+      ? { root: byLot.root, legs: byLot.legs }
+      : { root: byVessel.root, legs: byVessel.legs };
     const destinations = legList(
       "Into",
       "Anything. Racking onto wine already in a vessel blends with it.",
@@ -3337,8 +3461,9 @@ function rackScreen(): HTMLElement {
       () => void refreshPlan(),
     );
 
-    const gasSource = termOrText("Gas in the source", "air, argon, nitrogen");
-    const gasLine = termOrText("Gas in the line", "air, argon");
+    const gases = await terms("gas");
+    const gasSource = termPick("Gas in the source", gases);
+    const gasLine = termPick("Gas in the line", gases);
     // "Racking needs gas at destination too." What the receiving vessel was
     // full of before the wine arrived is the half of an oxygen pickup record
     // that was missing: a purged tank and one left open are the difference
@@ -3348,8 +3473,18 @@ function rackScreen(): HTMLElement {
     // One value for all destinations, the same shape the source field has. A
     // rack into two vessels purged differently would need this per leg, which
     // is a change to legList and not one anybody has asked for.
-    const gasDestination = termOrText("Gas in the destination", "air, argon, nitrogen");
-    const method = termOrText("Method", "gravity, pump");
+    const gasDestination = termPick(
+      "Gas in the destination",
+      gases,
+      "What the receiving vessel held before the wine arrived.",
+    );
+    const method = termPick("How it was moved", await terms("rack_method"));
+    // Free text on purpose: 0140 says why, and the words people actually write
+    // here are what would tell us the vocabulary.
+    const dumpWhy = field({
+      label: "Why it is going away",
+      placeholder: "what was wrong with it",
+    });
     const lees = field({
       label: "Lees carried, litres",
       type: "number",
@@ -3415,6 +3550,19 @@ function rackScreen(): HTMLElement {
             if (w.warn && w.why) preview.append(banner(w.why, "note"));
           }
         }
+        // "Rack until it's empty." The number that answers that is what stays
+        // behind, and it belongs on the screen rather than in somebody's head.
+        if (fromLot) {
+          const left = byLot.remaining();
+          preview.append(
+            banner(
+              left <= 0
+                ? "That empties the lot."
+                : `${Math.round(left)} L would stay behind.`,
+              left <= 0 ? "good" : "note",
+            ),
+          );
+        }
         if (plan.overfill.length > 0) {
           const confirm = checkbox("Record it anyway");
           on(confirm.input, "change", () => {
@@ -3427,7 +3575,30 @@ function rackScreen(): HTMLElement {
       }
     }
 
+    // Drawn above the questions rather than below them, because which set of
+    // questions you are being asked is not a footnote to the answers.
     holder.append(
+      variantSwitch(
+        [
+          {
+            key: "both",
+            label: "Both ends",
+            note: "Name the vessels on each side. Right for consolidating several into one.",
+            render: () => el("span", {}),
+          },
+          {
+            key: "lot",
+            label: "From one lot",
+            note: "Pick the lot once and empty it, with what is left shown as you go.",
+            render: () => el("span", {}),
+          },
+        ],
+        layout,
+        (key) => {
+          setPref("rack_layout", key);
+          go({ at: "rack" });
+        },
+      ),
       sources.root,
       destinations.root,
       el("h2", { class: "section-head", text: "How" }),
@@ -3476,6 +3647,55 @@ function rackScreen(): HTMLElement {
           message.replaceChildren(fail(error));
         }
       }),
+      // Behind a disclosure, and with the reason required, because this is the
+      // one button on the screen whose effect cannot be undone in the world. A
+      // mis-tapped rack is a correcting rack; a mis-tapped dump is wine on the
+      // ground. The kernel refuses a dump larger than the vessel holds, and
+      // nothing refuses a dump somebody meant to be a rack.
+      el(
+        "details",
+        { class: "more" },
+        el("summary", { text: "Pour it away instead" }),
+        rows(
+          lede(
+            "Records the wine leaving these vessels and going nowhere. The lot keeps " +
+              "its history and stops being anywhere.",
+          ),
+          dumpWhy.root,
+          button(
+            "Pour it away",
+            async () => {
+              const s = sources.legs();
+              if (s.length === 0) {
+                message.replaceChildren(
+                  banner("Say which vessels it is coming out of.", "error"),
+                );
+                return;
+              }
+              if (!dumpWhy.value()) {
+                message.replaceChildren(
+                  banner("Say why. This one cannot be taken back.", "error"),
+                );
+                return;
+              }
+              try {
+                const out = await dumpWine({ sources: s, reason: dumpWhy.value() });
+                message.replaceChildren(
+                  banner(
+                    `Poured away. ${Math.round(out.dumped_l)} L, ` +
+                      `${out.lots.length} lot${out.lots.length === 1 ? "" : "s"} recorded.`,
+                    "good",
+                  ),
+                );
+                go({ at: "vessels" });
+              } catch (error) {
+                message.replaceChildren(fail(error));
+              }
+            },
+            "secondary",
+          ),
+        ),
+      ),
       button("Back", () => goBack(), "quiet"),
       message,
     );
@@ -3486,11 +3706,32 @@ function rackScreen(): HTMLElement {
   return view;
 }
 
-// Free text for now. Gas and method want vocabularies, and term_kind is an
-// enum in the fixed tier, so adding two is a decision about that enum rather
-// than a detail of this screen.
-function termOrText(label: string, placeholder: string) {
-  return field({ label, placeholder });
+// A picker over a vocabulary, which is what `termOrText` was named for and never
+// was. Its comment said gas wanted a vocabulary and that `term_kind` was an enum
+// in the fixed tier, so the decision belonged elsewhere. `0027` made `term_kind`
+// a registry and the comment outlived the obstacle by more than a hundred migrations.
+//
+// Falls back to a text field when the vocabulary is empty, so a cellar that has
+// not run 0139 gets what it had before rather than a picker with nothing in it.
+// A13: an empty list and a list of one blank option read the same and neither
+// says the vocabulary is missing.
+function termPick(label: string, options: Term[], hint?: string) {
+  if (options.length === 0) {
+    return field({ label, placeholder: hint ?? "" });
+  }
+  const choose = el("select", { class: "input" });
+  choose.append(el("option", { value: "", text: "Not recorded" }));
+  for (const t of options) {
+    choose.append(el("option", { value: t.value, text: t.label }));
+  }
+  const root = el(
+    "label",
+    { class: "field" },
+    el("span", { class: "field-label", text: label }),
+    choose,
+    hint ? el("span", { class: "field-hint", text: hint }) : null,
+  );
+  return { root, value: () => choose.value };
 }
 
 // --- vessel types: what each sort of vessel gets asked ---------------------

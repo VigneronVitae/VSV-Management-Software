@@ -2943,3 +2943,22 @@ export async function markAttachment(args: {
   });
   if (error) throw new KernelError(error);
 }
+
+// Wine poured away rather than moved. `rack` refuses a transfer with no
+// destination and is right to: a rack computes its loss as what left minus what
+// arrived, so a rack to nowhere would record the whole volume as a hose loss.
+// Losing four litres in a line and pouring two hundred down the drain are
+// different facts. 0140.
+export async function dumpWine(args: {
+  sources: RackLeg[];
+  reason?: string | null;
+  at?: string | null;
+}): Promise<{ dumped_l: number; lots: Array<{ node_id: Uuid; event_id: Uuid }> }> {
+  const { data, error } = await kernel().rpc("dump_wine", {
+    p_sources: args.sources,
+    p_reason: args.reason ?? null,
+    p_at: args.at ?? null,
+  });
+  if (error) throw new KernelError(error);
+  return data as { dumped_l: number; lots: Array<{ node_id: Uuid; event_id: Uuid }> };
+}

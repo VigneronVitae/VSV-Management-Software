@@ -17,7 +17,8 @@
 --                  supabase/migrations/0115_a_vineyard_is_rows_and_plant_spaces.sql,
 --                  supabase/migrations/0122_money_that_has_already_moved.sql,
 --                  scripts/seed-terms.py,
---                  supabase/migrations/0132_a_place_is_inside_another_place.sql]
+--                  supabase/migrations/0132_a_place_is_inside_another_place.sql,
+--                  supabase/migrations/0139_a_gas_is_a_term.sql]
 -- Axioms enforced: none new. Like 0026 this removes a wrong-way edge rather than
 --                  adding a rule.
 -- Open sorries: none new. A16 is untouched and is neither better nor worse; see

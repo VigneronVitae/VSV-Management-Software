@@ -96,7 +96,8 @@
 --              supabase/migrations/0134_a_domain_tags_a_place_and_a_thing.sql,
 --              supabase/migrations/0135_a_photograph_can_point_at_something.sql,
 --              supabase/migrations/0137_harvest_so_far.sql,
---              supabase/migrations/0138_the_repository_names_no_vendor.sql]
+--              supabase/migrations/0138_the_repository_names_no_vendor.sql,
+--              supabase/migrations/0140_wine_can_go_on_the_ground.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh, scripts/rpc-args.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -4533,8 +4534,13 @@ begin
   -- how a farm files its spending, and the members are mostly the lines of IRS
   -- Schedule F, which is a public form and therefore shippable. What this
   -- particular farm adds to it is not, and lives in data/ under AR-J4.
-  if (select count(*) from term_kind where module <> 'core') <> 15 then
-    raise exception 'FAIL: % of the kinds are owned by a module other than core, and the claim is fifteen',
+  -- Seventeen since 0139 registered `gas` and `rack_method` to `winemaking`.
+  -- Both had been free text on the racking screen since 0014, and the comment
+  -- saying why claimed `term_kind` was a fixed enum, which `0027` made untrue and
+  -- nobody came back to. What sits over the wine and how it was moved are facts
+  -- about winemaking, not about the cellar's software.
+  if (select count(*) from term_kind where module <> 'core') <> 17 then
+    raise exception 'FAIL: % of the kinds are owned by a module other than core, and the claim is seventeen',
       (select count(*) from term_kind where module <> 'core');
   end if;
   perform test_ok('the registry says which module owns each kind, and fourteen of them are not core''s');
@@ -12585,6 +12591,78 @@ begin
       'FAIL: % rows carry a share outside zero to one, so lineage fractions are being multiplied wrongly', n;
   end if;
   perform test_ok('every share of a pick in a lot is a fraction, which is what keeps a blend from being credited to one pick');
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 0140. Wine can go on the ground.
+-- ---------------------------------------------------------------------------
+--
+-- "The existing one needs a way to rack to the ground or dump or whatever, which
+-- we also need for being able to dump barrels."
+do $$
+declare
+  u   uuid;
+  ves uuid;
+  lot uuid;
+  held numeric;
+  q   numeric;
+begin
+  select id into u from app_user where role = 'admin' limit 1;
+  perform test_act_as(u);
+
+  -- Its own vessel and lot rather than whichever happens to be full, so the
+  -- suite tests the same amount against an empty database as against the cellar.
+  insert into vessel (type_id, name) values (term_id('vessel_type','tank'), 'ASSERT dump tank 0140')
+    returning id into ves;
+  insert into node (stage, name, quantity, unit, vintage)
+    values ('maturation', 'ASSERT dump lot 0140', 100, 'L', 2026) returning id into lot;
+  insert into placement (node_id, vessel_id, volume_l, from_at)
+    values (lot, ves, 100, now());
+
+  -- Refused rather than clamped. A clamp would make a typo indistinguishable
+  -- from a dump that worked, which is A13 on a verb with no undo.
+  begin
+    perform dump_wine(jsonb_build_array(jsonb_build_object('vessel_id', ves, 'volume_l', 500)));
+    raise exception 'FAIL: dumping more than a vessel holds was accepted';
+  exception when others then
+    if sqlerrm not like '%pours%' then raise; end if;
+  end;
+  begin
+    perform dump_wine('[]'::jsonb);
+    raise exception 'FAIL: a dump with no source was accepted';
+  exception when others then
+    if sqlerrm not like '%somewhere to come from%' then raise; end if;
+  end;
+  perform test_ok('dumping more than a vessel holds, and dumping out of nothing, each refuse in a sentence');
+
+  -- Part of it. The vessel and the lot both shrink and neither closes.
+  perform dump_wine(jsonb_build_array(jsonb_build_object('vessel_id', ves, 'volume_l', 40)), 'lees');
+  select volume_l into held from placement where vessel_id = ves and to_at is null;
+  select quantity into q from node where id = lot;
+  if held <> 60 or q <> 60 then
+    raise exception 'FAIL: a partial dump left % L in the vessel and % on the lot', held, q;
+  end if;
+  perform test_ok('dumping part of a vessel shrinks the placement and the lot together');
+
+  -- The rest. 0013 closes the lot because the quantity reached nothing, which is
+  -- that migration's rule and not this one's.
+  perform dump_wine(jsonb_build_array(jsonb_build_object('vessel_id', ves, 'volume_l', 60)), 'the rest');
+  if exists (select 1 from placement where vessel_id = ves and to_at is null) then
+    raise exception 'FAIL: dumping the last of a vessel left the placement open';
+  end if;
+  if (select status from node where id = lot) <> 'closed' then
+    raise exception 'FAIL: a lot with nothing left anywhere is still open';
+  end if;
+  perform test_ok('dumping the last of a lot closes its placement, and 0013 closes the lot');
+
+  -- T0-5. The wine is gone and the record of it is not.
+  if (select count(*) from event
+       where subject_id = lot and operation_id = term_id('operation', 'dump')) <> 2 then
+    raise exception 'FAIL: two dumps did not leave two events on the lot';
+  end if;
+  perform test_ok('a dumped lot keeps every event that happened to it, because a dump is an append');
+
+  perform test_act_as(null);
 end $$;
 
 do $$ begin raise notice '--- all assertions passed'; end $$;

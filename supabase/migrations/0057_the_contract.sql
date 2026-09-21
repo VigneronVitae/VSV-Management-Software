@@ -25,7 +25,8 @@
 --                  supabase/migrations/0131_work_is_not_only_done_to_wine.sql,
 --                  supabase/migrations/0132_a_place_is_inside_another_place.sql,
 --                  supabase/migrations/0135_a_photograph_can_point_at_something.sql,
---                  supabase/migrations/0137_harvest_so_far.sql]
+--                  supabase/migrations/0137_harvest_so_far.sql,
+--                  supabase/migrations/0140_wine_can_go_on_the_ground.sql]
 -- Axioms enforced: AR-Q8 (an interface is a periphery over a read and write
 --                  contract), AR-E6 (the declaration is registry rows, so
 --                  another winery's contract is data), R-4 (a client that

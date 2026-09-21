@@ -26,6 +26,11 @@ export type TermKind =
   // migration is invisible here until somebody remembers.
   | "fact_kind"
   | "wine_colour"
+  // 0139. What sits over the wine. The racking screen asked for it as free text
+  // from 0014 until then, and the comment saying why claimed term_kind was a
+  // fixed enum, which stopped being true in 0027.
+  | "gas"
+  | "rack_method"
   // The books module's one vocabulary. Added here rather than cast at the call
   // site, which is what the shop and the vineyard did with theirs, and is why
   // S-61 is still open five vocabularies later.

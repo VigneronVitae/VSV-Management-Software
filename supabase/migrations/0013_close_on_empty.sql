@@ -6,7 +6,8 @@
 --           from."
 -- Depends on: [supabase/migrations/0001_core_schema.sql,
 --              packages/cellar/docs/spec.md]
--- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql, supabase/migrations/0014_rack.sql, supabase/migrations/0015_fork_and_history.sql, supabase/migrations/0034_press.sql, supabase/migrations/0038_cancel_a_pick.sql]
+-- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql, supabase/migrations/0014_rack.sql, supabase/migrations/0015_fork_and_history.sql, supabase/migrations/0034_press.sql, supabase/migrations/0038_cancel_a_pick.sql,
+--                  supabase/migrations/0140_wine_can_go_on_the_ground.sql]
 -- Axioms enforced: T0-2 (derived over stored: lineage describes origin and
 --                  stops standing in for how much is left)
 -- Discharges: S-3
