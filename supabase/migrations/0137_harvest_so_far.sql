@@ -6,7 +6,8 @@
 -- Depends on: [supabase/migrations/0002_derived_and_rls.sql,
 --              supabase/migrations/0057_the_contract.sql,
 --              supabase/migrations/0114_every_pick_stays_on_the_list.sql]
--- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql]
+-- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql,
+--                  supabase/migrations/0141_a_volume_says_whether_it_was_measured.sql]
 -- Axioms enforced: T0-2, throughout. Nothing here is stored. A pick's present
 --                  whereabouts is a walk of `lineage` and a sum over open
 --                  placements, and it changes every time anybody racks anything.

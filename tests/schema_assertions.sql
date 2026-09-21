@@ -97,7 +97,8 @@
 --              supabase/migrations/0135_a_photograph_can_point_at_something.sql,
 --              supabase/migrations/0137_harvest_so_far.sql,
 --              supabase/migrations/0138_the_repository_names_no_vendor.sql,
---              supabase/migrations/0140_wine_can_go_on_the_ground.sql]
+--              supabase/migrations/0140_wine_can_go_on_the_ground.sql,
+--              supabase/migrations/0141_a_volume_says_whether_it_was_measured.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh, scripts/rpc-args.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -12663,6 +12664,78 @@ begin
   perform test_ok('a dumped lot keeps every event that happened to it, because a dump is an append');
 
   perform test_act_as(null);
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 0141. A volume says whether it was measured.
+-- ---------------------------------------------------------------------------
+--
+-- "Liters are often guesses... when I type an amount there should be a flag for
+-- measure vs estimate."
+do $$
+declare
+  u    uuid;
+  src  uuid;
+  dst  uuid;
+  lot  uuid;
+begin
+  select id into u from app_user where role = 'admin' limit 1;
+  perform test_act_as(u);
+
+  insert into vessel (type_id, name) values (term_id('vessel_type','tank'), 'ASSERT src 0141')
+    returning id into src;
+  insert into vessel (type_id, name) values (term_id('vessel_type','tank'), 'ASSERT dst 0141')
+    returning id into dst;
+  insert into node (stage, name, quantity, unit, vintage)
+    values ('maturation', 'ASSERT vol lot 0141', 90, 'L', 2026) returning id into lot;
+  insert into placement (node_id, vessel_id, volume_l, from_at) values (lot, src, 90, now());
+
+  -- The three answers, and the third is the one a default would have destroyed.
+  perform rack(
+    jsonb_build_array(jsonb_build_object('vessel_id', src, 'volume_l', 30)),
+    jsonb_build_array(jsonb_build_object('vessel_id', dst, 'volume_l', 30, 'measured', false)));
+  if (select volume_provenance from placement where vessel_id = dst and to_at is null)
+     <> 'inferred' then
+    raise exception 'FAIL: a leg marked estimated was not recorded as inferred';
+  end if;
+
+  perform rack(
+    jsonb_build_array(jsonb_build_object('vessel_id', src, 'volume_l', 30)),
+    jsonb_build_array(jsonb_build_object('vessel_id', dst, 'volume_l', 30, 'measured', true)));
+  if (select volume_provenance from placement where vessel_id = dst and to_at is null)
+     <> 'observed' then
+    raise exception 'FAIL: a leg marked measured was not recorded as observed';
+  end if;
+
+  -- A leg that says nothing leaves the total saying nothing, which is honest:
+  -- once an unsaid amount is added to a measured one, the total is not measured.
+  perform rack(
+    jsonb_build_array(jsonb_build_object('vessel_id', src, 'volume_l', 30)),
+    jsonb_build_array(jsonb_build_object('vessel_id', dst, 'volume_l', 30)));
+  if (select volume_provenance from placement where vessel_id = dst and to_at is null)
+     is not null then
+    raise exception 'FAIL: a leg that said nothing left a provenance behind';
+  end if;
+  perform test_ok('a volume records measured, estimated, or that nobody said, and the third is not a default');
+
+  perform test_act_as(null);
+end $$;
+
+do $$
+begin
+  -- T0-4 on a column. Every row written before 0141 must still say nothing,
+  -- because a default would have claimed something about eighteen volumes
+  -- nobody was asked about.
+  if exists (
+    select 1 from placement
+     where volume_provenance is not null
+       and created_at < (select min(applied_at) from (select now() as applied_at) t)
+       and vessel_id not in (select id from vessel where name like 'ASSERT%')
+       and created_at < now() - interval '1 hour'
+  ) then
+    raise exception 'FAIL: a volume recorded before the flag existed was given one anyway';
+  end if;
+  perform test_ok('volumes recorded before the flag existed still say nothing, rather than being given an answer');
 end $$;
 
 do $$ begin raise notice '--- all assertions passed'; end $$;

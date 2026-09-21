@@ -1494,3 +1494,23 @@ decidable. A useful first cut is the three that are: currency amounts, runs of t
 digits, and `Card \d{4}`.
 *Load-bearing:* yes, and it is the only sorry in this ledger whose failure mode is publishing
 something that cannot be unpublished. Every other one costs a session.
+
+
+**S-141. Five of the seven ways a volume gets recorded still cannot say whether it was measured.**
+`0141` threads a measured flag through `rack` and `fill_vessel`, which are the two the winemaker
+named and between them account for most of what he types. Five other functions insert placements
+and none of them asks: `add_bin_to_pick`, `create_vessel_with_wine`, `draw_cut`, `press` and
+`start_press`.
+They are not all the same case, which is why this is filed rather than done. A bin weight is a
+scale reading and the question barely arises; a press draw comes off the press's own gauge and is
+arguably always measured; `draw_to_level` fills to a mark, which is a measurement by definition.
+`create_vessel_with_wine` is the one that clearly needs it, because it is somebody writing down
+what is already in a vessel, which is exactly the estimate-heavy case.
+The risk of leaving it is not a wrong number. It is that `harvest_so_far` reports litres measured,
+estimated and unsaid, and wine that arrived through one of the five always lands in unsaid, so the
+proportions read as worse than the cellar's actual practice. Somebody reading that column will
+conclude the cellar guesses more than it does.
+*Resolves when:* each of the five either takes the flag or carries a comment saying why its
+volumes are always one answer. The second is a real resolution for at least two of them and
+cheaper than the first.
+*Load-bearing:* no. Nothing is recorded incorrectly; a proportion is reported pessimistically.

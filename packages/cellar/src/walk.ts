@@ -3208,7 +3208,9 @@ function skinPicker(): HTMLElement {
 // moved a lot or made a new one. The screen never works that out for itself; it
 // asks rack_plan and repeats the answer.
 
-type Leg = { vessel_id: string; volume_l: number };
+// `measured` is optional and absent means nobody said, which is a third answer
+// and not a missing one. 0141.
+type Leg = { vessel_id: string; volume_l: number; measured?: boolean };
 
 // A list of vessels and how much came out of, or went into, each. Built the way
 // codeCapture builds codes: pick, type, add, and the list is the record.
@@ -3222,7 +3224,24 @@ function legList(
   const list = el("ul", { class: "code-list" });
   const select = el("select", { class: "input" });
   const volume = field({ label: "Litres", type: "number", placeholder: "220" });
+  // "Liters are often guesses, mostly when they're not guesses it's because a
+  // vessel is full." So the toggle defaults to guessed, which is the common
+  // case, and flips itself to measured when the amount typed is the vessel's
+  // capacity. That is a suggestion the person can override and never a decision:
+  // T0-4 says the producer sets the trust field, and a full-looking number is
+  // evidence rather than a measurement.
+  const measured = checkbox("Measured rather than estimated", false);
   const message = el("div", {});
+
+  function suggestMeasured(): void {
+    const v = choices().find((row) => row.id === select.value);
+    const typed = Number(volume.value());
+    if (v?.capacity_l && typed && Math.abs(typed - v.capacity_l) < 0.5) {
+      measured.input.checked = true;
+    }
+  }
+  on(volume.input, "input", suggestMeasured);
+  on(select, "change", suggestMeasured);
 
   function refresh(): void {
     const rows = choices();
@@ -3247,7 +3266,10 @@ function legList(
           "li",
           { class: "code-row" },
           el("span", { class: "code-value", text: v?.name ?? leg.vessel_id }),
-          el("span", { class: "code-label", text: `${leg.volume_l} L` }),
+          el("span", {
+            class: "code-label",
+            text: `${leg.volume_l} L ${leg.measured ? "measured" : "estimated"}`,
+          }),
         );
         row.append(
           button(
@@ -3273,6 +3295,7 @@ function legList(
       el("span", { class: "field-hint", text: hint }),
       select,
       volume.root,
+      measured.root,
       button(
         "Add",
         () => {
@@ -3290,8 +3313,13 @@ function legList(
             );
             return;
           }
-          collected.push({ vessel_id: id, volume_l: litres });
+          collected.push({
+            vessel_id: id,
+            volume_l: litres,
+            measured: measured.input.checked,
+          });
           volume.input.value = "";
+          measured.input.checked = false;
           message.replaceChildren();
           draw();
           onChange();
@@ -3358,7 +3386,10 @@ function lotSource(
   // Which of the lot's vessels this rack is drawing from, and how much of each.
   // Everything is ticked and full by default, because "rack until it is empty"
   // is the case this layout exists for and the other cases are edits to it.
-  const taking = new Map<string, { on: boolean; l: number; max: number }>();
+  const taking = new Map<
+    string,
+    { on: boolean; l: number; max: number; measured: boolean }
+  >();
 
   function drawHeld(): void {
     const lot = byLot.get(choose.value);
@@ -3369,7 +3400,12 @@ function lotSource(
     held.replaceChildren(
       ...lot.vessels.map((v) => {
         const have = v.current_volume_l ?? 0;
-        const state = taking.get(v.id) ?? { on: true, l: have, max: have };
+        const state = taking.get(v.id) ?? {
+          on: true,
+          l: have,
+          max: have,
+          measured: true,
+        };
         taking.set(v.id, state);
 
         const tick = checkbox(`${v.name}, ${Math.round(have)} L`, state.on);
@@ -3378,15 +3414,26 @@ function lotSource(
           type: "number",
           value: String(state.l),
         });
+        // Emptying a vessel is the one case where the amount is not a guess:
+        // the number is whatever the system already believed was in there, and
+        // taking all of it is exact whatever that number's own provenance was.
+        // Anything less is somebody's eye, so the default flips with the amount.
+        const said = checkbox("Measured rather than estimated", state.l >= have);
+        on(said.input, "change", () => {
+          state.measured = said.input.checked;
+          onChange();
+        });
         on(tick.input, "change", () => {
           state.on = tick.input.checked;
           onChange();
         });
         on(amount.input, "input", () => {
           state.l = Number(amount.value()) || 0;
+          said.input.checked = state.l >= state.max;
+          state.measured = said.input.checked;
           onChange();
         });
-        return el("div", { class: "rows" }, tick.root, amount.root);
+        return el("div", { class: "rows" }, tick.root, amount.root, said.root);
       }),
     );
   }
@@ -3410,7 +3457,11 @@ function lotSource(
     legs: () =>
       [...taking.entries()]
         .filter(([, t]) => t.on && t.l > 0)
-        .map(([vessel_id, t]) => ({ vessel_id, volume_l: t.l })),
+        .map(([vessel_id, t]) => ({
+          vessel_id,
+          volume_l: t.l,
+          measured: t.measured,
+        })),
     // What stays behind, which is the number this layout exists to show.
     remaining: () =>
       [...taking.values()].reduce((a, t) => a + (t.on ? t.max - t.l : t.max), 0),

@@ -14,7 +14,8 @@
 --                  supabase/migrations/0102_a_tank_takes_more_than_one_pressing.sql,
 --                  supabase/migrations/0103_racking_keeps_what_was_already_there.sql,
 --                  supabase/migrations/0139_a_gas_is_a_term.sql,
---                  supabase/migrations/0140_wine_can_go_on_the_ground.sql]
+--                  supabase/migrations/0140_wine_can_go_on_the_ground.sql,
+--                  supabase/migrations/0141_a_volume_says_whether_it_was_measured.sql]
 -- Axioms enforced: T0-2 (loss is derived, never stored), T0-3 (provenance on
 --                  every event), T0-5 (append only)
 -- Open sorries: S-21 (quantity stored and derivable), S-22 (a blend across
