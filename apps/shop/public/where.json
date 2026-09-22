@@ -1,0 +1,11 @@
+{
+  "_": "Where this app's kernel can be reached. Edited and reloaded, never rebuilt. The app tries these in order and uses the first that answers, remembering the winner per device. See packages/core/src/where.ts and docs/moving-off-tailscale.md.",
+  "cellar": [
+    { "name": "cloudflare", "url": "https://api.vsv.vitaesprings.com" },
+    { "name": "tailscale", "url": "https://vsv-desktop.tail7e3cc4.ts.net:8443" }
+  ],
+  "practice": [
+    { "name": "cloudflare", "url": "https://practice.vsv.vitaesprings.com" },
+    { "name": "tailscale", "url": "https://vsv-desktop.tail7e3cc4.ts.net:8444" }
+  ]
+}

@@ -3,7 +3,8 @@
 // Purpose: "The DOM primitives every periphery needs, in core, because a second
 //           module now needs them and that is what core is for."
 // Depends on: [CLAUDE.md]
-// Depended on by: [packages/cellar/src/ui.ts]
+// Depended on by: [packages/cellar/src/ui.ts,
+//                 packages/core/src/index.ts]
 // ---------------------------------------------------------------------------
 //
 // These lived in `cellar/ui.ts` until the shop module arrived. CLAUDE.md says

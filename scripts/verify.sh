@@ -96,7 +96,21 @@ for f in $(tracked); do
   # nothing the author could do about it from that end. The pattern is now clear
   # enough to state: the list is the bug, and the next language added to this
   # repository will arrive the same way unless somebody thinks to come here.
-  case "$f" in *.md|*.sql|*.sh|*.ps1|*.py|*.ts) ;; *) continue ;; esac
+  #
+  # **The list is gone, which is the fifth instance answering the first four.**
+  # YAML arrived on 2026-09-21 in deploy/cloudflared/config.yml, carrying a
+  # header nobody read, and the paragraph above predicted exactly that and did
+  # not prevent it. Writing a thing down is not a check. So the question is now
+  # asked of the file rather than of its name: is it text, and does it carry a
+  # header. `grep -I` is what makes the first half true, by treating a binary as
+  # non-matching, which is how the icons and the photographs stay out without
+  # anybody enumerating them.
+  #
+  # The parser below understands three comment markers, `--`, `#` and `//`, plus
+  # the `---` fence markdown uses. A language whose comments look like none of
+  # those will produce a header this cannot read, and that will be visible as a
+  # file with no edges rather than as silence.
+  grep -Iq . "$f" 2>/dev/null || continue
   grep -q 'Depends on:' "$f" 2>/dev/null || continue
   echo "$f" >> "$headered"
 

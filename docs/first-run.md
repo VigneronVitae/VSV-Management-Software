@@ -2,7 +2,8 @@
 Type: reference
 Purpose: "The shortest path from a fresh clone to a real record in the database, and the way to stand up an isolated stack so that walking it a second time cannot touch a cellar that has wine in it."
 Depends on: [README.md]
-Depended on by: [docs/session-reports/index.md]
+Depended on by: [docs/session-reports/index.md,
+                 docs/moving-off-tailscale.md]
 ---
 
 # The first run

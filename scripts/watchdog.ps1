@@ -4,7 +4,9 @@
 #           noticing it went down."
 # Depends on: [CLAUDE.md]
 # Depended on by: [scripts/watchdog-loop.ps1, scripts/watchdog-install.ps1,
-#                  docs/status-ledger.md]
+#                  docs/status-ledger.md,
+#                  docs/moving-off-tailscale.md,
+#                  deploy/cloudflared/config.yml]
 # ---------------------------------------------------------------------------
 #
 # Written after the cellar was offline for eight hours overnight. Two things had

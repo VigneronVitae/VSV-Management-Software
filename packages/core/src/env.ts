@@ -1,3 +1,11 @@
+// ---------------------------------------------------------------------------
+// Type: source
+// Purpose: "Which kernel this app talks to, and which of the two stacks: the
+//           cellar that holds the vintage or the practice one where deleting
+//           is allowed."
+// Depends on: [packages/core/src/where.ts]
+// Depended on by: [packages/core/src/where.ts, packages/core/src/index.ts]
+// ---------------------------------------------------------------------------
 // Vite substitutes these at build time. Declared here rather than pulling in
 // vite/client so that core stays buildable by anything, not just by vite.
 declare global {
@@ -5,6 +13,8 @@ declare global {
     readonly env: Record<string, string | undefined>;
   }
 }
+
+import { whereFound } from "./where.ts";
 
 export type KernelConfig = {
   url: string;
@@ -44,6 +54,8 @@ export type Backend = "cellar" | "practice";
  * behind it must not offer the switch, or somebody turns it on and every screen
  * fails to load with no explanation. */
 export function practiceAvailable(): boolean {
+  const found = whereFound();
+  if (found?.practice && found.practice.length > 0) return true;
   return Boolean(
     import.meta.env.VITE_PRACTICE_URL && import.meta.env.VITE_PRACTICE_ANON_KEY,
   );
@@ -72,8 +84,33 @@ export function setBackend(backend: Backend): void {
   }
 }
 
+// Where the kernel is, in the order the answers are trusted.
+//
+// 1. `where.json`, served beside the app and edited without rebuilding. It is
+//    the reason changing transport is a config change rather than a migration.
+// 2. What the build was given, which is what every app used before 0141's day
+//    and is what a build with no `where.json` beside it still uses.
+//
+// The key is allowed to come from the build even when the url comes from the
+// file, because every route in `where.json` is normally the same Supabase
+// instance reached a different way, and repeating the key in each entry would
+// be four copies of one string to keep in step.
+function fromWhere(which: "cellar" | "practice"): KernelConfig | null {
+  const route = whereFound()?.[which]?.[0];
+  if (!route) return null;
+  const anonKey =
+    route.anonKey ??
+    (which === "practice"
+      ? import.meta.env.VITE_PRACTICE_ANON_KEY
+      : import.meta.env.VITE_SUPABASE_ANON_KEY);
+  if (!anonKey) return null;
+  return { url: route.url, anonKey };
+}
+
 export function readConfig(): KernelConfig {
   if (currentBackend() === "practice") {
+    const found = fromWhere("practice");
+    if (found) return found;
     const url = import.meta.env.VITE_PRACTICE_URL;
     const anonKey = import.meta.env.VITE_PRACTICE_ANON_KEY;
     // Checked rather than assumed, because `currentBackend` already refuses to
@@ -87,13 +124,20 @@ export function readConfig(): KernelConfig {
     return { url, anonKey };
   }
 
+  const found = fromWhere("cellar");
+  if (found) return found;
+
   const url = import.meta.env.VITE_SUPABASE_URL;
   const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
   if (!url || !anonKey) {
+    // Both sources named, because "it is not configured" is useless when there
+    // are two places it could have been.
     throw new MissingConfig(
-      "Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in apps/web/.env.local. " +
-        "See apps/web/.env.example.",
+      "No kernel to talk to. Either serve a where.json beside this app listing " +
+        "at least one route, or set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY " +
+        "in the app's .env.local. See apps/web/.env.example and " +
+        "docs/moving-off-tailscale.md.",
     );
   }
   return { url, anonKey };

@@ -1,0 +1,76 @@
+# ---------------------------------------------------------------------------
+# Type: config
+# Purpose: "Routes the five apps and the two Supabase endpoints through one
+#           Cloudflare tunnel, keeping every path the same as Tailscale served."
+# Depends on: [docs/moving-off-tailscale.md, scripts/watchdog.ps1]
+# Depended on by: [docs/status-ledger.md]
+# ---------------------------------------------------------------------------
+#
+# Copy to %USERPROFILE%\.cloudflared\config.yml and put the tunnel's UUID in the
+# two places marked. `cloudflared tunnel create vsv` prints it and writes the
+# matching credentials file beside it.
+#
+# **The paths match what Tailscale served, on purpose.** Every app is built with
+# `base: "./"` so its assets are relative, which means it works under any prefix
+# as long as the server is serving at that prefix. `tailscale serve --set-path`
+# stripped the prefix before forwarding; cloudflared does not. So each preview
+# has to be started with its own `--base`, and scripts/watchdog.ps1 is where that
+# happens. Without it every app returns 404 through the tunnel and 200 locally,
+# which is the worst kind of difference to debug.
+#
+# Ingress rules are matched in order and the first match wins, so the catch-all
+# must stay last.
+
+tunnel: PUT-THE-TUNNEL-UUID-HERE
+credentials-file: C:\Users\Randy\.cloudflared\PUT-THE-TUNNEL-UUID-HERE.json
+
+# Long enough for a photograph taken in a barn on a bad connection, short enough
+# that a dead backend is noticed. The default of 30s is too short for an upload
+# over rural LTE.
+originRequest:
+  connectTimeout: 30s
+  noTLSVerify: false
+
+ingress:
+  # The five apps, on the paths they already have. The launcher is the catch-all
+  # at the bottom, which is what it was on Tailscale too.
+  - hostname: vsv.vitaesprings.com
+    path: ^/cellar
+    service: http://localhost:5176
+
+  - hostname: vsv.vitaesprings.com
+    path: ^/shop
+    service: http://localhost:5175
+
+  - hostname: vsv.vitaesprings.com
+    path: ^/vineyard
+    service: http://localhost:5179
+
+  - hostname: vsv.vitaesprings.com
+    path: ^/books
+    service: http://localhost:5178
+
+  - hostname: vsv.vitaesprings.com
+    path: ^/inventory
+    service: http://localhost:5183
+
+  # The API, on its own hostname rather than a port, because a port number in a
+  # URL is a thing Cloudflare will not route and the apps read this from
+  # VITE_SUPABASE_URL at build time anyway.
+  - hostname: api.vsv.vitaesprings.com
+    service: http://localhost:54321
+
+  # Practice mode, the second stack, where resetting and deleting are allowed.
+  # Worth routing: it is the only place anybody can be shown how something works
+  # without touching the vintage.
+  - hostname: practice.vsv.vitaesprings.com
+    service: http://localhost:54421
+
+  # The front door. Last, because the first matching rule wins and an unanchored
+  # hostname rule above would swallow every path beneath it.
+  - hostname: vsv.vitaesprings.com
+    service: http://localhost:5177
+
+  # cloudflared requires a final catch-all. Anything not named above is refused
+  # rather than quietly forwarded somewhere.
+  - service: http_status:404
