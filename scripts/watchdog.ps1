@@ -81,8 +81,8 @@ param(
     @{ name = "cellar";   dir = "apps\web";      port = 5176 },
     @{ name = "shop";     dir = "apps\shop";     port = 5175 },
     @{ name = "launcher"; dir = "apps\launcher"; port = 5177 },
-    @{ name = "vineyard"; dir = "appsineyard"; port = 5179 },
-    @{ name = "books";    dir = "appsooks";    port = 5178 }
+    @{ name = "vineyard"; dir = "apps\vineyard"; port = 5179 },
+    @{ name = "books";    dir = "apps\books";    port = 5178 }
   ),
 
   # Where the daily copy of everything lands.

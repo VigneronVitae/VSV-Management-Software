@@ -139,6 +139,49 @@ for f in $(tracked); do
   done
 done
 
+# Control characters in tracked text, which is a repeat injury rather than a
+# hypothetical.
+#
+# docs/session-reports/modularization-progress.md wrote this up on 2026-09-13:
+# a Python string holding a Windows path turns the escape for backspace and the
+# escape for vertical tab into those characters, silently, and the result looks
+# right in most viewers. On 2026-09-21 it happened again, to
+# scripts/watchdog.ps1, where the vineyard and books app directories became
+# control characters. The file still parsed, because such a character inside a
+# string literal is perfectly valid PowerShell, so the parse check written that
+# same day passed. What it meant was that the watchdog could not find two of the
+# five apps it exists to restart, and would have reported healthy while doing
+# nothing.
+#
+# It then happened a third time, to this file, while this check was being added:
+# the obvious way to write the pattern is a bracket expression full of hex
+# escapes, and those are exactly what a Python string eats. So the pattern is a
+# POSIX class instead. The first attempt at that used 'not printable and not
+# space', which in the C locale means 'not ASCII', and flagged every file
+# holding a u-umlaut: Gruner Veltliner appears in this repository a great deal.
+# [[:cntrl:]] is the class that actually means control character. Tab, newline
+# and carriage return are legitimate and are stripped first, because a bracket
+# expression cannot subtract. The lesson is the extension list's, two checks
+# above: name the property, not the instances, and then check that the name is
+# the property you meant.
+#
+# grep -I keeps the icons and the photographs out without anybody listing them.
+bad_bytes=''
+for f in $(tracked); do
+  grep -Iq . "$f" 2>/dev/null || continue
+  # The write-up that named this bug illustrates it with the characters
+  # themselves, and removing them would delete the explanation.
+  case "$f" in docs/session-reports/modularization-progress.md) continue ;; esac
+  if LC_ALL=C tr -d '\t\n\r' < "$f" 2>/dev/null | LC_ALL=C grep -q '[[:cntrl:]]'; then
+    bad_bytes="$bad_bytes $f"
+  fi
+done
+if [ -n "$bad_bytes" ]; then
+  fail "control characters in tracked text, which is what a Windows path in a Python string turns into:$bad_bytes"
+else
+  pass 'no tracked text file carries a stray control character'
+fi
+
 # An edge naming a path that does not exist.
 while IFS=$'\t' read -r from dir to; do
   [ -e "$to" ] || fail "$from: '$dir' names $to, which does not exist"

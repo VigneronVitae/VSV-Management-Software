@@ -1514,3 +1514,41 @@ conclude the cellar guesses more than it does.
 volumes are always one answer. The second is a real resolution for at least two of them and
 cheaper than the first.
 *Load-bearing:* no. Nothing is recorded incorrectly; a proportion is reported pessimistically.
+
+
+**S-142. The stores app is built and reachable from nowhere.**
+`packages/inventory` and `apps/inventory` ship, four screens, registered in the contract, and
+`module.path` set. Nothing serves it. Four places name a port and they disagree:
+`deploy/cloudflared/config.yml` says 5183, `apps/inventory/vite.config.ts` says 5182 for the dev
+server, `scripts/watchdog.ps1` does not list the app at all, and `tailscale serve` has no
+`/inventory` route. So the front door draws it as openable and it opens onto nothing.
+The cause is ordinary: the other four apps were each given a port by the session that routed them,
+and this one was built in a session that ended before routing. The disagreement between the four
+declarations is the part worth noticing, because nothing checks that a module with a path is
+actually served, and nothing checks that the ports in those four files agree.
+*Resolves when:* inventory has one port, named the same in all four places, and something asserts
+that every module carrying a path has a server behind it. The second half is the more valuable and
+is about ten lines.
+*Load-bearing:* no, in the sense that nothing is recorded wrongly. Yes, in the sense that the
+front door offers a door that does not open, which is S-94's failure mode returning after S-94 was
+narrowed to one module.
+
+
+**S-143. Four surfaces built this week have never been used by a person.**
+An agent cannot sign in, so everything below typechecks, lints, passes the gate, and has been
+exercised only against the database directly or with stand-in markup:
+- the two racking layouts, including the measured-against-estimated toggle and the
+  remaining-litres readout, which is the number the second layout exists to show;
+- the dump path, where `dump_wine` itself was exercised against a real placement inside a
+  transaction and rolled back, and only the screen around it is unproven;
+- the route probe in `where.json`, tested against one live route and one dead one on the desktop,
+  never from a phone, never on cellular, and never against a route that hangs rather than refusing
+  quickly, which is the case its 2.5 second timeout is a guess about;
+- the books confirm queue, where 799 transactions are loaded and 205 carry a category and nobody
+  has tapped the button.
+This is not a defect and it is not nothing. The pattern from the first pick on 2026-09-14 is the
+argument: two defects reached a phone in a vineyard, and an assertion passed until somebody typed a
+real number into the running cellar. Screens fail in ways the database cannot be asked about.
+*Resolves when:* each has been used once, for real, by somebody who was trying to get work done
+rather than trying it out.
+*Load-bearing:* no. It is a statement about confidence rather than about correctness.
