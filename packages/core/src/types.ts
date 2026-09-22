@@ -31,6 +31,9 @@ export type TermKind =
   // fixed enum, which stopped being true in 0027.
   | "gas"
   | "rack_method"
+  // 0142. Loss or flaw, which is what he said when asked. Which flaw is the
+  // note's job.
+  | "dump_reason"
   // The books module's one vocabulary. Added here rather than cast at the call
   // site, which is what the shop and the vineyard did with theirs, and is why
   // S-61 is still open five vocabularies later.

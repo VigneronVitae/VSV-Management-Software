@@ -7,7 +7,8 @@
 --              supabase/migrations/0013_close_on_empty.sql,
 --              supabase/migrations/0057_the_contract.sql]
 -- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql,
---                  packages/cellar/src/index.ts]
+--                  packages/cellar/src/index.ts,
+--                  supabase/migrations/0142_a_dump_says_why.sql]
 -- Axioms enforced: T0-5. A dump is an append: a placement closes, a quantity
 --                  shrinks, an event says so. Nothing is deleted and the lot's
 --                  history keeps the wine that used to be there.

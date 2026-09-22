@@ -952,6 +952,12 @@ itself. The suite's own note says an assertion that catches any error covers the
 and no site in it, and 186 sites is the size of the gap between what the assertions are
 believed to check and what they check. **`claim_account` was two of those 186 tonight, found
 by this run and fixed before landing, which is the argument for the whole apparatus.**
+*Measured again 2026-09-22, at `0142`:* 386 refusal sites uncovered, and `check` 44 against
+0, `unique` 22 against 10, `trigger` 1 against 0, `policy` 107 against 32. Roughly double,
+because the thing this entry says happens kept happening: no session between the two runs
+ran the ratchet. The two sites `0142` added, `dump_wine`'s reason check and its refusal, are
+covered; the eleven other `dump_wine` sites are from `0140` and are not. The baseline was
+not re-cut, for the reason above.
 
 **S-80. Only barrels have a colour, and oak is not the only thing that stains.**
 `barrel_colour` derives from placements into vessels whose type is `barrel`, and nothing

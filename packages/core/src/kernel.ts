@@ -2951,13 +2951,16 @@ export async function markAttachment(args: {
 // different facts. 0140.
 export async function dumpWine(args: {
   sources: RackLeg[];
+  /** A dump_reason value. 0142 refuses anything not on the list. */
   reason?: string | null;
   at?: string | null;
+  note?: string | null;
 }): Promise<{ dumped_l: number; lots: Array<{ node_id: Uuid; event_id: Uuid }> }> {
   const { data, error } = await kernel().rpc("dump_wine", {
     p_sources: args.sources,
     p_reason: args.reason ?? null,
     p_at: args.at ?? null,
+    p_note: args.note ?? null,
   });
   if (error) throw new KernelError(error);
   return data as { dumped_l: number; lots: Array<{ node_id: Uuid; event_id: Uuid }> };

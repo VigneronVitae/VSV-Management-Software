@@ -3530,11 +3530,12 @@ function rackScreen(): HTMLElement {
       "What the receiving vessel held before the wine arrived.",
     );
     const method = termPick("How it was moved", await terms("rack_method"));
-    // Free text on purpose: 0140 says why, and the words people actually write
-    // here are what would tell us the vocabulary.
-    const dumpWhy = field({
-      label: "Why it is going away",
-      placeholder: "what was wrong with it",
+    // A list since 0142, because he said what the words are. The note carries
+    // what the list is too coarse for: which flaw, where it leaked.
+    const dumpWhy = termPick("Why it is going away", await terms("dump_reason"));
+    const dumpNote = field({
+      label: "What happened",
+      placeholder: "VA, brett, split hose",
     });
     const lees = field({
       label: "Lees carried, litres",
@@ -3713,6 +3714,7 @@ function rackScreen(): HTMLElement {
               "its history and stops being anywhere.",
           ),
           dumpWhy.root,
+          dumpNote.root,
           button(
             "Pour it away",
             async () => {
@@ -3730,7 +3732,11 @@ function rackScreen(): HTMLElement {
                 return;
               }
               try {
-                const out = await dumpWine({ sources: s, reason: dumpWhy.value() });
+                const out = await dumpWine({
+                  sources: s,
+                  reason: dumpWhy.value(),
+                  note: dumpNote.value() || null,
+                });
                 message.replaceChildren(
                   banner(
                     `Poured away. ${Math.round(out.dumped_l)} L, ` +
@@ -5246,8 +5252,44 @@ function newPickScreen(): HTMLElement {
 
   void (async () => {
     try {
-      const [vineRows, blockRows] = await Promise.all([vineyards(), blocks()]);
-      const variety = termPicker("variety", { label: "Variety", stickyKey: "variety" });
+      const [vineRows, blockRows, plantRows] = await Promise.all([
+        vineyards(),
+        blocks(),
+        plantings(),
+      ]);
+
+      // "When doing a pick it should only offer the varieties in the blocks
+      // selected." What is planted where is the kernel's answer, from
+      // `planting_detail`; this only narrows the list to it. With no block
+      // ticked yet it narrows to the vineyard, which is still shorter than
+      // every variety anywhere.
+      //
+      // A block with no plantings recorded opens the whole list rather than
+      // closing it. An empty picker at seven in the morning with fruit on the
+      // truck is worse than a long one, and a missing planting is a vineyard
+      // record to fix later, not a reason the pick cannot start.
+      const variety = termPicker("variety", {
+        label: "Variety",
+        stickyKey: "variety",
+        rows: async () => {
+          const every = await terms("variety");
+          const chosen = ticked
+            .filter((t) => t.field.input.checked)
+            .map((t) => t.block.id);
+          const scope = chosen.length > 0 ? chosen : ticked.map((t) => t.block.id);
+          if (scope.length === 0) return every;
+          const unrecorded = scope.some(
+            (id) => !plantRows.some((p) => p.block_id === id),
+          );
+          if (unrecorded) return every;
+          const planted = new Set(
+            plantRows
+              .filter((p) => scope.includes(p.block_id))
+              .map((p) => p.variety_id),
+          );
+          return every.filter((t) => planted.has(t.id));
+        },
+      });
       const vintage = field({
         label: "Vintage",
         type: "number",
@@ -5257,7 +5299,6 @@ function newPickScreen(): HTMLElement {
         // pick can be. 0049 requires one of the two and this is always the year.
         hint: "Fruit picked now is of this year.",
       });
-      await variety.reload();
 
       // The vineyard first, and the blocks after. "You should start a pick by
       // selecting a vineyard, and then it presents the blocks within the
@@ -5292,6 +5333,8 @@ function newPickScreen(): HTMLElement {
           return;
         }
         ticked = mine.map((b) => ({ field: checkbox(b.name), block: b }));
+        for (const t of ticked)
+          on(t.field.input, "change", () => void variety.reload());
         blockBox.replaceChildren(
           el("span", { class: "field-label", text: "Blocks" }),
           ...ticked.map((t) => t.field.root),
@@ -5308,8 +5351,11 @@ function newPickScreen(): HTMLElement {
       on(vineyardPick, "change", () => {
         lastVineyard = vineyardPick.value;
         drawBlocks();
+        void variety.reload();
       });
       drawBlocks();
+      // After the blocks, because the list it offers is read from them.
+      await variety.reload();
 
       body.replaceChildren(
         rows(

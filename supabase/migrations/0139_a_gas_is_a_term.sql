@@ -5,7 +5,8 @@
 --           strings somebody spells four ways."
 -- Depends on: [supabase/migrations/0027_term_kind_registry.sql,
 --              supabase/migrations/0014_rack.sql]
--- Depended on by: [docs/status-ledger.md, packages/cellar/src/index.ts]
+-- Depended on by: [docs/status-ledger.md, packages/cellar/src/index.ts,
+--                  supabase/migrations/0142_a_dump_says_why.sql]
 -- Axioms enforced: AR-E5. Registry rows rather than an enum, so a cellar that
 --                  blankets with something else adds a row instead of waiting
 --                  for a migration.

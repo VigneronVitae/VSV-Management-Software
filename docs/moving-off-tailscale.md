@@ -50,6 +50,17 @@ failure mode if it goes wrong at 6am is that nobody can record a pressing.
 This document exists so that the decision is a decision. If the answer is to do
 it now, everything is here.
 
+**Decided 2026-09-22: Tailscale paid for one month.** The move happens after
+harvest, before that month runs out (around 2026-10-22).
+
+One thing has changed since this was written, and it makes the move smaller.
+`packages/core/src/where.ts` means the API hostname is no longer compiled in:
+each app reads `where.json` beside it, which already lists Cloudflare first and
+Tailscale second, and uses whichever answers. So steps 8 and 9 below, the five
+`.env.local` edits and the five rebuilds, are no longer needed, and rolling back
+is editing `where.json` rather than rebuilding. The origin still changes for the
+apps themselves, so the one-time sign-out in consequence 3 still applies.
+
 ## What is already true
 
 - `cloudflared` 2026.8.3 is installed on the desktop.

@@ -98,7 +98,8 @@
 --              supabase/migrations/0137_harvest_so_far.sql,
 --              supabase/migrations/0138_the_repository_names_no_vendor.sql,
 --              supabase/migrations/0140_wine_can_go_on_the_ground.sql,
---              supabase/migrations/0141_a_volume_says_whether_it_was_measured.sql]
+--              supabase/migrations/0141_a_volume_says_whether_it_was_measured.sql,
+--              supabase/migrations/0142_a_dump_says_why.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh, scripts/rpc-args.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -3746,8 +3747,13 @@ begin
   -- fixture names one. This broke when the column moved, which is the fixture
   -- doing its job: a test that kept compiling against a column that no longer
   -- existed would be a test of nothing.
+  -- Named ASSERT and not after a real vineyard. It was called Eola Springs
+  -- until that vineyard was entered for real, at which point `on conflict do
+  -- nothing` skipped the fixture on the name and the block after it failed its
+  -- foreign key: the seguin_moreau collision again, a fixture borrowing the
+  -- winery's own vocabulary.
   insert into vineyard (id, name)
-    values ('00000000-0000-0000-0000-00000000a0d1', 'Eola Springs')
+    values ('00000000-0000-0000-0000-00000000a0d1', 'ASSERT fixture vineyard')
     on conflict do nothing;
   insert into block (id, vineyard_id, name)
     values ('00000000-0000-0000-0000-00000000a0b1',
@@ -4540,8 +4546,10 @@ begin
   -- saying why claimed `term_kind` was a fixed enum, which `0027` made untrue and
   -- nobody came back to. What sits over the wine and how it was moved are facts
   -- about winemaking, not about the cellar's software.
-  if (select count(*) from term_kind where module <> 'core') <> 17 then
-    raise exception 'FAIL: % of the kinds are owned by a module other than core, and the claim is seventeen',
+  -- Eighteen since 0142 registered `dump_reason` to `winemaking`: loss or flaw,
+  -- the two words he gave when asked why wine gets poured away.
+  if (select count(*) from term_kind where module <> 'core') <> 18 then
+    raise exception 'FAIL: % of the kinds are owned by a module other than core, and the claim is eighteen',
       (select count(*) from term_kind where module <> 'core');
   end if;
   perform test_ok('the registry says which module owns each kind, and fourteen of them are not core''s');
@@ -12637,7 +12645,7 @@ begin
   perform test_ok('dumping more than a vessel holds, and dumping out of nothing, each refuse in a sentence');
 
   -- Part of it. The vessel and the lot both shrink and neither closes.
-  perform dump_wine(jsonb_build_array(jsonb_build_object('vessel_id', ves, 'volume_l', 40)), 'lees');
+  perform dump_wine(jsonb_build_array(jsonb_build_object('vessel_id', ves, 'volume_l', 40)), 'flaw', null, 'volatile');
   select volume_l into held from placement where vessel_id = ves and to_at is null;
   select quantity into q from node where id = lot;
   if held <> 60 or q <> 60 then
@@ -12647,7 +12655,7 @@ begin
 
   -- The rest. 0013 closes the lot because the quantity reached nothing, which is
   -- that migration's rule and not this one's.
-  perform dump_wine(jsonb_build_array(jsonb_build_object('vessel_id', ves, 'volume_l', 60)), 'the rest');
+  perform dump_wine(jsonb_build_array(jsonb_build_object('vessel_id', ves, 'volume_l', 60)), 'loss');
   if exists (select 1 from placement where vessel_id = ves and to_at is null) then
     raise exception 'FAIL: dumping the last of a vessel left the placement open';
   end if;
@@ -12736,6 +12744,65 @@ begin
     raise exception 'FAIL: a volume recorded before the flag existed was given one anyway';
   end if;
   perform test_ok('volumes recorded before the flag existed still say nothing, rather than being given an answer');
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 0142. A dump says why.
+-- ---------------------------------------------------------------------------
+--
+-- "Loss, flaw maybe?" and "gravity/pump/bulldog".
+do $$
+declare
+  u   uuid;
+  ves uuid;
+  lot uuid;
+  ev  jsonb;
+begin
+  select id into u from app_user where role = 'admin' limit 1;
+  perform test_act_as(u);
+
+  insert into vessel (type_id, name) values (term_id('vessel_type','tank'), 'ASSERT dump tank 0142')
+    returning id into ves;
+  insert into node (stage, name, quantity, unit, vintage)
+    values ('maturation', 'ASSERT dump lot 0142', 50, 'L', 2026) returning id into lot;
+  insert into placement (node_id, vessel_id, volume_l, from_at)
+    values (lot, ves, 50, now());
+
+  -- A13. A word that is not on the list is refused and the list is named, so the
+  -- person reading the refusal knows what would have been accepted.
+  begin
+    perform dump_wine(jsonb_build_array(jsonb_build_object('vessel_id', ves, 'volume_l', 10)), 'lees');
+    raise exception 'FAIL: a dump reason that is not on the list was accepted';
+  exception when others then
+    if sqlerrm not like '%not a reason for dumping on the list%loss%flaw%' then raise; end if;
+  end;
+  if (select volume_l from placement where vessel_id = ves and to_at is null) <> 50 then
+    raise exception 'FAIL: a refused dump drained the vessel anyway';
+  end if;
+  perform test_ok('a dump reason off the list is refused, names the list, and drains nothing');
+
+  -- The note travels with the reason, because the list is for counting and the
+  -- note is for reading.
+  perform dump_wine(jsonb_build_array(jsonb_build_object('vessel_id', ves, 'volume_l', 10)),
+                    'flaw', null, 'brett');
+  select data into ev from event
+   where subject_id = lot and operation_id = term_id('operation', 'dump')
+   order by at desc limit 1;
+  if ev ->> 'reason' <> 'flaw' or ev ->> 'note' <> 'brett' then
+    raise exception 'FAIL: a dump recorded reason % and note %', ev ->> 'reason', ev ->> 'note';
+  end if;
+  perform test_ok('a dump records the reason from the list and the note beside it');
+
+  -- Still optional at the kernel. Refusing a terse record is not the kernel's job.
+  perform dump_wine(jsonb_build_array(jsonb_build_object('vessel_id', ves, 'volume_l', 5)));
+  perform test_ok('a dump with no reason at all is still accepted, because the kernel does not refuse a terse record');
+
+  if not exists (select 1 from term where kind = 'rack_method' and value = 'bulldog' and active) then
+    raise exception 'FAIL: the bulldog is not a way wine moves';
+  end if;
+  perform test_ok('the bulldog is a way wine moves, beside gravity and the pump');
+
+  perform test_act_as(null);
 end $$;
 
 do $$ begin raise notice '--- all assertions passed'; end $$;

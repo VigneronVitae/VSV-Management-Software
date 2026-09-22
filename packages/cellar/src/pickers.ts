@@ -46,15 +46,20 @@ type PickerOptions = {
   newAttributes?: () => Record<string, unknown>;
 };
 
+// Ticked, the field opens on this same value the next time the form is drawn,
+// until the app is reloaded (sticky.ts holds it in memory only). It was
+// labelled "keep", which he read and could not place: a title attribute
+// explained it, and a title is a hover, which a phone does not have. The label
+// has to say it on its own.
 function pinToggle(key: string, read: () => string): HTMLElement {
   const input = el("input", { type: "checkbox", class: "checkbox" });
   input.checked = isPinned(key);
   on(input, "change", () => setPinned(key, input.checked, read()));
   return el(
     "label",
-    { class: "pin", title: "Keep this value for the next one" },
+    { class: "pin", title: "Start on this value next time, until the app is reloaded" },
     input,
-    el("span", { text: "keep" }),
+    el("span", { text: "same next time" }),
   );
 }
 
@@ -109,9 +114,12 @@ export function termPicker(kind: TermKind, options: PickerOptions): Picker {
   async function load(selectId?: string): Promise<void> {
     const rows = await (options.rows ? options.rows() : terms(kind));
     loaded = rows;
+    // `||` and not `??`. An empty select's value is "", which is not nullish,
+    // so with `??` the pinned value was never reached and the box did nothing
+    // on any picker. R-2-5 found it and it sat in a review report unfixed.
     const wanted =
-      selectId ??
-      select.value ??
+      selectId ||
+      select.value ||
       (options.stickyKey ? stickyValue(options.stickyKey) : "");
     select.replaceChildren(
       ...(options.allowEmpty
@@ -201,8 +209,8 @@ export function locationPicker(options: PickerOptions): Picker {
   async function load(selectId?: string): Promise<void> {
     const rows = await locations();
     const wanted =
-      selectId ??
-      select.value ??
+      selectId ||
+      select.value ||
       (options.stickyKey ? stickyValue(options.stickyKey) : "");
     select.replaceChildren(
       ...(options.allowEmpty || rows.length === 0
@@ -281,8 +289,8 @@ export function partyPicker(options: PickerOptions): Picker {
     const facility = rows.find((p) => p.kind === "facility");
     const clients = rows.filter((p) => p.kind === "client");
     const wanted =
-      selectId ??
-      select.value ??
+      selectId ||
+      select.value ||
       (options.stickyKey ? stickyValue(options.stickyKey) : "");
 
     select.replaceChildren(
