@@ -6,7 +6,8 @@
 --              supabase/migrations/0008_fill_vessel.sql,
 --              supabase/migrations/0137_harvest_so_far.sql]
 -- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql,
---                  packages/cellar/src/index.ts]
+--                  packages/cellar/src/index.ts,
+--                  supabase/migrations/0143_a_record_can_say_when.sql]
 -- Axioms enforced: T0-4, applied to a number rather than to a record. The
 --                  person entering the volume says how well it is known and
 --                  nothing works it out for them, because a kernel that decided

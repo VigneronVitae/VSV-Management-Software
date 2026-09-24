@@ -99,7 +99,9 @@
 --              supabase/migrations/0138_the_repository_names_no_vendor.sql,
 --              supabase/migrations/0140_wine_can_go_on_the_ground.sql,
 --              supabase/migrations/0141_a_volume_says_whether_it_was_measured.sql,
---              supabase/migrations/0142_a_dump_says_why.sql]
+--              supabase/migrations/0142_a_dump_says_why.sql,
+--              supabase/migrations/0143_a_record_can_say_when.sql,
+--              supabase/migrations/0144_a_paper_says_what_money_was.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh, scripts/rpc-args.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -2693,7 +2695,11 @@ begin
   -- `attachment`'s own: read by the facility, insert only under your own name,
   -- delete only by an administrator. None reads blanket true. A mark is part of
   -- the photograph in every sense that matters, so it is governed like one.
-  want := '143';
+  -- 150 since 0144 added seven on the three paper tables: a read and an insert
+  -- on each, all is_admin(), and one update on `money_paper` that only fills an
+  -- empty photograph path. None reads blanket true. A receipt is the books, and
+  -- the books are administrators only.
+  want := '150';
   if have <> want then
     raise exception
       'FAIL: there are % policies in public and this suite was written against %. If that is deliberate, update this number, and judge the new policy in the disposition list below if it reads or writes blanket true', have, want;
@@ -3152,7 +3158,12 @@ begin
   -- anything with an absolute value of ten or more, so a coordinate in pixels
   -- never reaches the constraint. The check earns its place on 1.5, which the
   -- type accepts and the picture does not contain.
-  want := 'c=75 f=132 p=61 u=28';
+  -- c=75 f=132 p=61 u=28 before 0144, which added the three paper tables: four
+  -- checks (a paper's kind is a paper_kind, its class a money_class, its
+  -- direction out or in, its amount above nothing), eight keys (each table's
+  -- author, a reading to its paper and to its two terms, a match to its paper
+  -- and to its bank line) and three primary keys.
+  want := 'c=79 f=140 p=64 u=28';
   if have <> want then
     raise exception
       E'FAIL: the constraint inventory changed.\nnow:  %\nwas:  %\nIf that is deliberate, update this line in the same commit that changed the schema.', have, want;
@@ -3205,6 +3216,10 @@ begin
        -- product type already are. It is the fact a barrel's own colour is
        -- derived from, and no other column in this schema can answer it.
        || 'model_part.model_part_domain_is_a_part_domain, '
+       -- 0144. What a paper is and what it was for, each a term of its own
+       -- kind, the way line_attestation's class already is.
+       || 'money_paper_reading.money_paper_reading_class_is_a_money_class, '
+       || 'money_paper_reading.money_paper_reading_kind_is_a_paper_kind, '
        || 'node.node_colour_is_a_wine_colour, '
        || 'node.node_product_type_is_a_product_type, '
        || 'node.node_variety_is_a_variety, '
@@ -3491,7 +3506,11 @@ begin
   -- author: retiring a subject type must not silently erase what was pointed
   -- at. The author key is a plain no-action, matching `attachment.by_user`
   -- rather than inventing a stricter rule for the mark than the picture has.
-  want := 'a=76 c=31 n=9 r=16';
+  -- a=76 c=31 n=9 r=16 before 0144. Three cascades: a reading and a match go
+  -- with their paper, and a match goes with its bank line, the same way a
+  -- line's attestations already do. Five no-actions: three authors and the
+  -- two vocabulary keys, matching `line_attestation`.
+  want := 'a=81 c=34 n=9 r=16';
   if have <> want then
     raise exception
       E'FAIL: foreign key delete behaviour changed.\nnow:  %\nwas:  %\na is no action, c is cascade, n is set null, r is restrict.', have, want;
@@ -4405,7 +4424,20 @@ declare
     -- that somehow already exists in the table, where the walk would otherwise
     -- not terminate at all. Exercised in the 0132 block below, which builds
     -- three levels, renames the top and refuses a cycle.
-    'location_stays_a_tree'
+    'location_stays_a_tree',
+    -- `happening_at` has one null and it permits deliberately: a verb given no
+    -- time leaves whatever time an outer verb set, which is how a nested call
+    -- inherits it. Its one refusal, a time in the future, is compared against
+    -- `now()` and cannot see a null because the null returned first. Exercised
+    -- in the 0143 block below, which calls verbs with and without a time and
+    -- refuses tomorrow.
+    'happening_at',
+    -- `placement_keeps_time` reads two nullable columns. A null `to_at` is an
+    -- open placement and is read as infinity, which is what open means, so it
+    -- is overlapped by anything later. `from_at` is `not null`. Exercised in the
+    -- 0143 block below, which refuses both a departure before an arrival and two
+    -- things in one vessel over the same hours.
+    'placement_keeps_time'
   ];
 begin
   for r in
@@ -4548,8 +4580,11 @@ begin
   -- about winemaking, not about the cellar's software.
   -- Eighteen since 0142 registered `dump_reason` to `winemaking`: loss or flaw,
   -- the two words he gave when asked why wine gets poured away.
-  if (select count(*) from term_kind where module <> 'core') <> 18 then
-    raise exception 'FAIL: % of the kinds are owned by a module other than core, and the claim is eighteen',
+  -- Nineteen since 0144 registered `paper_kind` to `books`: receipt, check,
+  -- invoice, other. The books' second vocabulary, and the first whose terms
+  -- carry a rule (how many days either side a bank line can land) as data.
+  if (select count(*) from term_kind where module <> 'core') <> 19 then
+    raise exception 'FAIL: % of the kinds are owned by a module other than core, and the claim is nineteen',
       (select count(*) from term_kind where module <> 'core');
   end if;
   perform test_ok('the registry says which module owns each kind, and fourteen of them are not core''s');
@@ -12801,6 +12836,271 @@ begin
     raise exception 'FAIL: the bulldog is not a way wine moves';
   end if;
   perform test_ok('the bulldog is a way wine moves, beside gravity and the pump');
+
+  perform test_act_as(null);
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 0143. A record can say when.
+-- ---------------------------------------------------------------------------
+--
+-- "I didn't have time to mark the pressing yesterday so I want to do it today
+-- and backdate it to yesterday, while preserving the fact that it was
+-- backdated." And: "back timed in the same day, like if at the end of the day I
+-- batched the things I did throughout the day."
+do $$
+declare
+  u       uuid;
+  pick    uuid := '00000000-0000-0000-0000-00000000e301';
+  press   uuid := '00000000-0000-0000-0000-00000000e302';
+  tank    uuid := '00000000-0000-0000-0000-00000000e303';
+  tank2   uuid := '00000000-0000-0000-0000-00000000e304';
+  t_pick  timestamptz := now() - interval '30 hours';
+  t_press timestamptz := now() - interval '26 hours';
+  t_cut   timestamptz := now() - interval '25 hours 30 minutes';
+  t_done  timestamptz := now() - interval '25 hours';
+  load_id uuid;
+  cut_lot uuid;
+  out_js  jsonb;
+  n       int;
+begin
+  select id into u from app_user where role = 'admin' limit 1;
+  perform test_act_as(u);
+
+  update term set attributes = attributes || '{"tare_lbs": 60}'::jsonb
+   where kind = 'vessel_type' and value = 'picking_bin';
+  insert into vessel (id, name, type_id, capacity_l) values
+    (press, 'ASSERT 0143 press', term_id('vessel_type', 'press'), null),
+    (tank,  'ASSERT 0143 tank',  term_id('vessel_type', 'tank'), 1000),
+    (tank2, 'ASSERT 0143 tank 2', term_id('vessel_type', 'tank'), 1000);
+
+  -- A pick batched at the end of the day, with the morning's time on it.
+  perform add_bins_to_pick(
+    jsonb_build_object('id', pick, 'variety_id', term_id('variety', 'riesling'), 'vintage', 2026),
+    null, 2, term_id('vessel_type', 'picking_bin'), 'ASRT0143', 100, p_at => t_pick);
+  if exists (select 1 from placement where node_id = pick and from_at <> t_pick) then
+    raise exception 'FAIL: a backdated pick put its bins in at the time it was entered';
+  end if;
+  if (select picked from fruit_log where id = pick)
+     <> (t_pick at time zone 'America/Los_Angeles')::date then
+    raise exception 'FAIL: a backdated pick says it was picked on %, not %',
+      (select picked from fruit_log where id = pick), (t_pick at time zone 'America/Los_Angeles')::date;
+  end if;
+  perform test_ok('a pick batched later puts its bins in at the time given, and says it was picked that day');
+
+  -- The time is the verb's and nobody else's.
+  if occurred_at() <> now() then
+    raise exception 'FAIL: a backdated verb left its time behind for whatever runs next';
+  end if;
+  perform test_ok('a backdated verb''s time ends with the verb, so the next write is not misdated');
+
+  -- Yesterday's pressing, entered today: started, cut, finished.
+  out_js := start_press(array(select vessel_id from placement where node_id = pick and to_at is null),
+                        press, p_at => t_press);
+  load_id := (out_js ->> 'node_id')::uuid;
+  if exists (select 1 from placement where node_id = pick and to_at is distinct from t_press) then
+    raise exception 'FAIL: a backdated press emptied its bins at the time it was entered';
+  end if;
+  if (select from_at from placement where node_id = load_id) <> t_press then
+    raise exception 'FAIL: a backdated press put the load in the press at the time it was entered';
+  end if;
+
+  out_js := draw_cut(load_id, tank, 400, term_id('press_cut', 'free_run'), p_at => t_cut);
+  cut_lot := (select node_id from placement where vessel_id = tank and to_at is null);
+  if (select from_at from placement where vessel_id = tank and to_at is null) <> t_cut then
+    raise exception 'FAIL: a backdated cut went into its tank at the time it was entered';
+  end if;
+
+  perform finish_press(load_id, '{}'::jsonb, p_at => t_done);
+  if (select to_at from placement where node_id = load_id) <> t_done
+     or (select closed_at from node where id = load_id) <> t_done then
+    raise exception 'FAIL: a backdated press finished at the time it was entered';
+  end if;
+  perform test_ok('a pressing entered the next day is started, cut and finished at the times given');
+
+  -- **Preserving the fact.** Every event of that pressing says when it happened
+  -- and, separately, that it was entered later. Nothing is rewritten to do it.
+  select count(*) into n from event e
+   where e.subject_type = 'node' and e.subject_id in (load_id, cut_lot)
+     and not (e.at < e.created_at and entered_late(e));
+  if n > 0 then
+    raise exception 'FAIL: % event(s) of a backdated pressing do not say they were entered late', n;
+  end if;
+  if not exists (select 1 from node_history(load_id) h where h.entered_late and h.entered_at = now()) then
+    raise exception 'FAIL: the lot''s history does not show when the backdated pressing was entered';
+  end if;
+  perform test_ok('a backdated pressing''s events keep both times, and the history says it was entered late');
+
+  -- And a write made at the time is not late. `at` and `created_at` are the
+  -- same transaction clock, so there is no threshold to argue about.
+  perform rack(jsonb_build_array(jsonb_build_object('vessel_id', tank, 'volume_l', 100)),
+               jsonb_build_array(jsonb_build_object('vessel_id', tank2, 'volume_l', 100)));
+  if exists (select 1 from event e where e.created_at = now() and e.subject_type = 'node'
+               and e.operation_id = term_id('operation', 'rack') and entered_late(e)) then
+    raise exception 'FAIL: a rack recorded at the time it happened says it was entered late';
+  end if;
+  perform test_ok('a write made at the time is not marked entered late');
+
+  -- A13. The history cannot be made impossible. Racking out of the tank before
+  -- the cut went into it would take wine out of a vessel before it arrived.
+  begin
+    perform rack(jsonb_build_array(jsonb_build_object('vessel_id', tank, 'volume_l', 50)),
+                 jsonb_build_array(jsonb_build_object('vessel_id', press, 'volume_l', 50)),
+                 p_at => t_pick);
+    raise exception 'FAIL: a rack out of a tank before its wine went in was accepted';
+  exception when others then
+    if sqlerrm not like '%before it went in%' and sqlerrm not like '%already held something%' then raise; end if;
+  end;
+  -- And two things cannot be in one vessel over the same hours. A stretch that
+  -- has ended, because two open ones are the unique index's to refuse and that
+  -- index is asserted to separately.
+  insert into node (id, stage, name, quantity, unit, vintage)
+    values ('00000000-0000-0000-0000-00000000e305', 'maturation', 'ASSERT 0143 earlier', 10, 'L', 2026);
+  begin
+    insert into placement (node_id, vessel_id, volume_l, from_at, to_at)
+      values ('00000000-0000-0000-0000-00000000e305', tank, 10, t_press, t_done);
+    raise exception 'FAIL: a vessel was given a second thing over hours it already held one';
+  exception when others then
+    if sqlerrm not like '%already held something%' then raise; end if;
+  end;
+  perform test_ok('a backdated write that contradicts what a vessel held afterwards is refused, in a sentence');
+
+  -- A time in the future is a plan.
+  begin
+    perform happening_at(now() + interval '1 day');
+    raise exception 'FAIL: a time in the future was accepted as when something happened';
+  exception when others then
+    if sqlerrm not like '%in the future%' then raise; end if;
+  end;
+  perform test_ok('a time in the future is refused, because this records what happened');
+
+  perform test_act_as(null);
+end $$;
+
+
+-- ---------------------------------------------------------------------------
+-- 0144. A paper says what money was.
+-- ---------------------------------------------------------------------------
+--
+-- "I also want in books to be able to take a picture (receipt, check, invoice,
+-- etc) and then manually fill in information about it." With a suggested match,
+-- and invoices known to be paid or owed.
+do $$
+declare
+  u      uuid;
+  batch  uuid := '00000000-0000-0000-0000-00000000f401';
+  near   uuid := '00000000-0000-0000-0000-00000000f402';
+  far    uuid := '00000000-0000-0000-0000-00000000f403';
+  wrong  uuid := '00000000-0000-0000-0000-00000000f404';
+  paper  uuid := '00000000-0000-0000-0000-00000000f405';
+  other  uuid := '00000000-0000-0000-0000-00000000f406';
+  bill   uuid := '00000000-0000-0000-0000-00000000f407';
+  later  uuid := '00000000-0000-0000-0000-00000000f408';
+  p      record;
+  n      int;
+begin
+  select id into u from app_user where role = 'admin' limit 1;
+
+  -- Three bank lines for one amount: one a day after the receipt, one five
+  -- weeks before it, and one the right day going the wrong way.
+  insert into bank_import (id, filename, format) values (batch, 'ASSERT 0144', 'csv');
+  insert into bank_line (id, batch_id, row_no, at, amount, direction, description) values
+    (near,  batch, 1, current_date - 1,  42.17, 'Debit',  'ASSERT a shop'),
+    (far,   batch, 2, current_date - 40, 42.17, 'Debit',  'ASSERT a shop long ago'),
+    (wrong, batch, 3, current_date - 1,  42.17, 'Credit', 'ASSERT a refund');
+
+  -- The books are administrators only, and a paper is the books.
+  perform test_act_as(null);
+  begin
+    perform record_paper(paper, 'receipt', 'out', current_date - 2, 42.17);
+    raise exception 'FAIL: somebody who is not an administrator wrote a paper';
+  exception when others then
+    if sqlerrm not like '%administrators only%' then raise; end if;
+  end;
+  perform test_ok('a paper is refused to anybody who is not an administrator, like every row in the books');
+
+  perform test_act_as(u);
+
+  begin
+    perform record_paper(paper, 'napkin', 'out', current_date, 1);
+    raise exception 'FAIL: a kind of paper not on the list was accepted';
+  exception when others then
+    if sqlerrm not like '%not a kind of paper%receipt%' then raise; end if;
+  end;
+  begin
+    perform record_paper(paper, 'invoice', 'out', current_date, 10, p_due_on => current_date - 5);
+    raise exception 'FAIL: an invoice due before it was written was accepted';
+  exception when others then
+    if sqlerrm not like '%due before it was written%' then raise; end if;
+  end;
+  perform test_ok('a paper of no known kind, and an invoice due before its date, are each refused in a sentence');
+
+  -- The receipt. One suggestion: the near line. Not the old one, which is
+  -- outside a receipt's window, and not the credit, which goes the other way.
+  perform record_paper(paper, 'receipt', 'out', current_date - 2, 42.17, 'ASSERT a shop');
+  if (select array_agg(line_id) from paper_match_suggestion where paper_id = paper) is distinct from array[near] then
+    raise exception 'FAIL: a receipt was offered %, not only the line a day after it',
+      (select array_agg(line_id) from paper_match_suggestion where paper_id = paper);
+  end if;
+  perform test_ok('a receipt is offered the bank line with its amount, its direction and a date inside its window, and no other');
+
+  -- T0-5. A misread total is corrected by reading again, and the misreading stays.
+  perform record_paper(paper, 'receipt', 'out', current_date - 2, 42.71, 'ASSERT a shop');
+  if exists (select 1 from paper_match_suggestion where paper_id = paper) then
+    raise exception 'FAIL: a paper read as 42.71 is still offered a 42.17 transaction';
+  end if;
+  perform record_paper(paper, 'receipt', 'out', current_date - 2, 42.17, 'ASSERT a shop');
+  select * into p from money_paper_now where id = paper;
+  if p.readings <> 3 or p.amount <> 42.17 then
+    raise exception 'FAIL: three readings left % readings saying %', p.readings, p.amount;
+  end if;
+  perform test_ok('a paper read again says what the latest reading says, and every reading is kept');
+
+  -- T0-4. Nothing is matched until a person says so.
+  if p.matched then
+    raise exception 'FAIL: a paper was matched with nobody saying so';
+  end if;
+  perform match_paper(paper, near);
+  select * into p from money_paper_now where id = paper;
+  if not p.matched or p.line_ids is distinct from array[near] then
+    raise exception 'FAIL: a person matched a paper and it says matched %, lines %', p.matched, p.line_ids;
+  end if;
+  -- And a matched line is not offered to the next paper for the same amount.
+  perform record_paper(other, 'receipt', 'out', current_date - 2, 42.17);
+  if exists (select 1 from paper_match_suggestion where paper_id = other and line_id = near) then
+    raise exception 'FAIL: a bank line already matched to one paper was offered to another';
+  end if;
+  perform test_ok('a match is only ever a person''s, and a matched transaction is not offered to a second paper');
+
+  -- Taken back, and it is a suggestion again.
+  perform match_paper(paper, near, false);
+  select * into p from money_paper_now where id = paper;
+  if p.matched then
+    raise exception 'FAIL: a match taken back still counts';
+  end if;
+  perform test_ok('a match can be taken back, by appending, and the paper is unmatched again');
+
+  -- An invoice owed, overdue, and paid, all derived.
+  perform record_paper(bill, 'invoice', 'out', current_date - 30, 500, 'ASSERT a vendor',
+                       p_due_on => current_date - 1);
+  perform record_paper(later, 'invoice', 'out', current_date, 90, 'ASSERT a vendor',
+                       p_due_on => current_date + 30);
+  select * into p from money_paper_now where id = bill;
+  if not (p.owed and p.overdue) then
+    raise exception 'FAIL: an invoice due yesterday and unpaid says owed %, overdue %', p.owed, p.overdue;
+  end if;
+  select * into p from money_paper_now where id = later;
+  if not p.owed or p.overdue then
+    raise exception 'FAIL: an invoice due next month says owed %, overdue %', p.owed, p.overdue;
+  end if;
+  insert into bank_line (id, batch_id, row_no, at, amount, direction, description)
+    values ('00000000-0000-0000-0000-00000000f409', batch, 4, current_date, 500, 'Debit', 'ASSERT paying a vendor');
+  perform match_paper(bill, '00000000-0000-0000-0000-00000000f409');
+  select * into p from money_paper_now where id = bill;
+  if p.owed or p.overdue or not p.matched then
+    raise exception 'FAIL: a paid invoice still says owed %, overdue %', p.owed, p.overdue;
+  end if;
+  perform test_ok('an invoice is owed until matched and overdue after its due date, and paying it is matching it');
 
   perform test_act_as(null);
 end $$;

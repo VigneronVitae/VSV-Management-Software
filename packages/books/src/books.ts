@@ -7,7 +7,8 @@
 //              supabase/migrations/0125_the_categories_are_schedule_f.sql,
 //              supabase/migrations/0126_only_a_person_confirms.sql,
 //              packages/books/src/places.ts,
-//              supabase/migrations/0130_the_bank_says_more_than_a_name.sql]
+//              supabase/migrations/0130_the_bank_says_more_than_a_name.sql,
+//              supabase/migrations/0144_a_paper_says_what_money_was.sql]
 // Depended on by: [packages/books/src/index.ts,
 //                  packages/books/src/places.ts]
 // ---------------------------------------------------------------------------
@@ -43,17 +44,26 @@ import {
   lede,
   type MerchantSuggestion,
   type MoneyLine,
+  type MoneyPaper,
   type MoneyTally,
+  matchPaper,
   merchantSuggestions,
   moneyLine,
+  moneyPaper,
+  moneyPapers,
   moneyQueue,
   moneyTally,
   on,
+  type PaperSuggestion,
+  paperPhotoUrl,
+  paperSuggestions,
+  recordPaper,
   rows,
   signIn,
   summaryRow,
   type Term,
   terms,
+  uploadPaperPhoto,
   viewerScope,
 } from "core";
 import { type BookPlace, decode, encode, PILES, PLACES } from "./places.ts";
@@ -159,7 +169,10 @@ function backTo(place: BookPlace, label: string): HTMLElement {
 // ---------------------------------------------------------------------------
 
 async function moneyScreen(): Promise<HTMLElement> {
-  const tally = await moneyTally();
+  const [tally, papers] = await Promise.all([moneyTally(), moneyPapers()]);
+  const overdue = papers.filter((p) => p.overdue).length;
+  const owed = papers.filter((p) => p.owed).length;
+  const loose = papers.filter((p) => !p.matched).length;
   const by = new Map(tally.map((t) => [t.queue, t]));
   const total = tally.reduce((a, t) => a + t.net, 0);
   const lines = tally.reduce((a, t) => a + t.lines, 0);
@@ -197,6 +210,25 @@ async function moneyScreen(): Promise<HTMLElement> {
         : `${lines} transactions, ${money(total)} net.`,
     ),
     el("div", { class: "piles" }, ...piles),
+    // Papers. The button first, because the paper is usually in somebody's
+    // hand when they open this, and the count after, because an overdue invoice
+    // is the one number on this screen that gets worse by being left.
+    el("h2", { class: "section-head", text: "Papers" }),
+    button("Photograph a paper", () => go({ at: "paper", id: "new" })),
+    papers.length === 0
+      ? null
+      : button(
+          [
+            `${papers.length} paper${papers.length === 1 ? "" : "s"}`,
+            loose ? `${loose} not matched` : null,
+            owed ? `${owed} invoice${owed === 1 ? "" : "s"} owed` : null,
+            overdue ? `${overdue} overdue` : null,
+          ]
+            .filter(Boolean)
+            .join(", "),
+          () => go({ at: "papers" }),
+          overdue ? "primary" : "secondary",
+        ),
     el(
       "p",
       { class: "crumb" },
@@ -425,6 +457,9 @@ async function lineScreen(id: string): Promise<HTMLElement> {
     );
   }
   if (vocabulary.length === 0) vocabulary = await terms("money_class");
+  // Papers somebody matched to this transaction. 0144. The receipt is the
+  // answer to "what was this" more often than the description is.
+  const papers = await moneyPapers(line.id);
 
   const note = field({ label: "Anything worth knowing", placeholder: "optional" });
   const said = el("div", { class: "banner-slot" });
@@ -468,6 +503,14 @@ async function lineScreen(id: string): Promise<HTMLElement> {
     money(line.signed_amount),
     backTo({ at: "pile", id: line.queue }, pileMeta(line.queue).title),
     bankSection(line),
+    papers.length > 0
+      ? el(
+          "div",
+          {},
+          el("h2", { class: "section-head", text: "Papers" }),
+          el("div", { class: "ledger" }, ...papers.map(paperRow)),
+        )
+      : null,
     line.disputed
       ? banner(
           "More than one person has filed this differently. Adding another answer keeps all of them.",
@@ -486,6 +529,482 @@ async function lineScreen(id: string): Promise<HTMLElement> {
     note.root,
     said,
     chips,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Papers: a receipt, check or invoice, photographed and read
+// ---------------------------------------------------------------------------
+//
+// "I also want in books to be able to take a picture (receipt, check, invoice,
+// etc) and then manually fill in information about it." The photograph first,
+// because the paper is in your hand now and in a pocket in ten minutes; what it
+// says second, typed while it is still in front of you; which bank transaction
+// it is last, because that transaction may not exist yet. A receipt from this
+// morning posts in a day or two, a check when somebody cashes it.
+//
+// Everything the kernel works out stays in the kernel: which transactions could
+// be this paper (`paper_match_suggestion`), whether an invoice is still owed or
+// overdue (`money_paper_now`). This screen shows those and asks a person.
+
+let paperKinds: Term[] = [];
+
+function signed(p: MoneyPaper): string {
+  if (p.amount === null) return "no amount";
+  return money(p.direction === "out" ? -p.amount : p.amount);
+}
+
+// What state a paper is in, in the words somebody would use.
+function paperState(p: MoneyPaper): { text: string; tone: string } {
+  if (p.matched) return { text: p.due_on ? "paid" : "matched", tone: "good" };
+  if (p.overdue) return { text: `overdue since ${day(p.due_on ?? "")}`, tone: "bad" };
+  if (p.owed) return { text: `due ${day(p.due_on ?? "")}`, tone: "note" };
+  return { text: "not matched yet", tone: "quiet" };
+}
+
+function paperRow(p: MoneyPaper): HTMLElement {
+  const state = paperState(p);
+  const open = el(
+    "button",
+    { class: "entry-open", type: "button" },
+    el(
+      "span",
+      { class: "entry-head" },
+      el("span", { class: "entry-when", text: p.on_date ? day(p.on_date) : "no date" }),
+      el("span", { class: "entry-sum", text: signed(p) }),
+    ),
+    el("span", {
+      class: "entry-what",
+      text: `${p.kind_label}, ${p.who ?? "nobody named"}`,
+    }),
+    el("span", { class: `entry-tag paper-${state.tone}`, text: state.text }),
+  );
+  on(open, "click", () => go({ at: "paper", id: p.id }));
+  return el(
+    "div",
+    { class: `entry${p.direction === "out" ? " entry-out" : " entry-in"}` },
+    open,
+  );
+}
+
+async function papersScreen(): Promise<HTMLElement> {
+  const all = await moneyPapers();
+  const owed = all.filter((p) => p.owed);
+  const overdue = all.filter((p) => p.overdue);
+  const loose = all.filter((p) => !p.matched && !p.owed);
+  const done = all.filter((p) => p.matched);
+
+  const group = (title: string, list: MoneyPaper[]): HTMLElement | null =>
+    list.length === 0
+      ? null
+      : el(
+          "div",
+          {},
+          el("h2", { class: "section-head", text: `${title} (${list.length})` }),
+          el("div", { class: "ledger" }, ...list.map(paperRow)),
+        );
+
+  return screen(
+    "papers",
+    "Papers",
+    backTo({ at: "money" }, "Books"),
+    button("Photograph a paper", () => go({ at: "paper", id: "new" })),
+    all.length === 0
+      ? empty(
+          "No papers yet. Photograph a receipt, a check or an invoice and it appears here.",
+        )
+      : null,
+    // Owed first, overdue inside it first, because an unpaid invoice is the
+    // only thing on this screen that costs money by waiting.
+    group("Invoices owed", [...overdue, ...owed.filter((p) => !p.overdue)]),
+    group("Not matched to a transaction yet", loose),
+    group("Matched", done),
+  );
+}
+
+// The form for what a paper says. Used for a new paper and for reading one
+// again, so a correction asks exactly what the first reading asked.
+function paperForm(before: MoneyPaper | null): {
+  root: HTMLElement;
+  read: () => Omit<Parameters<typeof recordPaper>[0], "id" | "photoPath"> | string;
+} {
+  let kind = before?.kind ?? paperKinds[0]?.value ?? "receipt";
+  let direction: "out" | "in" = before?.direction ?? "out";
+
+  const today = new Date();
+  today.setMinutes(today.getMinutes() - today.getTimezoneOffset());
+  const onDate = field({
+    label: "Date on it",
+    type: "date",
+    value: before?.on_date ?? today.toISOString().slice(0, 10),
+  });
+  const amount = field({
+    label: "Total",
+    type: "number",
+    value:
+      before?.amount === null || before?.amount === undefined
+        ? ""
+        : String(before.amount),
+    attrs: { step: "0.01", min: "0" },
+    hint: "What the paper says, without a sign. Out or in is below.",
+  });
+  const who = field({
+    label: "Who it is from or to",
+    value: before?.who ?? "",
+    placeholder: "the store, the vendor, the payee",
+  });
+  const checkNumber = field({
+    label: "Check number",
+    value: before?.check_number ?? "",
+  });
+  const dueOn = field({ label: "Due", type: "date", value: before?.due_on ?? "" });
+  const note = field({ label: "Anything worth knowing", value: before?.note ?? "" });
+
+  const klass = el("select", { class: "input" });
+  klass.append(el("option", { value: "", text: "Not decided" }));
+  for (const t of vocabulary) {
+    klass.append(el("option", { value: t.value, text: t.label }));
+  }
+  klass.value = before?.class ?? "";
+
+  // Shown only where they mean something. A check number on a receipt is a
+  // field somebody fills with the wrong number.
+  const checkBox = el("div", {}, checkNumber.root);
+  const dueBox = el("div", {}, dueOn.root);
+  function sync(): void {
+    const term = paperKinds.find((t) => t.value === kind);
+    checkBox.hidden = kind !== "check";
+    dueBox.hidden = !(term?.attributes as { has_due?: boolean } | null)?.has_due;
+  }
+
+  const kindRow = el("div", { class: "classes" });
+  function drawKinds(): void {
+    kindRow.replaceChildren(
+      ...paperKinds.map((t) => {
+        const b = button(
+          t.label,
+          () => {
+            kind = t.value;
+            drawKinds();
+            sync();
+          },
+          t.value === kind ? "primary" : "secondary",
+        );
+        b.classList.add("class-chip");
+        return b;
+      }),
+    );
+  }
+
+  const wayRow = el("div", { class: "classes" });
+  function drawWay(): void {
+    wayRow.replaceChildren(
+      ...(
+        [
+          ["out", "Money out"],
+          ["in", "Money in"],
+        ] as const
+      ).map(([value, label]) => {
+        const b = button(
+          label,
+          () => {
+            direction = value;
+            drawWay();
+          },
+          value === direction ? "primary" : "secondary",
+        );
+        b.classList.add("class-chip");
+        return b;
+      }),
+    );
+  }
+
+  drawKinds();
+  drawWay();
+  sync();
+
+  const root = rows(
+    el("span", { class: "field-label", text: "What it is" }),
+    kindRow,
+    wayRow,
+    onDate.root,
+    amount.root,
+    who.root,
+    checkBox,
+    dueBox,
+    el(
+      "label",
+      { class: "field" },
+      el("span", { class: "field-label", text: "What it was for" }),
+      klass,
+    ),
+    note.root,
+  );
+
+  return {
+    root,
+    read: () => {
+      const n = amount.value() ? Number(amount.value()) : null;
+      if (n !== null && !(n > 0)) return "The total is a number above nothing.";
+      return {
+        kind,
+        direction,
+        onDate: onDate.value() || null,
+        amount: n,
+        who: who.value() || null,
+        klass: klass.value || null,
+        checkNumber: kind === "check" ? checkNumber.value() || null : null,
+        dueOn: dueBox.hidden ? null : dueOn.value() || null,
+        note: note.value() || null,
+      };
+    },
+  };
+}
+
+// A photograph from the camera, or the library if the phone offers it.
+function cameraInput(): { root: HTMLElement; file: () => File | null } {
+  const input = el("input", {
+    type: "file",
+    accept: "image/*",
+    capture: "environment",
+    class: "input",
+  });
+  const preview = el("div", { class: "paper-photo" });
+  on(input, "change", () => {
+    const f = input.files?.[0];
+    preview.replaceChildren(
+      f ? el("img", { src: URL.createObjectURL(f), alt: "The paper" }) : "",
+    );
+  });
+  return {
+    root: el(
+      "div",
+      {},
+      el(
+        "label",
+        { class: "field" },
+        el("span", { class: "field-label", text: "The photograph" }),
+        input,
+      ),
+      preview,
+    ),
+    file: () => input.files?.[0] ?? null,
+  };
+}
+
+async function newPaperScreen(): Promise<HTMLElement> {
+  const photo = cameraInput();
+  const form = paperForm(null);
+  const said = el("div", { class: "banner-slot" });
+  // Made once, here. A save that times out and is tapped again writes the same
+  // paper rather than a second one, and the photograph is filed under it first.
+  const id = crypto.randomUUID();
+
+  return screen(
+    "paper",
+    "Photograph a paper",
+    backTo({ at: "papers" }, "Papers"),
+    photo.root,
+    form.root,
+    said,
+    button("Save it", async () => {
+      const said_ = form.read();
+      if (typeof said_ === "string") {
+        said.replaceChildren(banner(said_, "error"));
+        return;
+      }
+      // The photograph goes up first. If it cannot, what was typed is kept
+      // anyway and the paper says it has no photograph, because losing the
+      // typing to a bad signal is the worse of the two.
+      let path: string | null = null;
+      let failed: string | null = null;
+      const f = photo.file();
+      if (f) {
+        try {
+          path = await uploadPaperPhoto(id, f);
+        } catch (e) {
+          failed = e instanceof Error ? e.message : String(e);
+        }
+      }
+      try {
+        await recordPaper({ id, photoPath: path, ...said_ });
+        if (failed) {
+          window.alert(
+            `Saved, but the photograph did not upload: ${failed}. Add it from the paper when there is signal.`,
+          );
+        }
+        go({ at: "paper", id });
+      } catch (e) {
+        said.replaceChildren(
+          banner(e instanceof Error ? e.message : "That did not save.", "error"),
+        );
+      }
+    }),
+  );
+}
+
+async function paperScreen(id: string): Promise<HTMLElement> {
+  const p = await moneyPaper(id);
+  if (!p) {
+    return screen(
+      "paper",
+      "Not found",
+      backTo({ at: "papers" }, "Papers"),
+      banner("That paper is not there.", "error"),
+    );
+  }
+  const [suggested, url] = await Promise.all([
+    p.matched ? Promise.resolve([] as PaperSuggestion[]) : paperSuggestions(p.id),
+    p.photo_path ? paperPhotoUrl(p.photo_path) : Promise.resolve(null),
+  ]);
+  const said = el("div", { class: "banner-slot" });
+  const state = paperState(p);
+
+  // The transactions it is matched to, each with a way to take it back.
+  const matchedLines = await Promise.all(p.line_ids.map((l) => moneyLine(l)));
+  const matchedBlock = matchedLines
+    .filter((l): l is MoneyLine => l !== null)
+    .map((l) =>
+      el(
+        "div",
+        { class: "entry" },
+        el(
+          "button",
+          { class: "entry-open", type: "button" },
+          el(
+            "span",
+            { class: "entry-head" },
+            el("span", { class: "entry-when", text: day(l.at) }),
+            el("span", { class: "entry-sum", text: money(l.signed_amount) }),
+          ),
+          el("span", { class: "entry-what", text: l.description }),
+        ),
+        button(
+          "Not this one",
+          async () => {
+            await matchPaper(p.id, l.id, false);
+            await draw();
+          },
+          "quiet",
+        ),
+      ),
+    );
+
+  const suggestionBlock = suggested.map((s) =>
+    el(
+      "div",
+      { class: "entry" },
+      el(
+        "span",
+        { class: "entry-head" },
+        el("span", { class: "entry-when", text: day(s.at) }),
+        el("span", {
+          class: "entry-sum",
+          text: money(s.direction === "Debit" ? -s.amount : s.amount),
+        }),
+      ),
+      el("span", { class: "entry-what", text: s.description }),
+      el("span", {
+        class: "entry-why",
+        text: s.check_number_agrees
+          ? `check ${s.check_number}, the same number`
+          : s.days_after === 0
+            ? "the same day"
+            : `${Math.abs(s.days_after)} day${Math.abs(s.days_after) === 1 ? "" : "s"} ${
+                s.days_after > 0 ? "after" : "before"
+              }`,
+      }),
+      button("This is it", async () => {
+        try {
+          await matchPaper(p.id, s.line_id, true);
+          await draw();
+        } catch (e) {
+          said.replaceChildren(
+            banner(e instanceof Error ? e.message : "That did not save.", "error"),
+          );
+        }
+      }),
+    ),
+  );
+
+  // Reading it again. Shut by default: most papers are read once.
+  const again = paperForm(p);
+  const latePhotoInput = p.photo_path ? null : cameraInput();
+  const correct = el(
+    "details",
+    { class: "bank" },
+    el("summary", {
+      class: "bank-head",
+      text: p.photo_path
+        ? "Correct what it says"
+        : "Add the photograph, or correct what it says",
+    }),
+    latePhotoInput?.root ?? null,
+    again.root,
+    button(
+      "Save the correction",
+      async () => {
+        const r = again.read();
+        if (typeof r === "string") {
+          said.replaceChildren(banner(r, "error"));
+          return;
+        }
+        try {
+          const f = latePhotoInput?.file() ?? null;
+          const path = f ? await uploadPaperPhoto(p.id, f) : null;
+          await recordPaper({ id: p.id, photoPath: path, ...r });
+          await draw();
+        } catch (e) {
+          said.replaceChildren(
+            banner(e instanceof Error ? e.message : "That did not save.", "error"),
+          );
+        }
+      },
+      "secondary",
+    ),
+  );
+
+  return screen(
+    "paper",
+    `${p.kind_label}, ${signed(p)}`,
+    backTo({ at: "papers" }, "Papers"),
+    url
+      ? el("div", { class: "paper-photo" }, el("img", { src: url, alt: "The paper" }))
+      : banner("No photograph on this one yet.", "note"),
+    el("div", { class: `paper-state paper-${state.tone}`, text: state.text }),
+    rows(
+      summaryRow("Who", p.who ?? "not said"),
+      summaryRow("Date on it", p.on_date ? day(p.on_date) : "not said"),
+      summaryRow("Which way", p.direction === "out" ? "Money out" : "Money in"),
+      summaryRow("For", p.class_label ?? "not decided"),
+      ...(p.check_number ? [summaryRow("Check number", p.check_number)] : []),
+      ...(p.due_on ? [summaryRow("Due", day(p.due_on))] : []),
+      ...(p.note ? [summaryRow("Note", p.note)] : []),
+      ...(p.readings > 1
+        ? [summaryRow("Read", `${p.readings} times, latest counts`)]
+        : []),
+    ),
+    said,
+    matchedBlock.length > 0
+      ? el(
+          "div",
+          {},
+          el("h2", { class: "section-head", text: "The transaction" }),
+          el("div", { class: "ledger" }, ...matchedBlock),
+        )
+      : el(
+          "div",
+          {},
+          el("h2", { class: "section-head", text: "Which transaction is it?" }),
+          suggestionBlock.length > 0
+            ? el("div", { class: "ledger" }, ...suggestionBlock)
+            : empty(
+                p.amount === null || p.on_date === null
+                  ? "It needs a total and a date before anything can be suggested."
+                  : "Nothing in the bank matches yet. A receipt usually posts in a day or two, a check when it is cashed.",
+              ),
+        ),
+    correct,
   );
 }
 
@@ -596,6 +1115,10 @@ async function draw(): Promise<void> {
       root.replaceChildren(notAdminScreen());
       return;
     }
+    if (place.at === "paper" || place.at === "papers") {
+      if (vocabulary.length === 0) vocabulary = await terms("money_class");
+      if (paperKinds.length === 0) paperKinds = await terms("paper_kind");
+    }
     const view =
       place.at === "money"
         ? await moneyScreen()
@@ -603,7 +1126,13 @@ async function draw(): Promise<void> {
           ? await pileScreen(place.id)
           : place.at === "line"
             ? await lineScreen(place.id)
-            : await merchantsScreen();
+            : place.at === "papers"
+              ? await papersScreen()
+              : place.at === "paper"
+                ? place.id === "new"
+                  ? await newPaperScreen()
+                  : await paperScreen(place.id)
+                : await merchantsScreen();
     root.replaceChildren(view);
   } catch (e) {
     root.replaceChildren(

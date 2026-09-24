@@ -41,8 +41,10 @@ import {
   registerMachineModel,
   rows,
   screens,
+  signIn,
   summaryRow,
   vessels,
+  viewerScope,
 } from "core";
 import { PLACES } from "./places.ts";
 
@@ -736,7 +738,83 @@ function addMachineScreen(): HTMLElement {
   return screen("machine-new", "Add a machine", body);
 }
 
+// ---------------------------------------------------------------------------
+// The door
+// ---------------------------------------------------------------------------
+//
+// A13. Signed out, this app drew "No machines yet" over a shop with two machines
+// in it, because `machine` is readable only by people who work here and a row
+// level refusal is an empty result. The stores app had the same fault and the
+// same fix; this one was reported as "shop doesn't work" on 2026-09-24, which
+// is exactly what an empty list that is really a shut door looks like.
+
+function signInScreen(): HTMLElement {
+  const email = field({
+    label: "Email",
+    type: "email",
+    attrs: { autocomplete: "email" },
+  });
+  const password = field({
+    label: "Password",
+    type: "password",
+    attrs: { autocomplete: "current-password" },
+  });
+  const said = el("div", {});
+  return screen(
+    "machines",
+    "Shop",
+    lede("Sign in. The same account as the cellar."),
+    rows(
+      email.root,
+      password.root,
+      button("Sign in", async () => {
+        try {
+          await signIn(email.value(), password.value());
+          await open();
+        } catch (e) {
+          said.replaceChildren(
+            banner(e instanceof Error ? e.message : "That did not sign in.", "error"),
+          );
+        }
+      }),
+      said,
+    ),
+  );
+}
+
+async function open(): Promise<void> {
+  try {
+    const scope = await viewerScope();
+    if (!scope.signed_in) {
+      show(signInScreen());
+      return;
+    }
+    if (scope.party_kind !== "facility") {
+      show(
+        screen(
+          "machines",
+          "Shop",
+          banner("The shop is for people who work here.", "note"),
+          lede(
+            "This is not an empty shop. It is a door, and it is shut for this account.",
+          ),
+        ),
+      );
+      return;
+    }
+    show(listScreen());
+  } catch (e) {
+    show(
+      screen(
+        "machines",
+        "Shop",
+        banner(e instanceof Error ? e.message : "Something went wrong.", "error"),
+      ),
+    );
+  }
+}
+
 export function mountShop(target: HTMLElement): void {
   root = target;
-  show(listScreen());
+  void open();
 }

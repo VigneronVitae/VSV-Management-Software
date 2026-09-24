@@ -1948,6 +1948,40 @@ body.practising {
   text-align: center;
 }
 
+/* Papers. 0144. The photograph as wide as the screen and no wider, because
+   the thing somebody checks against it is a total printed small. */
+.paper-photo img {
+  display: block;
+  max-width: 100%;
+  max-height: 70vh;
+  margin: 0.5rem auto 1rem;
+  border-radius: 6px;
+  border: 1px solid var(--rule);
+}
+
+/* Paid, owed, overdue. Colour and words both, so the state reads without the
+   colour. The class names come from the kernel's answer, not a guess here. */
+.paper-state {
+  font-weight: 600;
+  margin: 0.25rem 0 0.75rem;
+}
+
+.paper-good {
+  color: var(--good);
+}
+
+.paper-note {
+  color: var(--warn);
+}
+
+.paper-bad {
+  color: var(--bad);
+}
+
+.paper-quiet {
+  color: var(--ink-faint);
+}
+
 .entry-yes {
   width: 100%;
   min-height: var(--tap);

@@ -1558,3 +1558,19 @@ real number into the running cellar. Screens fail in ways the database cannot be
 *Resolves when:* each has been used once, for real, by somebody who was trying to get work done
 rather than trying it out.
 *Load-bearing:* no. It is a statement about confidence rather than about correctness.
+
+**S-144. Most verbs still record the moment they are entered, and cannot be told otherwise.**
+`0143` gave the press, the rack and the pick verbs a time, `p_at`, so a pressing entered the
+next morning or a day's work batched at six in the evening lands at the time it happened, with
+`created_at` still saying when it was typed. `add_to_wine`, `dump_wine` and `record_work`
+already had one. The rest of the cellar's verbs do not take a time, so anything they record is
+dated the moment it was entered: `fill_vessel`, `move_vessels` on its own, `record_event`,
+`fork_lot`, `create_vessel_with_wine`, `send_fruit_away` and `remove_pick`.
+They do not need their bodies rewritten. Since `0143` every "when it happened" default reads
+`occurred_at()`, so giving one of them a time is a parameter and a first line, `happening_at(p_at)`,
+plus a restore before the return. What is missing is only that nobody has done it and each screen
+has no "When" control yet.
+*Resolves when:* every verb a person uses to record something takes `p_at`, and its screen offers
+it.
+*Load-bearing:* no, now that picks, presses and racks are covered. `record_event` is the
+nearest to it, because a Brix or a punchdown is the next thing somebody will want to batch.

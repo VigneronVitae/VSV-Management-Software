@@ -911,6 +911,8 @@ export async function rackTransfer(args: {
   data?: Record<string, unknown>;
   allowOverfill?: boolean;
   node?: Record<string, unknown>;
+  /** When it was racked, if not now. 0143. */
+  at?: string | null;
 }): Promise<RackPlan & { node_id: Uuid; event_id: Uuid }> {
   const { data, error } = await kernel().rpc("rack", {
     p_sources: args.sources,
@@ -918,6 +920,7 @@ export async function rackTransfer(args: {
     p_data: args.data ?? {},
     p_allow_overfill: args.allowOverfill ?? false,
     p_node: args.node ?? {},
+    p_at: args.at ?? null,
   });
   if (error) throw new KernelError(error);
   return data as RackPlan & { node_id: Uuid; event_id: Uuid };
@@ -1650,12 +1653,15 @@ export async function startPress(args: {
   pressVesselId: Uuid;
   node?: Record<string, unknown>;
   detail?: Record<string, unknown>;
+  /** When the press was loaded, if not now. 0143. */
+  at?: string | null;
 }): Promise<PressStarted> {
   const { data, error } = await kernel().rpc("start_press", {
     p_vessel_ids: args.vesselIds,
     p_press_vessel_id: args.pressVesselId,
     p_node: args.node ?? {},
     p_detail: args.detail ?? {},
+    p_at: args.at ?? null,
   });
   if (error) throw new KernelError(error);
   return data as PressStarted;
@@ -1671,6 +1677,7 @@ export async function drawCut(args: {
   cutId?: Uuid | null;
   name?: string | null;
   note?: string | null;
+  at?: string | null;
 }): Promise<CutDrawn> {
   const { data, error } = await kernel().rpc("draw_cut", {
     p_load_id: args.loadId,
@@ -1679,6 +1686,7 @@ export async function drawCut(args: {
     p_cut_id: args.cutId ?? null,
     p_name: args.name ?? null,
     p_note: args.note ?? null,
+    p_at: args.at ?? null,
   });
   if (error) throw new KernelError(error);
   return data as CutDrawn;
@@ -1696,6 +1704,7 @@ export async function drawToLevel(args: {
   levelL: number;
   cutId?: Uuid | null;
   note?: string | null;
+  at?: string | null;
 }): Promise<LevelDrawn> {
   const { data, error } = await kernel().rpc("draw_to_level", {
     p_load_id: args.loadId,
@@ -1703,6 +1712,7 @@ export async function drawToLevel(args: {
     p_level_l: args.levelL,
     p_cut_id: args.cutId ?? null,
     p_note: args.note ?? null,
+    p_at: args.at ?? null,
   });
   if (error) throw new KernelError(error);
   return data as LevelDrawn;
@@ -1711,10 +1721,12 @@ export async function drawToLevel(args: {
 export async function finishPress(
   loadId: Uuid,
   detail?: Record<string, unknown>,
+  at?: string | null,
 ): Promise<PressFinished> {
   const { data, error } = await kernel().rpc("finish_press", {
     p_load_id: loadId,
     p_detail: detail ?? {},
+    p_at: at ?? null,
   });
   if (error) throw new KernelError(error);
   return data as PressFinished;
@@ -1839,6 +1851,8 @@ export async function addBinToPick(args: {
   fillPct: number | null;
   netLbs?: number | null;
   grossLbs?: number | null;
+  /** When the bin came off, if not now. 0143. */
+  at?: string | null;
 }): Promise<{ node_id: Uuid; placement_id: Uuid; bins: number; unweighed: number }> {
   const { data, error } = await kernel().rpc("add_bin_to_pick", {
     p_pick: args.pick,
@@ -1846,6 +1860,7 @@ export async function addBinToPick(args: {
     p_fill_pct: args.fillPct,
     p_net_lbs: args.netLbs ?? null,
     p_gross_lbs: args.grossLbs ?? null,
+    p_at: args.at ?? null,
   });
   if (error) throw new KernelError(error);
   return data as { node_id: Uuid; placement_id: Uuid; bins: number; unweighed: number };
@@ -1864,6 +1879,8 @@ export async function weighBins(args: {
   // for two days, which is how a photograph nobody could upload became three
   // photographs sitting on a phone.
   photoPath?: string | null;
+  /** When it was weighed, if not now. 0143. */
+  at?: string | null;
 }): Promise<Weighing> {
   const { data, error } = await kernel().rpc("weigh_bins", {
     p_node_id: args.nodeId,
@@ -1872,6 +1889,7 @@ export async function weighBins(args: {
     p_note: args.note ?? null,
     p_supersedes: args.supersedes ?? null,
     p_photo_path: args.photoPath ?? null,
+    p_at: args.at ?? null,
   });
   if (error) throw new KernelError(error);
   return data as Weighing;
@@ -1908,12 +1926,15 @@ export async function press(args: {
   // program, whole_cluster_pct, skin_contact_start, skin_contact_end,
   // temperature_c, note. All optional: a press nobody timed is still a press.
   detail?: Record<string, unknown>;
+  /** When it was pressed, if not now. 0143. */
+  at?: string | null;
 }): Promise<PressResult> {
   const { data, error } = await kernel().rpc("press", {
     p_sources: args.sources,
     p_cuts: args.cuts,
     p_node: args.node ?? {},
     p_detail: args.detail ?? {},
+    p_at: args.at ?? null,
   });
   if (error) throw new KernelError(error);
   return data as PressResult;
@@ -1946,6 +1967,8 @@ export async function addBinsToPick(args: {
   onLoanFrom?: string | null;
   netLbs?: number | null;
   grossLbs?: number | null;
+  /** When the bins came off, if not now. 0143. */
+  at?: string | null;
 }): Promise<{ node_id: Uuid; registered: string[]; bins: number; unweighed: number }> {
   const { data, error } = await kernel().rpc("add_bins_to_pick", {
     p_pick: args.pick,
@@ -1958,6 +1981,7 @@ export async function addBinsToPick(args: {
     p_on_loan_from: args.onLoanFrom ?? null,
     p_net_lbs: args.netLbs ?? null,
     p_gross_lbs: args.grossLbs ?? null,
+    p_at: args.at ?? null,
   });
   if (error) throw new KernelError(error);
   return data as {
@@ -2796,6 +2820,155 @@ export async function attestLine(args: {
   });
   if (error) throw new KernelError(error);
   return data as { id: Uuid; provenance: string };
+}
+
+// ---------------------------------------------------------------------------
+// Papers. 0144. A receipt, check or invoice, photographed, what it says, and
+// which bank transaction it is.
+// ---------------------------------------------------------------------------
+
+export type MoneyPaper = {
+  id: Uuid;
+  photo_path: string | null;
+  created_at: string;
+  kind: string;
+  kind_label: string;
+  direction: "out" | "in";
+  on_date: string | null;
+  amount: number | null;
+  who: string | null;
+  class: string | null;
+  class_label: string | null;
+  check_number: string | null;
+  due_on: string | null;
+  note: string | null;
+  read_at: string;
+  readings: number;
+  line_ids: Uuid[];
+  matched: boolean;
+  owed: boolean;
+  overdue: boolean;
+};
+
+export type PaperSuggestion = {
+  paper_id: Uuid;
+  line_id: Uuid;
+  at: string;
+  amount: number;
+  direction: string;
+  description: string;
+  check_number: string | null;
+  days_after: number;
+  check_number_agrees: boolean;
+};
+
+const PAPER_COLUMNS =
+  "id,photo_path,created_at,kind,kind_label,direction,on_date,amount,who,class,class_label,check_number,due_on,note,read_at,readings,line_ids,matched,owed,overdue";
+
+// Its own bucket, administrators only. Not `vessel-photos`, which everybody who
+// works here can read: a check is not a barrel.
+const PAPER_BUCKET = "money-papers";
+
+export async function moneyPapers(lineId?: Uuid): Promise<MoneyPaper[]> {
+  let q = kernel().from("money_paper_now").select(PAPER_COLUMNS);
+  if (lineId) q = q.contains("line_ids", [lineId]);
+  const { data, error } = await q.order("created_at", { ascending: false });
+  if (error) throw new KernelError(error);
+  return (data ?? []) as unknown as MoneyPaper[];
+}
+
+export async function moneyPaper(id: Uuid): Promise<MoneyPaper | null> {
+  const { data, error } = await kernel()
+    .from("money_paper_now")
+    .select(PAPER_COLUMNS)
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw new KernelError(error);
+  return (data ?? null) as unknown as MoneyPaper | null;
+}
+
+export async function paperSuggestions(paperId: Uuid): Promise<PaperSuggestion[]> {
+  const { data, error } = await kernel()
+    .from("paper_match_suggestion")
+    .select(
+      "paper_id,line_id,at,amount,direction,description,check_number,days_after,check_number_agrees",
+    )
+    .eq("paper_id", paperId);
+  if (error) throw new KernelError(error);
+  // Ranked here only because a view has no order a client can rely on. The
+  // ranking is not a rule: every suggestion is shown and a person picks.
+  return ((data ?? []) as PaperSuggestion[]).sort(
+    (a, b) =>
+      Number(b.check_number_agrees) - Number(a.check_number_agrees) ||
+      Math.abs(a.days_after) - Math.abs(b.days_after),
+  );
+}
+
+export async function recordPaper(args: {
+  id: Uuid;
+  kind: string;
+  direction: "out" | "in";
+  onDate: string | null;
+  amount: number | null;
+  who: string | null;
+  klass: string | null;
+  checkNumber: string | null;
+  dueOn: string | null;
+  note: string | null;
+  photoPath: string | null;
+}): Promise<{ paper_id: Uuid; reading_id: Uuid; new: boolean; suggestions: number }> {
+  const { data, error } = await kernel().rpc("record_paper", {
+    p_id: args.id,
+    p_kind: args.kind,
+    p_direction: args.direction,
+    p_on_date: args.onDate,
+    p_amount: args.amount,
+    p_who: args.who,
+    p_class: args.klass,
+    p_check_number: args.checkNumber,
+    p_due_on: args.dueOn,
+    p_note: args.note,
+    p_photo_path: args.photoPath,
+  });
+  if (error) throw new KernelError(error);
+  return data as {
+    paper_id: Uuid;
+    reading_id: Uuid;
+    new: boolean;
+    suggestions: number;
+  };
+}
+
+export async function matchPaper(
+  paperId: Uuid,
+  lineId: Uuid,
+  matched = true,
+): Promise<void> {
+  const { error } = await kernel().rpc("match_paper", {
+    p_paper_id: paperId,
+    p_line_id: lineId,
+    p_matched: matched,
+  });
+  if (error) throw new KernelError(error);
+}
+
+export async function uploadPaperPhoto(paperId: Uuid, file: File): Promise<string> {
+  const suffix = file.name.split(".").pop()?.toLowerCase() ?? "jpg";
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const path = `paper/${paperId}/${stamp}.${suffix}`;
+  const { error } = await kernel()
+    .storage.from(PAPER_BUCKET)
+    .upload(path, file, { upsert: false, contentType: file.type || "image/jpeg" });
+  if (error) throw new KernelError(error);
+  return path;
+}
+
+export async function paperPhotoUrl(path: string): Promise<string | null> {
+  const { data, error } = await kernel()
+    .storage.from(PAPER_BUCKET)
+    .createSignedUrl(path, 60 * 10);
+  if (error) return null;
+  return data?.signedUrl ?? null;
 }
 
 // ---------------------------------------------------------------------------

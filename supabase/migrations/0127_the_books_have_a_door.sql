@@ -8,7 +8,8 @@
 --              supabase/migrations/0122_money_that_has_already_moved.sql,
 --              supabase/migrations/0126_only_a_person_confirms.sql]
 -- Depended on by: [scripts/screens.sh, docs/status-ledger.md,
---                  packages/books/src/places.ts]
+--                  packages/books/src/places.ts,
+--                  supabase/migrations/0144_a_paper_says_what_money_was.sql]
 -- Axioms enforced: none new.
 -- Open sorries: narrows S-94, the front door listing modules nobody can open.
 --               One of the six is still shut, and it is `marketing`.

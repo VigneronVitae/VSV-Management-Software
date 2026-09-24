@@ -34,6 +34,8 @@ export type TermKind =
   // 0142. Loss or flaw, which is what he said when asked. Which flaw is the
   // note's job.
   | "dump_reason"
+  // 0144. Receipt, check, invoice, other. The books' second vocabulary.
+  | "paper_kind"
   // The books module's one vocabulary. Added here rather than cast at the call
   // site, which is what the shop and the vineyard did with theirs, and is why
   // S-61 is still open five vocabularies later.
@@ -389,6 +391,10 @@ export type HistoryRow = {
   provenance: Provenance;
   data: Record<string, unknown>;
   inherited: boolean;
+  // 0143. When the row was written, and whether that was after `at`. A
+  // pressing entered the next morning keeps yesterday's `at` and says so here.
+  entered_at: string;
+  entered_late: boolean;
 };
 
 export type EventRow = {

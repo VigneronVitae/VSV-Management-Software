@@ -16,7 +16,8 @@
 --                  packages/books/src/books.ts,
 --                  scripts/import-ledger.py,
 --                  supabase/migrations/0130_the_bank_says_more_than_a_name.sql,
---                  docs/review/2026-09-20-one-kernel-many-peripheries.md]
+--                  docs/review/2026-09-20-one-kernel-many-peripheries.md,
+--                  supabase/migrations/0144_a_paper_says_what_money_was.sql]
 -- Axioms enforced: T0-2, the signed amount and the merchant memory are both
 --                  derivations and neither is stored. T0-4, a suggestion is
 --                  `inferred` and only a person makes it `observed`. T0-5, an

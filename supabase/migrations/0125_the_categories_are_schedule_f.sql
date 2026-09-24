@@ -7,7 +7,8 @@
 --                  supabase/migrations/0128_three_categories_nobody_issues.sql,
 --                  packages/books/src/books.ts,
 --                  supabase/migrations/0129_not_yet_decided_is_an_answer.sql,
---                  supabase/migrations/0138_the_repository_names_no_vendor.sql]
+--                  supabase/migrations/0138_the_repository_names_no_vendor.sql,
+--                  supabase/migrations/0144_a_paper_says_what_money_was.sql]
 -- Axioms enforced: AR-E5, and the argument for it is in his own data: the free
 --                  text column has already drifted off its own list.
 -- Open sorries: none new.

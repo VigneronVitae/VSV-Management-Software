@@ -114,7 +114,13 @@ async function answers(route: KernelRoute, ms: number): Promise<boolean> {
  * The one thing that must not happen is starting up pointed at nothing while
  * appearing to work, and that cannot happen here: `readConfig` throws
  * `MissingConfig` when there is no route at all, from either source. */
-export async function loadWhere(timeoutMs = 2500): Promise<void> {
+// Six seconds, not two and a half. The first request over the tailnet includes
+// the TLS handshake and took 2.4 s from the desktop itself on 2026-09-24; from a
+// phone on cellular it took longer, the probe gave up on a route that was
+// working, and the app fell through to a Cloudflare route that did not exist
+// yet. Books and shop stopped working on the phone and nothing said why. A slow
+// start is a nuisance; a wrong route is an outage.
+export async function loadWhere(timeoutMs = 6000): Promise<void> {
   let doc: Where;
   try {
     const at = new URL("where.json", document.baseURI).toString();
@@ -149,8 +155,11 @@ export async function loadWhere(timeoutMs = 2500): Promise<void> {
     }
   }
 
-  // Nothing answered. Keep the document anyway: its first entry is still a
-  // better guess than a stale build-time constant, and whatever happens next
-  // fails visibly rather than silently.
-  loaded = doc;
+  // Nothing answered in time. The route that worked last on this device goes
+  // first, because a slow answer from a route known to work is far likelier
+  // than the barn having moved. Only with no history does the list's own order
+  // decide. This used to take the first entry unconditionally, which is how a
+  // phone that had used Tailscale every day was pointed at a hostname that did
+  // not exist.
+  loaded = { ...doc, cellar: ordered };
 }

@@ -3530,6 +3530,8 @@ function rackScreen(): HTMLElement {
       "What the receiving vessel held before the wine arrived.",
     );
     const method = termPick("How it was moved", await terms("rack_method"));
+    // One for the screen, so a rack and a dump entered later both say when.
+    const when = whenField();
     // A list since 0142, because he said what the words are. The note carries
     // what the list is too coarse for: which flaw, where it leaked.
     const dumpWhy = termPick("Why it is going away", await terms("dump_reason"));
@@ -3659,6 +3661,7 @@ function rackScreen(): HTMLElement {
       gasDestination.root,
       method.root,
       lees.root,
+      when.root,
       el("h2", { class: "section-head", text: "What this does" }),
       preview,
       button("Rack it", async () => {
@@ -3682,6 +3685,7 @@ function rackScreen(): HTMLElement {
               method: method.value() || null,
               lees_l: lees.value() ? Number(lees.value()) : null,
             },
+            at: when.value(),
           });
           showResult(
             await resultScreen(
@@ -3736,6 +3740,7 @@ function rackScreen(): HTMLElement {
                   sources: s,
                   reason: dumpWhy.value(),
                   note: dumpNote.value() || null,
+                  at: when.value(),
                 });
                 message.replaceChildren(
                   banner(
@@ -3772,6 +3777,59 @@ function rackScreen(): HTMLElement {
 // not run 0139 gets what it had before rather than a picker with nothing in it.
 // A13: an empty list and a list of one blank option read the same and neither
 // says the vocabulary is missing.
+// 0143. "I didn't have time to mark the pressing yesterday so I want to do it
+// today and backdate it to yesterday", and "back timed in the same day, like if
+// at the end of the day I batched the things I did throughout the day."
+//
+// Closed, it says nothing and the kernel records now, which is the ordinary
+// case and costs nobody a tap. Opened, it offers a time, starting from the last
+// one given on this device since the app opened, so a day's batch walks forward
+// from where it was rather than from now every time. It only says when the
+// thing happened: the kernel keeps when it was entered on its own, and says
+// "entered late" from the difference, so nothing here decides that.
+let lastWhen = "";
+
+function localNow(): string {
+  const d = new Date();
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(0, 16);
+}
+
+function whenField(): { root: HTMLElement; value: () => string | null } {
+  const input = el("input", { type: "datetime-local", class: "input" });
+  const box = el(
+    "details",
+    { class: "more" },
+    el("summary", { text: "It happened earlier" }),
+    el(
+      "label",
+      { class: "field" },
+      el("span", { class: "field-label", text: "When it happened" }),
+      input,
+      el("span", {
+        class: "field-hint",
+        text: "Recorded at this time, and marked as entered later.",
+      }),
+    ),
+  );
+  box.addEventListener("toggle", () => {
+    if (box.open && !input.value) input.value = lastWhen || localNow();
+  });
+  on(input, "change", () => {
+    lastWhen = input.value;
+  });
+  return {
+    root: box,
+    value: () => {
+      if (!box.open || !input.value) return null;
+      // A datetime-local value has no zone and `Date` reads it as this
+      // device's, which is the winery's. The kernel gets an instant.
+      const d = new Date(input.value);
+      return Number.isNaN(d.getTime()) ? null : d.toISOString();
+    },
+  };
+}
+
 function termPick(label: string, options: Term[], hint?: string) {
   if (options.length === 0) {
     return field({ label, placeholder: hint ?? "" });
@@ -5043,6 +5101,20 @@ async function resultScreen(
               e.inherited
                 ? el("span", { class: "tag tag-inherited", text: "before the split" })
                 : null,
+              // 0143. The date above is when it happened. This is when it was
+              // typed, shown only when the kernel says the two differ, so a
+              // pressing entered the next morning reads as exactly that.
+              e.entered_late
+                ? el("span", {
+                    class: "tag tag-inherited",
+                    text: `entered ${new Date(e.entered_at).toLocaleString([], {
+                      month: "short",
+                      day: "numeric",
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })}`,
+                  })
+                : null,
             ),
           ),
         ),
@@ -5910,6 +5982,7 @@ function pickBinsScreen(openOn?: string): HTMLElement {
             fillPct: fillPct(),
             netLbs: saidLbs(),
             grossLbs: saidGross(),
+            at: when.value(),
           });
           for (const e of existing) {
             if (chosen.includes(e.vessel.id)) {
@@ -5927,6 +6000,11 @@ function pickBinsScreen(openOn?: string): HTMLElement {
       drawExisting();
 
       // --- bins that do not exist yet --------------------------------------
+
+      // When these bins came off, for a day's picking entered in the evening.
+      // Shared by both ways of adding, because it describes the bins and not
+      // the button.
+      const when = whenField();
 
       // Three empty bins and three bins of fruit in one action. The naming is the
       // kernel's, not this screen's: "the next bin after PB3" is a rule, and a
@@ -5994,6 +6072,7 @@ function pickBinsScreen(openOn?: string): HTMLElement {
             netLbs: saidLbs(),
             grossLbs: saidGross(),
             onLoanFrom: ours.input.checked ? null : lender.value(),
+            at: when.value(),
           });
           await landed(result, `Registered ${result.registered.join(", ")}.`);
         } catch (error) {
@@ -6133,6 +6212,7 @@ function pickBinsScreen(openOn?: string): HTMLElement {
           // Only where percent means something. With no figure for what a full
           // bin holds, a percent is a number with no second half.
           unitToggle,
+          when.root,
           el("h2", { class: "section-head", text: "New bins" }),
           howMany.root,
           prefix.root,
@@ -6275,6 +6355,7 @@ function scaleScreen(): HTMLElement {
             "checked later. If you cannot now, the pick screen takes them after.",
         );
         const result = el("div", {});
+        const when = whenField();
 
         return el(
           "div",
@@ -6284,6 +6365,7 @@ function scaleScreen(): HTMLElement {
           gross.root,
           note.root,
           photo.root,
+          when.root,
           button("Record this weight", async () => {
             const chosen = boxes
               .filter((b) => b.box.input.checked)
@@ -6320,6 +6402,7 @@ function scaleScreen(): HTMLElement {
                 grossLbs: Number(gross.value()),
                 note: note.value() || null,
                 photoPath,
+                at: when.value(),
               });
               result.replaceChildren(
                 banner(
@@ -9234,6 +9317,13 @@ function pressScreen(): HTMLElement {
     body,
   );
 
+  // One for the whole screen and outside `load`, which redraws after every
+  // step: a pressing entered the next morning is started, drawn and finished in
+  // one sitting, and the time given for the start should still be there for the
+  // cuts. Each step reads it when it is pressed, so it can be moved on between
+  // them.
+  const when = whenField();
+
   async function load(): Promise<void> {
     const [running, picks, kit, cuts, vesselTypes, draws, allBins] = await Promise.all([
       pressesInProgress(),
@@ -9271,6 +9361,7 @@ function pressScreen(): HTMLElement {
           volumeL: Number(litres),
           cutId: cutId || null,
           note: note || null,
+          at: when.value(),
         });
         said.replaceChildren(
           banner(
@@ -9304,7 +9395,7 @@ function pressScreen(): HTMLElement {
       said: HTMLElement,
     ): Promise<void> {
       try {
-        const out = await finishPress(p.node_id, detail);
+        const out = await finishPress(p.node_id, detail, when.value());
         said.replaceChildren(
           banner(
             `${Number(out.litres_out).toLocaleString()} L off ` +
@@ -9447,6 +9538,7 @@ function pressScreen(): HTMLElement {
             const out = await startPress({
               vesselIds: chosen,
               pressVesselId: whichPress.value,
+              at: when.value(),
             });
             said.replaceChildren(
               banner(
@@ -9741,6 +9833,7 @@ function pressScreen(): HTMLElement {
                       vesselId: v.id,
                       levelL: Number(level.value),
                       cutId: cut.value || null,
+                      at: when.value(),
                     });
                     said.replaceChildren(
                       banner(
@@ -10051,6 +10144,7 @@ function pressScreen(): HTMLElement {
 
     body.replaceChildren(
       rows(
+        when.root,
         layout?.render() ?? empty("No layout."),
         variantSwitch(layouts, layout?.key ?? "form", (key) => {
           setPref("press_layout", key);
