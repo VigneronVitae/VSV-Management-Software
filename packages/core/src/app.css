@@ -990,6 +990,14 @@ body.practising {
   padding-left: 0.7rem;
 }
 
+/* The varieties coming off a ticked block, under it. The same shape as a
+   nested menu because it means the same thing: these belong to the row above. */
+.pick-varieties {
+  margin-left: 1.1rem;
+  border-left: 2px solid var(--rule);
+  padding-left: 0.7rem;
+}
+
 /* Hidden items are invisible normally and ghosted while arranging, because you
    cannot unhide what you cannot see. */
 .menu-hidden {

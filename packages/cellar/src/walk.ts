@@ -5078,6 +5078,9 @@ type PendingPick = {
   // Carried so the switcher can label itself without another read, and so the
   // label survives a block being renamed mid-pick.
   block_name: string;
+  // Block and variety together, which is what a part of a pick is: two
+  // varieties off one block are two parts. What the switcher says.
+  label: string;
   variety_id: string | null;
   vintage: number | null;
   // The real id, once the first bin has landed and this has stopped being
@@ -5258,38 +5261,29 @@ function newPickScreen(): HTMLElement {
         plantings(),
       ]);
 
-      // "When doing a pick it should only offer the varieties in the blocks
-      // selected." What is planted where is the kernel's answer, from
-      // `planting_detail`; this only narrows the list to it. With no block
-      // ticked yet it narrows to the vineyard, which is still shorter than
-      // every variety anywhere.
+      // "I had to do three different picks in the vineyard to pick 3 varieties
+      // from 3 blocks. It would be better if it's one pick that has three parts
+      // and I can assign each bin to a variety from each block." The morning
+      // that prompted it had two varieties off one block, so a part is a block
+      // and a variety together, not a block. Each part is still its own pick in
+      // the kernel, which is what keeps what came off each block, of each
+      // variety, its own number. This screen starts them together and the bin
+      // screen switches between them.
       //
-      // A block with no plantings recorded opens the whole list rather than
-      // closing it. An empty picker at seven in the morning with fruit on the
-      // truck is worse than a long one, and a missing planting is a vineyard
-      // record to fix later, not a reason the pick cannot start.
-      const variety = termPicker("variety", {
-        label: "Variety",
-        stickyKey: "variety",
-        rows: async () => {
-          const every = await terms("variety");
-          const chosen = ticked
-            .filter((t) => t.field.input.checked)
-            .map((t) => t.block.id);
-          const scope = chosen.length > 0 ? chosen : ticked.map((t) => t.block.id);
-          if (scope.length === 0) return every;
-          const unrecorded = scope.some(
-            (id) => !plantRows.some((p) => p.block_id === id),
-          );
-          if (unrecorded) return every;
-          const planted = new Set(
-            plantRows
-              .filter((p) => scope.includes(p.block_id))
-              .map((p) => p.variety_id),
-          );
-          return every.filter((t) => planted.has(t.id));
-        },
-      });
+      // "It should only offer the varieties in the blocks selected." What is
+      // planted where is the kernel's answer, from `planting_detail`; this only
+      // narrows the list to it. A block with no plantings recorded offers every
+      // variety rather than none: an empty list at seven in the morning with
+      // fruit on the truck is worse than a long one, and a missing planting is
+      // a vineyard record to fix later, not a reason the pick cannot start.
+      const everyVariety = await terms("variety");
+      function varietiesFor(b: Block): { id: string; label: string }[] {
+        const planted = plantRows.filter((p) => p.block_id === b.id);
+        if (planted.length === 0) {
+          return everyVariety.map((t) => ({ id: t.id, label: t.label }));
+        }
+        return planted.map((p) => ({ id: p.variety_id, label: p.variety }));
+      }
       const vintage = field({
         label: "Vintage",
         type: "number",
@@ -5315,11 +5309,16 @@ function newPickScreen(): HTMLElement {
       }
 
       const blockBox = el("div", {});
-      let ticked: { field: Field; block: Block }[] = [];
+      type BlockRow = {
+        block: Block;
+        tick: Field;
+        kinds: { id: string; label: string; box: Field }[];
+      };
+      let blockRowsDrawn: BlockRow[] = [];
 
       function drawBlocks(): void {
         const id = vineyardPick.value;
-        ticked = [];
+        blockRowsDrawn = [];
         if (!id) {
           blockBox.replaceChildren(empty("Pick a vineyard to see its blocks."));
           return;
@@ -5332,18 +5331,38 @@ function newPickScreen(): HTMLElement {
           );
           return;
         }
-        ticked = mine.map((b) => ({ field: checkbox(b.name), block: b }));
-        for (const t of ticked)
-          on(t.field.input, "change", () => void variety.reload());
+        const drawn = mine.map((b) => {
+          const tick = checkbox(b.name);
+          const options = varietiesFor(b);
+          // One variety planted is ticked for you, because it is the only
+          // answer. Several wait to be chosen, because guessing which of two
+          // interplanted varieties came off today is the mistake this avoids.
+          const only = options.length === 1;
+          const kinds = options.map((o) => ({ ...o, box: checkbox(o.label, only) }));
+          const under = el(
+            "div",
+            { class: "pick-varieties", hidden: "hidden" },
+            ...kinds.map((k) => k.box.root),
+          );
+          on(tick.input, "change", () => {
+            under.hidden = !tick.input.checked;
+          });
+          const root = el("div", {}, tick.root, under);
+          return { row: { block: b, tick, kinds }, root };
+        });
+        blockRowsDrawn = drawn.map((d) => d.row);
         blockBox.replaceChildren(
-          el("span", { class: "field-label", text: "Blocks" }),
-          ...ticked.map((t) => t.field.root),
+          el("span", {
+            class: "field-label",
+            text: "Blocks, and what is coming off them",
+          }),
+          ...drawn.map((d) => d.root),
           el("span", {
             class: "field-hint",
             text:
-              "Tick as many as you are picking. Each one becomes its own pick, " +
-              "so what came off each block stays its own number, and the bin " +
-              "screen asks which block a bin is off.",
+              "Tick every block you are picking and the varieties coming off each. " +
+              "Each block and variety is its own part, so what came off each stays " +
+              "its own number, and the bin screen asks which part a bin is.",
           }),
         );
       }
@@ -5351,11 +5370,8 @@ function newPickScreen(): HTMLElement {
       on(vineyardPick, "change", () => {
         lastVineyard = vineyardPick.value;
         drawBlocks();
-        void variety.reload();
       });
       drawBlocks();
-      // After the blocks, because the list it offers is read from them.
-      await variety.reload();
 
       body.replaceChildren(
         rows(
@@ -5366,20 +5382,22 @@ function newPickScreen(): HTMLElement {
             vineyardPick,
           ),
           blockBox,
-          variety.root,
           vintage.root,
           button("Next, add bins", () => {
             if (!vineyardPick.value) {
               message.replaceChildren(banner("Pick a vineyard.", "error"));
               return;
             }
-            const chosen = ticked.filter((t) => t.field.input.checked);
+            const chosen = blockRowsDrawn.filter((r) => r.tick.input.checked);
             if (chosen.length === 0) {
               message.replaceChildren(banner("Tick at least one block.", "error"));
               return;
             }
-            if (!variety.value()) {
-              message.replaceChildren(banner("Pick a variety.", "error"));
+            const bare = chosen.find((r) => !r.kinds.some((k) => k.box.input.checked));
+            if (bare) {
+              message.replaceChildren(
+                banner(`Tick what is coming off ${bare.block.name}.`, "error"),
+              );
               return;
             }
             if (!vintage.value()) {
@@ -5391,14 +5409,19 @@ function newPickScreen(): HTMLElement {
             // Each id is made here, before anything is written, so the bin
             // screen can add to one and a repeated call finds the same pick
             // rather than making a second one.
-            pendingPicks = chosen.map((t) => ({
-              id: newId(),
-              block_id: t.block.id,
-              block_name: t.block.name,
-              variety_id: variety.value(),
-              vintage: Number(vintage.value()),
-              node_id: null,
-            }));
+            pendingPicks = chosen.flatMap((r) =>
+              r.kinds
+                .filter((k) => k.box.input.checked)
+                .map((k) => ({
+                  id: newId(),
+                  block_id: r.block.id,
+                  block_name: r.block.name,
+                  label: `${r.block.name}, ${k.label}`,
+                  variety_id: k.id,
+                  vintage: Number(vintage.value()),
+                  node_id: null,
+                })),
+            );
             pendingAt = 0;
             go({ at: "pick-bins" });
           }),
@@ -5814,7 +5837,7 @@ function pickBinsScreen(openOn?: string): HTMLElement {
         message.replaceChildren(
           banner(
             `${said} ${result.bins} bin${result.bins === 1 ? "" : "s"} on ` +
-              (p && pendingPicks.length > 1 ? p.block_name : "this pick") +
+              (p && pendingPicks.length > 1 ? p.label : "this pick") +
               ".",
             "good",
           ),
@@ -6046,26 +6069,27 @@ function pickBinsScreen(openOn?: string): HTMLElement {
         }
       }
 
-      // Which block the next bin belongs to. Drawn only when more than one was
-      // ticked, because one block needs no choosing and a control that offers a
-      // single option is a control that teaches somebody to ignore it.
+      // Which part of the pick the next bin belongs to, a block and a variety.
+      // Drawn only when there is more than one part, because a control that
+      // offers a single option is a control that teaches somebody to ignore it.
       //
-      // The blocks stay on screen after fruit has gone into them, and say how
-      // much, because picking runs back and forth: two bins off Block 1, four
-      // off Block 3, another off Block 1 when the crew moves back up the row.
+      // The parts stay on screen after fruit has gone into them, because
+      // picking runs back and forth: two bins of Grüner off one block, four of
+      // Pinot off another, then a Müller bin off the first when the crew moves
+      // back up the row.
       function drawSwitcher(): void {
         if (pendingPicks.length <= 1) {
           switcher.replaceChildren();
           return;
         }
         switcher.replaceChildren(
-          el("span", { class: "field-label", text: "Bins are coming off" }),
+          el("span", { class: "field-label", text: "This bin is" }),
           el(
             "div",
             { class: "variant-options" },
             ...pendingPicks.map((p, i) =>
               button(
-                p.node_id ? `${p.block_name} ✓` : p.block_name,
+                p.node_id ? `${p.label} ✓` : p.label,
                 () => void switchTo(i),
                 i === pendingAt ? "primary" : "quiet",
               ),
@@ -6074,8 +6098,8 @@ function pickBinsScreen(openOn?: string): HTMLElement {
           el("span", {
             class: "field-hint",
             text:
-              "Each block is its own pick, so what comes off each one stays " +
-              "its own number. A tick means fruit has gone in.",
+              "Each block and variety is its own part, so what comes off each " +
+              "stays its own number. A tick means fruit has gone in.",
           }),
         );
       }
@@ -6090,9 +6114,7 @@ function pickBinsScreen(openOn?: string): HTMLElement {
         if (nodeId) {
           await refreshTally(nodeId);
         } else {
-          tally.replaceChildren(
-            empty(`No bins on ${p?.block_name ?? "this block"} yet.`),
-          );
+          tally.replaceChildren(empty(`No bins of ${p?.label ?? "this part"} yet.`));
         }
         drawSwitcher();
         drawCancel();
