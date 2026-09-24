@@ -7,7 +7,8 @@
 --              supabase/migrations/0125_the_categories_are_schedule_f.sql,
 --              supabase/migrations/0127_the_books_have_a_door.sql]
 -- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql,
---                  packages/books/src/books.ts]
+--                  packages/books/src/books.ts,
+--                  supabase/migrations/0145_the_books_keep_score.sql]
 -- Axioms enforced: T0-4. A match is a person's statement and is only ever
 --                  written by one. The kernel suggests; it never files.
 --                  T0-5. What a paper says is appended, not edited. A misread

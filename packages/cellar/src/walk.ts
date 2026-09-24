@@ -56,6 +56,7 @@ import {
   type GlycolMachineLoad,
   glycolConflicts,
   glycolMachines,
+  harvestWeights,
   hookUpGlycol,
   invites,
   jackets,
@@ -216,6 +217,7 @@ import {
   variantSwitch,
   whenNoteWanted,
 } from "./ui.ts";
+import { download, workbook } from "./xlsx.ts";
 
 // The inventory walk. Its acceptance test is a stranger's first run: empty
 // database, fresh account, and you get from sign up to a labelled barrel with
@@ -394,6 +396,8 @@ async function screenFor(place: Place): Promise<HTMLElement> {
       return binsToReturnScreen();
     case "export":
       return exportScreen();
+    case "weights":
+      return weightsScreen();
     case "fruit":
       return fruitScreen();
     case "vineyards":
@@ -1070,6 +1074,11 @@ async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> 
       name: "Weigh bins",
       note: "What the scale said, with the bins' own weight taken off.",
       go: () => go({ at: "scale" }),
+    },
+    {
+      name: "Harvest weights",
+      note: "Every pick so far, by variety or by picking day. Downloads for Excel.",
+      go: () => go({ at: "weights" }),
     },
     {
       name: "Sampling",
@@ -3531,7 +3540,7 @@ function rackScreen(): HTMLElement {
     );
     const method = termPick("How it was moved", await terms("rack_method"));
     // One for the screen, so a rack and a dump entered later both say when.
-    const when = whenField();
+    const when = whenField("rack");
     // A list since 0142, because he said what the words are. The note carries
     // what the list is too coarse for: which flaw, where it leaked.
     const dumpWhy = termPick("Why it is going away", await terms("dump_reason"));
@@ -3787,7 +3796,15 @@ function rackScreen(): HTMLElement {
 // from where it was rather than from now every time. It only says when the
 // thing happened: the kernel keeps when it was entered on its own, and says
 // "entered late" from the difference, so nothing here decides that.
-let lastWhen = "";
+//
+// **Remembered per kind of work, not once for the app.** "The weighing and
+// picking might be on different days." With one shared memory, backdating a
+// morning's bins and then weighing them the next day would open the weighing's
+// control on the morning the fruit was picked, and a thumb that trusts the
+// prefill records the weight on the wrong day. Each kind of work walks forward
+// through its own day.
+type WhenFor = "pick" | "weigh" | "press" | "rack";
+const lastWhen: Record<WhenFor, string> = { pick: "", weigh: "", press: "", rack: "" };
 
 function localNow(): string {
   const d = new Date();
@@ -3795,7 +3812,7 @@ function localNow(): string {
   return d.toISOString().slice(0, 16);
 }
 
-function whenField(): { root: HTMLElement; value: () => string | null } {
+function whenField(kind: WhenFor): { root: HTMLElement; value: () => string | null } {
   const input = el("input", { type: "datetime-local", class: "input" });
   const box = el(
     "details",
@@ -3813,10 +3830,10 @@ function whenField(): { root: HTMLElement; value: () => string | null } {
     ),
   );
   box.addEventListener("toggle", () => {
-    if (box.open && !input.value) input.value = lastWhen || localNow();
+    if (box.open && !input.value) input.value = lastWhen[kind] || localNow();
   });
   on(input, "change", () => {
-    lastWhen = input.value;
+    lastWhen[kind] = input.value;
   });
   return {
     root: box,
@@ -6004,7 +6021,7 @@ function pickBinsScreen(openOn?: string): HTMLElement {
       // When these bins came off, for a day's picking entered in the evening.
       // Shared by both ways of adding, because it describes the bins and not
       // the button.
-      const when = whenField();
+      const when = whenField("pick");
 
       // Three empty bins and three bins of fruit in one action. The naming is the
       // kernel's, not this screen's: "the next bin after PB3" is a rule, and a
@@ -6355,7 +6372,7 @@ function scaleScreen(): HTMLElement {
             "checked later. If you cannot now, the pick screen takes them after.",
         );
         const result = el("div", {});
-        const when = whenField();
+        const when = whenField("weigh");
 
         return el(
           "div",
@@ -9322,7 +9339,7 @@ function pressScreen(): HTMLElement {
   // one sitting, and the time given for the start should still be there for the
   // cuts. Each step reads it when it is pressed, so it can be moved on between
   // them.
-  const when = whenField();
+  const when = whenField("press");
 
   async function load(): Promise<void> {
     const [running, picks, kit, cuts, vesselTypes, draws, allBins] = await Promise.all([
@@ -10417,6 +10434,459 @@ function siteForm(
         }),
       ),
   };
+}
+
+// Harvest weights so far. 0146.
+//
+// "There should specifically be a section for harvest weights so far that has
+// all of the picks and weights grouped by variety and/or pick date and it can
+// export into at least an excel." The totals are the kernel's
+// (`harvest_weights_by_*`), so the phone and the spreadsheet cannot disagree,
+// and every grouping is by the day the fruit was picked: "the weighing and
+// picking might be on different days".
+//
+// A weight that is still missing bins says so on its own row. A total that is
+// short and does not say it is short is the A13 shape, and during picking most
+// of the latest day is exactly that.
+type WeightView = "variety" | "day" | "day_variety" | "picks";
+
+function lbsText(n: number | null): string {
+  return n === null
+    ? "not weighed"
+    : Number(n).toLocaleString(undefined, { maximumFractionDigits: 0 });
+}
+
+function tonsText(n: number | null): string {
+  return n === null ? "-" : Number(n).toFixed(2);
+}
+
+function shortDay(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  if (!y || !m || !d) return iso;
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function weightsScreen(): HTMLElement {
+  const body = el("div", {}, empty("Loading."));
+  const view = screen(
+    "Harvest weights",
+    lede(
+      "Every pick so far, added up. Grouped by the day it was picked, whenever it was weighed.",
+    ),
+    body,
+  );
+
+  let vintage = new Date().getFullYear();
+  let grouping = (pref("weights_view", "variety") as WeightView) || "variety";
+
+  async function draw(): Promise<void> {
+    const [byVariety, byDay, byDayVariety, picks] = await Promise.all([
+      harvestWeights("variety", vintage),
+      harvestWeights("day", vintage),
+      harvestWeights("day_variety", vintage),
+      fruitLog(),
+    ]);
+    const mine = picks.filter((p) => p.vintage === vintage);
+    const vintages = [
+      ...new Set(picks.map((p) => p.vintage).filter((v): v is number => v !== null)),
+    ].sort((a, b) => b - a);
+    if (!vintages.includes(vintage)) vintages.unshift(vintage);
+
+    const totalLbs = byVariety.reduce((a, r) => a + (r.lbs ?? 0), 0);
+    const totalBins = byVariety.reduce((a, r) => a + r.bins, 0);
+    const unweighed = byVariety.reduce((a, r) => a + r.bins_unweighed, 0);
+    const picked = byVariety.reduce((a, r) => a + r.picks, 0);
+
+    // The headline. Tons first, because that is how a vintage is talked about.
+    const headline = el(
+      "div",
+      { class: "weights-head" },
+      el(
+        "div",
+        { class: "weights-big" },
+        el("span", { class: "weights-num", text: (totalLbs / 2000).toFixed(2) }),
+        el("span", { class: "weights-unit", text: "tons" }),
+      ),
+      el("span", {
+        class: "weights-sub",
+        text: `${totalLbs.toLocaleString(undefined, { maximumFractionDigits: 0 })} lbs from ${picked} pick${
+          picked === 1 ? "" : "s"
+        } and ${totalBins} bin${totalBins === 1 ? "" : "s"}`,
+      }),
+      unweighed > 0
+        ? el("span", {
+            class: "weights-short",
+            text: `${unweighed} bin${unweighed === 1 ? "" : "s"} not weighed yet, so this is short.`,
+          })
+        : el("span", { class: "weights-sub", text: "Every bin weighed." }),
+    );
+
+    const vintagePick = el("select", { class: "input" });
+    for (const v of vintages)
+      vintagePick.append(el("option", { value: String(v), text: String(v) }));
+    vintagePick.value = String(vintage);
+    on(vintagePick, "change", () => {
+      vintage = Number(vintagePick.value);
+      void draw();
+    });
+
+    const tabs = el(
+      "div",
+      { class: "variant-options" },
+      ...(
+        [
+          ["variety", "By variety"],
+          ["day", "By day"],
+          ["day_variety", "Day and variety"],
+          ["picks", "Every pick"],
+        ] as const
+      ).map(([k, label]) =>
+        button(
+          label,
+          () => {
+            grouping = k;
+            setPref("weights_view", k);
+            void draw();
+          },
+          k === grouping ? "primary" : "quiet",
+        ),
+      ),
+    );
+
+    // One table builder for all four, so they look alike and total alike.
+    function table(
+      head: { label: string; num?: boolean }[],
+      rowsOf: { cells: string[]; short?: boolean; sub?: boolean }[],
+      foot: string[],
+    ): HTMLElement {
+      return el(
+        "div",
+        { class: "log-wrap" },
+        el(
+          "table",
+          { class: "log-table weights-table" },
+          el(
+            "thead",
+            {},
+            el(
+              "tr",
+              {},
+              ...head.map((h) =>
+                el("th", { text: h.label, class: h.num ? "num" : "" }),
+              ),
+            ),
+          ),
+          el(
+            "tbody",
+            {},
+            ...rowsOf.map((r) =>
+              el(
+                "tr",
+                { class: r.sub ? "weights-group" : "" },
+                ...r.cells.map((c, i) =>
+                  el("td", {
+                    text: c,
+                    class:
+                      `${head[i]?.num ? "num" : ""}${r.short && head[i]?.num ? " partial" : ""}`.trim(),
+                  }),
+                ),
+              ),
+            ),
+          ),
+          el(
+            "tfoot",
+            {},
+            el(
+              "tr",
+              {},
+              ...foot.map((c, i) =>
+                el("td", { text: c, class: head[i]?.num ? "num" : "" }),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    const footTotals = [
+      String(picked),
+      String(totalBins),
+      totalLbs.toLocaleString(undefined, { maximumFractionDigits: 0 }),
+      (totalLbs / 2000).toFixed(2),
+    ];
+
+    let shown: HTMLElement;
+    if (byVariety.length === 0) {
+      shown = empty(`No fruit recorded for ${vintage}.`);
+    } else if (grouping === "variety") {
+      shown = table(
+        [
+          { label: "Variety" },
+          { label: "Picked" },
+          { label: "Picks", num: true },
+          { label: "Bins", num: true },
+          { label: "Lbs", num: true },
+          { label: "Tons", num: true },
+        ],
+        byVariety.map((r) => ({
+          cells: [
+            r.variety ?? "",
+            r.first_picked === r.last_picked
+              ? shortDay(r.first_picked ?? "")
+              : `${shortDay(r.first_picked ?? "")} to ${shortDay(r.last_picked ?? "")}`,
+            String(r.picks),
+            r.bins_unweighed > 0
+              ? `${r.bins} (${r.bins_unweighed} to weigh)`
+              : String(r.bins),
+            lbsText(r.lbs),
+            tonsText(r.tons),
+          ],
+          short: r.bins_unweighed > 0,
+        })),
+        ["All varieties", "", ...footTotals],
+      );
+    } else if (grouping === "day") {
+      shown = table(
+        [
+          { label: "Picked" },
+          { label: "Varieties" },
+          { label: "Picks", num: true },
+          { label: "Bins", num: true },
+          { label: "Lbs", num: true },
+          { label: "Tons", num: true },
+        ],
+        byDay.map((r) => ({
+          cells: [
+            shortDay(r.picked ?? ""),
+            r.varieties ?? "",
+            String(r.picks),
+            r.bins_unweighed > 0
+              ? `${r.bins} (${r.bins_unweighed} to weigh)`
+              : String(r.bins),
+            lbsText(r.lbs),
+            tonsText(r.tons),
+          ],
+          short: r.bins_unweighed > 0,
+        })),
+        ["Every day", "", ...footTotals],
+      );
+    } else if (grouping === "day_variety") {
+      // Each day's total as its own row, with that day's varieties under it,
+      // so the page reads the way a picking diary does.
+      const rowsOf: { cells: string[]; short?: boolean; sub?: boolean }[] = [];
+      for (const d of byDay) {
+        rowsOf.push({
+          cells: [
+            shortDay(d.picked ?? ""),
+            "",
+            String(d.picks),
+            String(d.bins),
+            lbsText(d.lbs),
+            tonsText(d.tons),
+          ],
+          short: d.bins_unweighed > 0,
+          sub: true,
+        });
+        for (const r of byDayVariety.filter((x) => x.picked === d.picked)) {
+          rowsOf.push({
+            cells: [
+              "",
+              r.variety ?? "",
+              String(r.picks),
+              r.bins_unweighed > 0
+                ? `${r.bins} (${r.bins_unweighed} to weigh)`
+                : String(r.bins),
+              lbsText(r.lbs),
+              tonsText(r.tons),
+            ],
+            short: r.bins_unweighed > 0,
+          });
+        }
+      }
+      shown = table(
+        [
+          { label: "Picked" },
+          { label: "Variety" },
+          { label: "Picks", num: true },
+          { label: "Bins", num: true },
+          { label: "Lbs", num: true },
+          { label: "Tons", num: true },
+        ],
+        rowsOf,
+        ["Every day", "", ...footTotals],
+      );
+    } else {
+      const sorted = [...mine].sort((a, b) => a.picked.localeCompare(b.picked));
+      shown = table(
+        [
+          { label: "Picked" },
+          { label: "Variety" },
+          { label: "Vineyard" },
+          { label: "Block" },
+          { label: "Bins", num: true },
+          { label: "Lbs", num: true },
+          { label: "Tons", num: true },
+        ],
+        sorted.map((r) => ({
+          cells: [
+            shortDay(r.picked),
+            r.variety ?? "",
+            r.vineyard ?? "",
+            r.block ?? "",
+            r.bins_weighed < r.bins
+              ? `${r.bins} (${r.bins - r.bins_weighed} to weigh)`
+              : String(r.bins),
+            lbsText(r.lbs),
+            tonsText(r.tons),
+          ],
+          short: r.bins_weighed < r.bins,
+        })),
+        ["Every pick", "", "", String(sorted.length), ...footTotals.slice(1)],
+      );
+    }
+
+    // All four groupings in one file, one sheet each, with the pick list last
+    // so the totals can be checked against it.
+    const excel = button(
+      "Download for Excel",
+      () => {
+        const today = new Date();
+        today.setMinutes(today.getMinutes() - today.getTimezoneOffset());
+        const asOf = today.toISOString().slice(0, 10);
+        const blob = workbook([
+          {
+            name: "By variety",
+            columns: [
+              { header: "Variety", width: 22 },
+              { header: "First picked", width: 13 },
+              { header: "Last picked", width: 13 },
+              { header: "Picks", width: 8 },
+              { header: "Bins", width: 8 },
+              { header: "Bins not weighed", width: 16 },
+              { header: "Lbs", width: 12 },
+              { header: "Tons", width: 10 },
+            ],
+            rows: byVariety.map((r) => [
+              r.variety ?? "",
+              r.first_picked ? { date: r.first_picked } : null,
+              r.last_picked ? { date: r.last_picked } : null,
+              r.picks,
+              r.bins,
+              r.bins_unweighed,
+              r.lbs,
+              r.tons,
+            ]),
+          },
+          {
+            name: "By day",
+            columns: [
+              { header: "Picked", width: 13 },
+              { header: "Varieties", width: 40 },
+              { header: "Picks", width: 8 },
+              { header: "Bins", width: 8 },
+              { header: "Bins not weighed", width: 16 },
+              { header: "Lbs", width: 12 },
+              { header: "Tons", width: 10 },
+            ],
+            rows: byDay.map((r) => [
+              r.picked ? { date: r.picked } : null,
+              r.varieties ?? "",
+              r.picks,
+              r.bins,
+              r.bins_unweighed,
+              r.lbs,
+              r.tons,
+            ]),
+          },
+          {
+            name: "Day and variety",
+            columns: [
+              { header: "Picked", width: 13 },
+              { header: "Variety", width: 22 },
+              { header: "Picks", width: 8 },
+              { header: "Bins", width: 8 },
+              { header: "Bins not weighed", width: 16 },
+              { header: "Lbs", width: 12 },
+              { header: "Tons", width: 10 },
+            ],
+            rows: byDayVariety.map((r) => [
+              r.picked ? { date: r.picked } : null,
+              r.variety ?? "",
+              r.picks,
+              r.bins,
+              r.bins_unweighed,
+              r.lbs,
+              r.tons,
+            ]),
+          },
+          {
+            name: "Every pick",
+            columns: [
+              { header: "Picked", width: 13 },
+              { header: "Pick", width: 48 },
+              { header: "Variety", width: 20 },
+              { header: "Vineyard", width: 24 },
+              { header: "Block", width: 24 },
+              { header: "Status", width: 10 },
+              { header: "Bins", width: 8 },
+              { header: "Bins weighed", width: 13 },
+              { header: "Lbs", width: 12 },
+              { header: "Tons", width: 10 },
+            ],
+            rows: [...mine]
+              .sort((a, b) => a.picked.localeCompare(b.picked))
+              .map((r) => [
+                { date: r.picked },
+                r.name,
+                r.variety ?? "",
+                r.vineyard ?? "",
+                r.block ?? "",
+                r.status,
+                r.bins,
+                r.bins_weighed,
+                r.lbs,
+                r.tons,
+              ]),
+          },
+        ]);
+        download(blob, `harvest-weights-${vintage}-as-of-${asOf}.xlsx`);
+      },
+      "secondary",
+    );
+
+    body.replaceChildren(
+      rows(
+        headline,
+        el(
+          "label",
+          { class: "field" },
+          el("span", { class: "field-label", text: "Vintage" }),
+          vintagePick,
+        ),
+        tabs,
+        shown,
+        excel,
+        el("p", {
+          class: "field-hint",
+          text: "One file, four sheets: by variety, by day, day and variety, and every pick. Dates are real dates in Excel.",
+        }),
+        button("Back", () => goBack(), "quiet"),
+      ),
+    );
+  }
+
+  void draw().catch((error) => {
+    body.replaceChildren(
+      fail(error),
+      button("Back", () => goBack(), "quiet"),
+    );
+  });
+
+  return view;
 }
 
 // Every pick, as a table you sort rather than a list you scroll.

@@ -9,7 +9,8 @@
 --              supabase/migrations/0058_an_open_pick_is_a_view.sql,
 --              supabase/migrations/0101_a_note_can_be_about_a_screen.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/screens.sh,
---                  supabase/migrations/0137_harvest_so_far.sql]
+--                  supabase/migrations/0137_harvest_so_far.sql,
+--                  supabase/migrations/0146_harvest_weights.sql]
 -- Axioms enforced: T0-2, nothing here is stored. A13: a finished pick used to
 --                  read as zero bins, which is a refusal shaped like an answer.
 -- Open sorries: none new. See S-96 for importing previous years.

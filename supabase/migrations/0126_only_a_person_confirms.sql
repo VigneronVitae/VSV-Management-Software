@@ -7,7 +7,8 @@
 -- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql,
 --                  supabase/migrations/0127_the_books_have_a_door.sql,
 --                  packages/books/src/books.ts,
---                  scripts/import-ledger.py]
+--                  scripts/import-ledger.py,
+--                  supabase/migrations/0145_the_books_keep_score.sql]
 -- Axioms enforced: T0-4. A trust field is set by the verifier. An agent may
 --                  write `inferred` and may never write anything stronger, and
 --                  a default that quietly upgrades a silent caller is the same

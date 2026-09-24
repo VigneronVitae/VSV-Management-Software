@@ -1600,6 +1600,51 @@ export async function fruitLog(): Promise<FruitRow[]> {
   return (data ?? []) as FruitRow[];
 }
 
+// 0146. Harvest weights so far, added up the kernel's way. By the day it was
+// picked, never the day it was weighed.
+export type WeightTotal = {
+  vintage: number | null;
+  picked?: string;
+  variety?: string;
+  varieties?: string;
+  picks: number;
+  bins: number;
+  bins_unweighed: number;
+  lbs: number | null;
+  tons: number | null;
+  first_picked?: string;
+  last_picked?: string;
+};
+
+export type WeightGrouping = "variety" | "day" | "day_variety";
+
+export async function harvestWeights(
+  grouping: WeightGrouping,
+  vintage: number,
+): Promise<WeightTotal[]> {
+  const relation = {
+    variety: "harvest_weights_by_variety",
+    day: "harvest_weights_by_day",
+    day_variety: "harvest_weights_by_day_variety",
+  }[grouping];
+  const columns = {
+    variety:
+      "vintage,variety,picks,bins,bins_unweighed,lbs,tons,first_picked,last_picked",
+    day: "vintage,picked,picks,bins,bins_unweighed,lbs,tons,varieties",
+    day_variety: "vintage,picked,variety,picks,bins,bins_unweighed,lbs,tons",
+  }[grouping];
+  let q = kernel().from(relation).select(columns).eq("vintage", vintage);
+  q =
+    grouping === "variety"
+      ? q.order("lbs", { ascending: false, nullsFirst: false })
+      : grouping === "day"
+        ? q.order("picked", { ascending: true })
+        : q.order("picked", { ascending: true }).order("variety");
+  const { data, error } = await q;
+  if (error) throw new KernelError(error);
+  return (data ?? []) as unknown as WeightTotal[];
+}
+
 export async function openPicks(): Promise<Pick[]> {
   // `open_pick` rather than `node` with three filters. What counts as an open
   // pick is a rule, and it was in this function until 0057 asked what relation
@@ -2961,6 +3006,49 @@ export async function uploadPaperPhoto(paperId: Uuid, file: File): Promise<strin
     .upload(path, file, { upsert: false, contentType: file.type || "image/jpeg" });
   if (error) throw new KernelError(error);
   return path;
+}
+
+// 0145. The score, as the kernel counts it, so two devices agree about a streak.
+export type BooksProgress = {
+  filed_today: number;
+  filed_week: number;
+  filed_ever: number;
+  streak_days: number;
+  left_to_file: number;
+  settled: number;
+  total: number;
+  papers_today: number;
+  papers_loose: number;
+};
+
+export async function booksProgress(): Promise<BooksProgress> {
+  const { data, error } = await kernel()
+    .from("books_progress")
+    .select(
+      "filed_today,filed_week,filed_ever,streak_days,left_to_file,settled,total,papers_today,papers_loose",
+    )
+    .single();
+  if (error) throw new KernelError(error);
+  return data as BooksProgress;
+}
+
+export type PaperName = {
+  who: string;
+  key: string;
+  kind: string;
+  class: string | null;
+  class_label: string | null;
+  direction: "out" | "in";
+  times: number;
+};
+
+export async function paperNames(): Promise<PaperName[]> {
+  const { data, error } = await kernel()
+    .from("paper_who_memory")
+    .select("who,key,kind,class,class_label,direction,times")
+    .order("times", { ascending: false });
+  if (error) throw new KernelError(error);
+  return (data ?? []) as PaperName[];
 }
 
 export async function paperPhotoUrl(path: string): Promise<string | null> {

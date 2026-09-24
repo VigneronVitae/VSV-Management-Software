@@ -101,7 +101,9 @@
 --              supabase/migrations/0141_a_volume_says_whether_it_was_measured.sql,
 --              supabase/migrations/0142_a_dump_says_why.sql,
 --              supabase/migrations/0143_a_record_can_say_when.sql,
---              supabase/migrations/0144_a_paper_says_what_money_was.sql]
+--              supabase/migrations/0144_a_paper_says_what_money_was.sql,
+--              supabase/migrations/0145_the_books_keep_score.sql,
+--              supabase/migrations/0146_harvest_weights.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh, scripts/rpc-args.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -13102,6 +13104,103 @@ begin
   end if;
   perform test_ok('an invoice is owed until matched and overdue after its due date, and paying it is matching it');
 
+  perform test_act_as(null);
+end $$;
+
+
+-- ---------------------------------------------------------------------------
+-- 0145. The books keep score.
+-- ---------------------------------------------------------------------------
+--
+-- "Maybe even gamify one." The score is counted by the kernel, so two devices
+-- agree about a streak.
+do $$
+declare
+  u     uuid;
+  k     text;
+  line  uuid := '00000000-0000-0000-0000-00000000f501';
+  paper uuid := '00000000-0000-0000-0000-00000000f502';
+  p     record;
+begin
+  select id into u from app_user where role = 'admin' limit 1;
+  select value into k from term where kind = 'money_class' and active order by sort_order limit 1;
+
+  -- Somebody who has never confirmed anything has a streak of zero, not null.
+  perform test_act_as(null);
+  select * into p from books_progress;
+  if p.streak_days is distinct from 0 then
+    raise exception 'FAIL: nobody''s streak is %, not 0', p.streak_days;
+  end if;
+  perform test_ok('a streak for somebody who has confirmed nothing is 0, not blank');
+
+  perform test_act_as(u);
+  select * into p from books_progress;
+  insert into bank_import (id, filename, format) values ('00000000-0000-0000-0000-00000000f503', 'ASSERT 0145', 'csv');
+  insert into bank_line (id, batch_id, row_no, at, amount, direction, description)
+    values (line, '00000000-0000-0000-0000-00000000f503', 1, current_date, 12.34, 'Debit', 'ASSERT 0145');
+  perform attest_line(line, k, null, true);
+  if (select filed_today from books_progress) <> p.filed_today + 1 then
+    raise exception 'FAIL: confirming a transaction did not move today''s count from %', p.filed_today;
+  end if;
+  if (select streak_days from books_progress) < 1 then
+    raise exception 'FAIL: a confirmation today left no streak';
+  end if;
+  perform test_ok('confirming a transaction counts today and starts a streak, from the attestation itself');
+
+  -- The name memory offers what a name was filed as last time.
+  perform record_paper(paper, 'receipt', 'out', current_date, 9.99, 'ASSERT 0145 Grocer', k);
+  if (select class from paper_who_memory where key = 'assert 0145 grocer') is distinct from k then
+    raise exception 'FAIL: the name memory does not remember what a name was filed as';
+  end if;
+  perform test_ok('a name seen on a paper is remembered with what it was filed as, case and spaces aside');
+
+  perform test_act_as(null);
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 0146. Harvest weights.
+-- ---------------------------------------------------------------------------
+--
+-- "A section for harvest weights so far that has all of the picks and weights
+-- grouped by variety and/or pick date."
+do $$
+declare
+  pick uuid := '00000000-0000-0000-0000-00000000f601';
+  n    int;
+  u    uuid;
+begin
+  select id into u from app_user where role = 'admin' limit 1;
+  perform test_act_as(u);
+  update term set attributes = attributes || '{"tare_lbs": 60}'::jsonb
+   where kind = 'vessel_type' and value = 'picking_bin';
+  perform add_bins_to_pick(
+    jsonb_build_object('id', pick, 'variety_id', term_id('variety', 'riesling'), 'vintage', 2026),
+    null, 2, term_id('vessel_type', 'picking_bin'), 'ASRT0146', 100);
+
+  -- Two bins on the scale together are two bins weighed. It used to count the
+  -- reading, so this said one.
+  perform weigh_bins(pick, array(select vessel_id from placement where node_id = pick), 1500);
+  select bins_weighed into n from fruit_log where id = pick;
+  if n <> 2 then
+    raise exception 'FAIL: two bins weighed together count as % weighed', n;
+  end if;
+  perform test_ok('two bins weighed in one reading count as two bins weighed, not one reading');
+
+  -- The groupings add up to the picks they group, for every vintage.
+  if exists (
+    select 1 from harvest_weights_by_variety w
+     where w.lbs is distinct from (
+       select round(sum(f.lbs), 1) from fruit_log f
+        where f.vintage is not distinct from w.vintage
+          and coalesce(f.variety, 'No variety said') = w.variety)
+  ) then
+    raise exception 'FAIL: a variety''s total is not the sum of its picks';
+  end if;
+  if (select sum(picks) from harvest_weights_by_day) <> (select count(*) from fruit_log)
+     or (select sum(picks) from harvest_weights_by_day_variety) <> (select count(*) from fruit_log) then
+    raise exception 'FAIL: the day groupings do not account for every pick';
+  end if;
+  perform test_ok('harvest weights by variety, by day and by both add up to exactly the picks they group');
   perform test_act_as(null);
 end $$;
 

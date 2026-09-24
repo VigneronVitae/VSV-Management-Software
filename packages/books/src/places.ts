@@ -18,6 +18,7 @@ export type BookPlace =
   | { at: "line"; id: string }
   | { at: "merchants" }
   | { at: "papers" }
+  | { at: "deck" }
   // `id` is a paper's uuid, or "new" for one not yet written. 0144.
   | { at: "paper"; id: string };
 
@@ -29,6 +30,7 @@ export const PLACES = new Set([
   "merchants",
   "papers",
   "paper",
+  "deck",
 ]);
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -48,6 +50,7 @@ export function decode(hash: string): BookPlace {
   if (at === "money" && parts.length === 1) return { at: "money" };
   if (at === "merchants" && parts.length === 1) return { at: "merchants" };
   if (at === "papers" && parts.length === 1) return { at: "papers" };
+  if (at === "deck" && parts.length === 1) return { at: "deck" };
   if (at === "paper" && id && (id === "new" || UUID.test(id))) return { at, id };
   if (at === "pile" && id && PILES.includes(id)) return { at, id };
   if (at === "line" && id && UUID.test(id)) return { at, id };

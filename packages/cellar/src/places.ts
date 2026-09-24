@@ -57,6 +57,8 @@ export type Place =
   // Every pick there has ever been, as a table rather than a list, because it
   // is read across and sorted rather than tapped down.
   | { at: "fruit" }
+  // 0146. Harvest weights so far, grouped, and the Excel download.
+  | { at: "weights" }
   | { at: "vineyards" }
   // One vineyard. A vineyard used to be a heading on the list and nothing else,
   // which meant a vineyard with no blocks in it yet was a dead end: nothing to
@@ -125,6 +127,7 @@ const WITHOUT_ID = new Set([
   "export",
   "vineyards",
   "fruit",
+  "weights",
   "day",
   "paper",
   "makers",
