@@ -365,7 +365,32 @@ function cameraGlyph(): SVGElement {
 // chip moves the chip.
 const PAGE = 50;
 
+// Every category but the one being said no to, the ones that go the same way
+// as the money first. A debit filed as income is the mistake the sides exist
+// to prevent, so those are still offered, just after the ones that fit.
+function otherClasses(
+  line: MoneyLine,
+  rejected: string | null,
+  onPick: (value: string) => Promise<void>,
+): HTMLElement[] {
+  const way = line.signed_amount < 0 ? "out" : "in";
+  const sideOf = (t: Term) => (t.attributes as { side?: string } | null)?.side;
+  const offered = vocabulary.filter((t) => t.value !== rejected);
+  const ordered = [
+    ...offered.filter((t) => sideOf(t) === way || !sideOf(t)),
+    ...offered.filter((t) => sideOf(t) && sideOf(t) !== way),
+  ];
+  return ordered.map((t) => {
+    const chip = button(t.label, () => onPick(t.value), "secondary");
+    chip.classList.add("class-chip");
+    const side = sideOf(t);
+    if (side) chip.classList.add(`class-${side}`);
+    return chip;
+  });
+}
+
 async function pileScreen(pile: string): Promise<HTMLElement> {
+  if (vocabulary.length === 0) vocabulary = await terms("money_class");
   const list = el("div", { class: "ledger" });
   const status = el("p", { class: "lede" });
   const search = field({
@@ -395,6 +420,12 @@ async function pileScreen(pile: string): Promise<HTMLElement> {
 
   // One transaction, as a row you can act on without opening it.
   function row(line: MoneyLine): HTMLElement {
+    // "For the say yes page, I also need to be able to say no, actually it's X."
+    // The no sits beside the yes and opens the categories on the row, because
+    // the only other way to disagree was to open the transaction, and a pile
+    // worked by thumb should never make the wrong answer cost more taps than the
+    // right one.
+    //
     // What we would file it as without asking: the memory's suggestion for a
     // line nobody has typed, or the standing guess for one that arrived with a
     // class already on it. Both are somebody else's word, and neither is a
@@ -442,8 +473,25 @@ async function pileScreen(pile: string): Promise<HTMLElement> {
         },
         "primary",
       );
-      yes.classList.add("entry-yes");
-      item.append(yes);
+      const chips = el("div", { class: "classes entry-chips", hidden: "hidden" });
+      const no = button(
+        "No, it's…",
+        () => {
+          if (chips.childElementCount === 0) {
+            chips.append(
+              ...otherClasses(line, guessValue, async (value) => {
+                await attestLine({ lineId: line.id, klass: value, confirm: true });
+                item.remove();
+                count();
+                if (list.childElementCount === 0) list.append(empty("Pile cleared."));
+              }),
+            );
+          }
+          chips.hidden = !chips.hidden;
+        },
+        "secondary",
+      );
+      item.append(el("div", { class: "entry-answer" }, yes, no), chips);
       if (line.suggested_on && !line.class) {
         item.append(
           el("span", {
@@ -784,17 +832,12 @@ async function deckScreen(): Promise<HTMLElement> {
     // tap and not a trip to another screen and back.
     function openChips(): void {
       if (chips.childElementCount === 0) {
-        for (const t of vocabulary) {
-          const side = (t.attributes as { side?: string } | null)?.side;
-          const chip = button(
-            t.label,
-            () => void file(line, card, t.value, t.label),
-            "secondary",
-          );
-          chip.classList.add("class-chip");
-          if (side) chip.classList.add(`class-${side}`);
-          chips.append(chip);
-        }
+        chips.append(
+          ...otherClasses(line, guessValue, async (value) => {
+            const t = vocabulary.find((x) => x.value === value);
+            await file(line, card, value, t?.label ?? value);
+          }),
+        );
       }
       chips.hidden = false;
       chips.scrollIntoView({
@@ -811,7 +854,7 @@ async function deckScreen(): Promise<HTMLElement> {
           )
         : null;
     const other = button(
-      guessValue ? "Something else" : "Say what it was",
+      guessValue ? "No, it's…" : "Say what it was",
       () => openChips(),
       guessValue ? "secondary" : "primary",
     );

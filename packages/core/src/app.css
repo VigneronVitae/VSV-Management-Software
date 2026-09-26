@@ -1987,6 +1987,22 @@ body.practising {
   min-height: var(--tap);
 }
 
+/* Yes and no side by side, yes the wider, because it is the answer most of the
+   time and the no is there for when it is not. */
+.entry-answer {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 0.5rem;
+}
+
+.entry-answer .btn {
+  min-height: var(--tap);
+}
+
+.entry-chips {
+  margin: 0.25rem 0 0.25rem;
+}
+
 /* --- harvest weights. 0146 --------------------------------------------------
 
    Tons first and large, because that is how a vintage is talked about; pounds
