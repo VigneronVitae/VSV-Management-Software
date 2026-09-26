@@ -655,7 +655,12 @@ async function draw(): Promise<void> {
       root.replaceChildren(await signInScreen());
       return;
     }
-    if (scope.party_kind !== "facility") {
+    // `sees`, the kernel's own answer from `is_facility_user()`. Not
+    // `party_kind`: that is only set for an account linked to a party row, which
+    // a custom crush client has and staff do not, so testing it shut the door on
+    // the winemaker himself. Found 2026-09-25: "Why is the shop shut for this
+    // account?"
+    if (scope.sees !== "everything") {
       root.replaceChildren(notOursScreen());
       return;
     }

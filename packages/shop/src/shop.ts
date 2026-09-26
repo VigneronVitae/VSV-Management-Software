@@ -789,7 +789,10 @@ async function open(): Promise<void> {
       show(signInScreen());
       return;
     }
-    if (scope.party_kind !== "facility") {
+    // `sees` is the kernel's own answer (`is_facility_user()`). `party_kind`
+    // was tested here first and is only set for an account linked to a party
+    // row, which staff are not, so the shop shut the door on the winemaker.
+    if (scope.sees !== "everything") {
       show(
         screen(
           "machines",
