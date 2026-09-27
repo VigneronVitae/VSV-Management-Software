@@ -1627,3 +1627,20 @@ will get pressed off skins at some point".
 *Resolves when:* he says what a pressing off skins should count going in (the pounds of fruit
 the lot started as, a litre estimate of the must, or nothing), and `start_press` reads it.
 *Load-bearing:* yes on the day the first red is pressed, which is a week or two away.
+*Discharged 2026-09-27.* Tried against practice, `start_press` already counts a lot held in
+pounds: its quantity, shared across its fermenters. What was missing was the 2nd free run
+cut and any way for the press screen to find a red on its skins; `0150` adds both, and
+scripts/smoke.ts presses one off its skins with all four cuts. The litres out were wrong once
+two cuts shared a tank, fixed in `0151`.
+
+**S-148. A cut drawn wholly into another lot's tank stays open, in no vessel.**
+When `draw_cut` sends a cut into a tank that already holds a lot, it blends: the resident lot
+grows and the arriving cut becomes one of its parents. The arriving cut's own lot keeps its
+quantity and stays open with no placement, so it appears in lists of open lots and adds one to
+`harvest_so_far.lots_now`, holding litres that exist only inside the other lot. Its litres are
+no longer double counted anywhere that matters: `0151` made a press's litres out the sum of its
+draws. Closing it was tried and taken back, because 0102 wants the same cut drawn into the same
+tank twice to be one lot growing, and a closed lot is not found again.
+*Resolves when:* a blended cut is closed and still found by the next draw of the same cut into
+the same tank, or open lots with no placement are left out of the lists that count lots.
+*Load-bearing:* no. It is a count of lots, not of wine.

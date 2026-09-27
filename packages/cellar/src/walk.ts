@@ -77,6 +77,7 @@ import {
   newId,
   nodeHistory,
   notesFor,
+  onSkins,
   openPicks,
   type PaperRecord,
   type Party,
@@ -9362,15 +9363,17 @@ function pressScreen(): HTMLElement {
   const when = whenField("press");
 
   async function load(): Promise<void> {
-    const [running, picks, kit, cuts, vesselTypes, draws, allBins] = await Promise.all([
-      pressesInProgress(),
-      openPicks(),
-      vessels(),
-      terms("press_cut"),
-      terms("vessel_type"),
-      pressDraws(),
-      pickBins(),
-    ]);
+    const [running, picks, kit, cuts, vesselTypes, draws, allBins, skins] =
+      await Promise.all([
+        pressesInProgress(),
+        openPicks(),
+        vessels(),
+        terms("press_cut"),
+        terms("vessel_type"),
+        pressDraws(),
+        pickBins(),
+        onSkins(),
+      ]);
     const pressTerm = vesselTypes.find((t) => t.value === "press");
 
     // --- the one copy of everything that writes --------------------------
@@ -9477,6 +9480,24 @@ function pressScreen(): HTMLElement {
         return binBoxes.filter((b) => b.box.input.checked);
       }
 
+      // 0150. Reds on their skins, pressed off them. "Free run (pumping the
+      // juice out before pressing), 2nd free run, press, hard press." Start the
+      // press when the pumping starts, so the free run is this pressing's first
+      // cut. One tick per fermenter, grouped by lot, the way bins are grouped by
+      // pick.
+      const skinBoxes = skins.map((s) => ({
+        skin: s,
+        box: checkbox(
+          `${s.vessel}` +
+            (s.said_lbs !== null
+              ? `, said ${Number(s.said_lbs).toLocaleString()} lb`
+              : s.said_fill_pct !== null
+                ? `, ${s.said_fill_pct}% full`
+                : ""),
+          false,
+        ),
+      }));
+
       // What the press is being asked to hold, updated as boxes are ticked,
       // because the whole reason for choosing bins is that the press has a
       // capacity and the pick does not fit in it.
@@ -9550,6 +9571,40 @@ function pressScreen(): HTMLElement {
                 );
               }),
             ),
+        skins.length === 0
+          ? el("span", {})
+          : el(
+              "div",
+              {},
+              el("span", { class: "field-label", text: "Or press off skins" }),
+              ...[...new Set(skins.map((s) => s.node_id))].map((id) => {
+                const mine = skinBoxes.filter((b) => b.skin.node_id === id);
+                const first = mine[0]?.skin;
+                return el(
+                  "details",
+                  { class: "more" },
+                  el("summary", {
+                    text:
+                      `${first?.name ?? "a lot"}: ${mine.length} fermenter` +
+                      `${mine.length === 1 ? "" : "s"}` +
+                      (first?.quantity
+                        ? `, ${Number(first.quantity).toLocaleString()} lb of fruit`
+                        : "") +
+                      (first?.whole_cluster_pct !== null &&
+                      first?.whole_cluster_pct !== undefined
+                        ? `, ${first.whole_cluster_pct}% whole cluster`
+                        : ""),
+                  }),
+                  rows(...mine.map((b) => b.box.root)),
+                );
+              }),
+              el("span", {
+                class: "field-hint",
+                text:
+                  "Start the press when the free run is pumped out, then record free run, " +
+                  "2nd free run, press and hard press as cuts.",
+              }),
+            ),
         el(
           "div",
           { class: "field" },
@@ -9562,9 +9617,16 @@ function pressScreen(): HTMLElement {
         ),
         loadSoFar,
         button("Start pressing", async () => {
-          const chosen = chosenBins().map((b) => b.bin.vessel_id);
+          const chosen = [
+            ...chosenBins().map((b) => b.bin.vessel_id),
+            ...skinBoxes
+              .filter((b) => b.box.input.checked)
+              .map((b) => b.skin.vessel_id),
+          ];
           if (chosen.length === 0) {
-            said.replaceChildren(banner("Tick which bins are going in.", "error"));
+            said.replaceChildren(
+              banner("Tick which bins or fermenters are going in.", "error"),
+            );
             return;
           }
           if (!whichPress.value) {

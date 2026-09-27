@@ -106,7 +106,9 @@
 --              supabase/migrations/0146_harvest_weights.sql,
 --              supabase/migrations/0147_a_pressing_knows_what_went_in.sql,
 --              supabase/migrations/0148_reds_go_into_fermenters.sql,
---              supabase/migrations/0149_a_blend_can_be_split_by_juice.sql]
+--              supabase/migrations/0149_a_blend_can_be_split_by_juice.sql,
+--              supabase/migrations/0150_off_the_skins.sql,
+--              supabase/migrations/0151_a_cut_counts_once.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh, scripts/rpc-args.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -13425,6 +13427,89 @@ begin
     raise exception 'FAIL: the history does not keep what the shares were and why they changed: %', ev;
   end if;
   perform test_ok('a restated share takes, and the lot''s history keeps the old shares and the basis');
+
+  perform test_act_as(null);
+end $$;
+
+
+-- ---------------------------------------------------------------------------
+-- 0150 and 0151. Off the skins, and a cut that counts once.
+-- ---------------------------------------------------------------------------
+--
+-- "Free run (pumping the juice out before pressing), 2nd free run, press, hard
+-- press. All in litres."
+do $$
+declare
+  u      uuid;
+  pick   uuid := '00000000-0000-0000-0000-00000000fa01';
+  ferm   uuid := '00000000-0000-0000-0000-00000000fa02';
+  press  uuid := '00000000-0000-0000-0000-00000000fa03';
+  t1     uuid := '00000000-0000-0000-0000-00000000fa04';
+  t2     uuid := '00000000-0000-0000-0000-00000000fa05';
+  bins   uuid[];
+  out_js jsonb;
+  lot    uuid;
+  load_id uuid;
+  second_lot uuid;
+begin
+  select id into u from app_user where role = 'admin' limit 1;
+  perform test_act_as(u);
+  update term set attributes = attributes || '{"tare_lbs": 60, "full_lbs": 850}'::jsonb
+   where kind = 'vessel_type' and value = 'picking_bin';
+  insert into vessel (id, name, type_id, capacity_l) values
+    (ferm,  'ASSERT 0150 ferm',  term_id('vessel_type', 'fermentation_bin'), null),
+    (press, 'ASSERT 0150 press', term_id('vessel_type', 'press'), null),
+    (t1,    'ASSERT 0150 tank 1', term_id('vessel_type', 'tank'), 1000),
+    (t2,    'ASSERT 0150 tank 2', term_id('vessel_type', 'tank'), 1000);
+
+  if not exists (select 1 from term where kind = 'dump_reason' and value = 'overcount' and active)
+     or not exists (select 1 from term where kind = 'press_cut' and value = 'second_free_run' and active) then
+    raise exception 'FAIL: over-counted is not a dump reason, or 2nd free run is not a cut';
+  end if;
+  perform test_ok('over-counted is a reason to dump, and 2nd free run is a cut');
+
+  perform add_bins_to_pick(
+    jsonb_build_object('id', pick, 'variety_id', term_id('variety', 'pinot_noir'), 'vintage', 2026),
+    null, 2, term_id('vessel_type', 'picking_bin'), 'ASRT0150', 100);
+  bins := array(select vessel_id from placement where node_id = pick and to_at is null);
+  perform weigh_bins(pick, bins, 1500);
+  out_js := process_fruit(bins, jsonb_build_array(jsonb_build_object('vessel_id', ferm)));
+  lot := (out_js -> 'lots' -> 0 ->> 'node_id')::uuid;
+
+  if not exists (select 1 from lot_on_skins where node_id = lot and vessel_id = ferm) then
+    raise exception 'FAIL: a red in its fermenter is not listed as on its skins';
+  end if;
+  perform test_ok('a red put into a fermenter is listed as on its skins, in that fermenter');
+
+  -- Pressed off the skins: the lot's pounds go in.
+  out_js := start_press(array[ferm], press);
+  load_id := (out_js ->> 'node_id')::uuid;
+  if (out_js ->> 'lbs_in')::numeric <> (select quantity from node where id = lot) then
+    raise exception 'FAIL: a % lb red pressed off its skins put in %',
+      (select quantity from node where id = lot), out_js ->> 'lbs_in';
+  end if;
+  if exists (select 1 from lot_on_skins where node_id = lot) then
+    raise exception 'FAIL: a red pressed off its skins is still listed as on them';
+  end if;
+  perform test_ok('a red pressed off its skins puts in the pounds it was, and is no longer on its skins');
+
+  -- Free run and 2nd free run into one tank; press and hard press into another.
+  perform draw_cut(load_id, t1, 180, term_id('press_cut', 'free_run'));
+  perform draw_cut(load_id, t1, 40,  term_id('press_cut', 'second_free_run'));
+  perform draw_cut(load_id, t2, 120, term_id('press_cut', 'press'));
+  perform draw_cut(load_id, t2, 30,  term_id('press_cut', 'hard_press'));
+
+  -- 0151. The 2nd free run went wholly into the free run's tank.
+  if (select volume_l from placement where vessel_id = t1 and to_at is null) <> 220 then
+    raise exception 'FAIL: the free run''s tank holds % L, not 220',
+      (select volume_l from placement where vessel_id = t1 and to_at is null);
+  end if;
+
+  out_js := finish_press(load_id);
+  if (out_js ->> 'litres_out')::numeric <> 370 then
+    raise exception 'FAIL: 370 L were drawn and the press says %', out_js ->> 'litres_out';
+  end if;
+  perform test_ok('a press off skins gives what was drawn, 370 L, with the 2nd free run counted once in the free run''s tank');
 
   perform test_act_as(null);
 end $$;

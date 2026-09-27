@@ -9,7 +9,8 @@
 -- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql,
 --                  packages/cellar/src/index.ts,
 --                  supabase/migrations/0146_harvest_weights.sql,
---                  supabase/migrations/0147_a_pressing_knows_what_went_in.sql]
+--                  supabase/migrations/0147_a_pressing_knows_what_went_in.sql,
+--                  supabase/migrations/0151_a_cut_counts_once.sql]
 -- Axioms enforced: T0-5. Backdating is not editing. The event is appended
 --                  today with yesterday's time on it, and `created_at` still
 --                  says today, so nothing about the record is rewritten and the

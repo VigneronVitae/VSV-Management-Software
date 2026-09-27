@@ -11,6 +11,7 @@
 //              supabase/migrations/0143_a_record_can_say_when.sql,
 //              supabase/migrations/0146_harvest_weights.sql,
 //              supabase/migrations/0148_reds_go_into_fermenters.sql,
+//              supabase/migrations/0150_off_the_skins.sql,
 //             packages/core/src/index.ts]
 // Depended on by: [apps/web/src/index.ts]
 // ---------------------------------------------------------------------------

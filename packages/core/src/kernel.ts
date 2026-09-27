@@ -1807,6 +1807,32 @@ export async function processFruit(args: {
   return data as FruitProcessed;
 }
 
+// 0150. Reds on their skins, one row per fermenter, for pressing off skins.
+export type OnSkins = {
+  node_id: Uuid;
+  name: string;
+  quantity: number | null;
+  unit: string | null;
+  whole_cluster_pct: number | null;
+  vessel_id: Uuid;
+  vessel: string;
+  said_lbs: number | null;
+  said_fill_pct: number | null;
+  since: string;
+};
+
+export async function onSkins(): Promise<OnSkins[]> {
+  const { data, error } = await kernel()
+    .from("lot_on_skins")
+    .select(
+      "node_id,name,quantity,unit,whole_cluster_pct,vessel_id,vessel,said_lbs,said_fill_pct,since",
+    )
+    .order("name")
+    .order("vessel");
+  if (error) throw new KernelError(error);
+  return (data ?? []) as OnSkins[];
+}
+
 export async function finishPress(
   loadId: Uuid,
   detail?: Record<string, unknown>,

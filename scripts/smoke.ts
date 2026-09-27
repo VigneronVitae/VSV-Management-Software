@@ -1,7 +1,8 @@
 // ---------------------------------------------------------------------------
 // Type: tool
 // Purpose: "Runs a harvest day through the apps' own client code, signed in as an ordinary cellar hand and as an administrator, against the practice stack, and says which steps worked."
-// Depends on: [scripts/practice.sh, supabase/migrations/0147_a_pressing_knows_what_went_in.sql]
+// Depends on: [scripts/practice.sh, supabase/migrations/0147_a_pressing_knows_what_went_in.sql,
+//              supabase/migrations/0151_a_cut_counts_once.sql]
 // Depended on by: [docs/status-ledger.md]
 // ---------------------------------------------------------------------------
 //
@@ -199,6 +200,7 @@ let bins: string[] = [];
 let pinot: string | null = null;
 let redBins: string[] = [];
 let fermBins: string[] = [];
+let redTanks: string[] = [];
 await step("an administrator registers a press, two tanks and two bins", async () => {
   await k.signIn(admin.email, admin.password);
   types = await k.terms("vessel_type");
@@ -252,6 +254,18 @@ await step("an administrator registers a press, two tanks and two bins", async (
   );
   redBins = rb.ids;
   fermBins = fb.ids;
+  // For pressing the red off its skins: somewhere for the free runs, and
+  // somewhere for the pressed wine.
+  const rt = await k.addVessels(
+    {
+      id: randomUUID(),
+      type_id: typeId("tank"),
+      name: `SMOKE red tank ${stamp}`,
+      capacity_l: 1000,
+    },
+    2,
+  );
+  redTanks = rt.ids;
   await k.signOut();
   must(press && tankA && tankB && bins.length === 2, "no ids came back");
   must(
@@ -457,6 +471,55 @@ await step(
     );
     must(held.length === 2, `${held.length} fermenters hold the fruit`);
     return `${out.lots.map((l) => `${l.name} ${l.lbs} lb`).join("; ")}, ${out.bins_emptied} bins free`;
+  },
+);
+
+// 0150. Off the skins: "free run (pumping the juice out before pressing), 2nd
+// free run, press, hard press. All in litres."
+await step(
+  "press the red off its skins: free run, 2nd free run, press, hard press",
+  async () => {
+    const on = await k.onSkins();
+    const lotA = on.find((o) => o.vessel_id === fermBins[0]);
+    must(lotA, "the first fermenter is not listed as on its skins");
+    const cutId = async (v: string) =>
+      (await k.terms("press_cut")).find((t) => t.value === v)?.id ?? null;
+    const started = await k.startPress({
+      vesselIds: [fermBins[0] ?? ""],
+      pressVesselId: press,
+    });
+    must(
+      Math.abs(Number(started.lbs_in) - Number(lotA?.quantity)) < 0.5,
+      `the lot was ${lotA?.quantity} lb and ${started.lbs_in} went into the press`,
+    );
+    const load = started.node_id;
+    await k.drawCut({
+      loadId: load,
+      vesselId: redTanks[0] ?? "",
+      volumeL: 180,
+      cutId: await cutId("free_run"),
+    });
+    await k.drawCut({
+      loadId: load,
+      vesselId: redTanks[0] ?? "",
+      volumeL: 40,
+      cutId: await cutId("second_free_run"),
+    });
+    await k.drawCut({
+      loadId: load,
+      vesselId: redTanks[1] ?? "",
+      volumeL: 120,
+      cutId: await cutId("press"),
+    });
+    await k.drawCut({
+      loadId: load,
+      vesselId: redTanks[1] ?? "",
+      volumeL: 30,
+      cutId: await cutId("hard_press"),
+    });
+    const done = await k.finishPress(load, { program: "SMOKE red" });
+    must(Number(done.litres_out) === 370, `${done.litres_out} L came off, not 370`);
+    return `${started.lbs_in} lb of fruit, ${done.litres_out} L in ${done.cuts} cuts, ${done.yield_l_per_ton} L/ton`;
   },
 );
 

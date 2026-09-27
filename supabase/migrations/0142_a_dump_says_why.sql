@@ -6,7 +6,8 @@
 -- Depends on: [supabase/migrations/0139_a_gas_is_a_term.sql,
 --              supabase/migrations/0140_wine_can_go_on_the_ground.sql]
 -- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql,
---                  packages/cellar/src/index.ts]
+--                  packages/cellar/src/index.ts,
+--                  supabase/migrations/0150_off_the_skins.sql]
 -- Axioms enforced: AR-E5. Both are registry rows, so a third reason or a fourth
 --                  method is an insert and not a migration.
 --                  A13. A reason that is not on the list is refused in a
