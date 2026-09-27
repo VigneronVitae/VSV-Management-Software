@@ -86,6 +86,8 @@ export type Place =
   // schema is only useful if somebody can add to it.
   // Letting somebody in. Administrator only.
   | { at: "invites" }
+  // 0152. What cellar hands may do, as administrators set it.
+  | { at: "permissions" }
   | { at: "fact-kinds" }
   // Sampling, and one sample with the readings that came off it.
   // Type three letters instead of remembering where a thing lives.
@@ -140,6 +142,7 @@ const WITHOUT_ID = new Set([
   "practice",
   "fact-kinds",
   "invites",
+  "permissions",
   "sampling",
   "go",
   "colours",

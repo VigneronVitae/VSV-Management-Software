@@ -12,6 +12,7 @@
 //              supabase/migrations/0146_harvest_weights.sql,
 //              supabase/migrations/0148_reds_go_into_fermenters.sql,
 //              supabase/migrations/0150_off_the_skins.sql,
+//              supabase/migrations/0152_who_may_do_what.sql,
 //             packages/core/src/index.ts]
 // Depended on by: [apps/web/src/index.ts]
 // ---------------------------------------------------------------------------

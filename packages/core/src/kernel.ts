@@ -1833,6 +1833,34 @@ export async function onSkins(): Promise<OnSkins[]> {
   return (data ?? []) as OnSkins[];
 }
 
+// 0152. What cellar hands may do beyond the default, as administrators set it.
+export type Permission = {
+  key: string;
+  module: string;
+  label: string;
+  note: string;
+  cellar_may: boolean;
+  sort_order: number;
+  changed_at: string | null;
+};
+
+export async function permissions(): Promise<Permission[]> {
+  const { data, error } = await kernel()
+    .from("permission")
+    .select("key,module,label,note,cellar_may,sort_order,changed_at")
+    .order("sort_order");
+  if (error) throw new KernelError(error);
+  return (data ?? []) as Permission[];
+}
+
+export async function setPermission(key: string, cellarMay: boolean): Promise<void> {
+  const { error } = await kernel().rpc("set_permission", {
+    p_key: key,
+    p_cellar_may: cellarMay,
+  });
+  if (error) throw new KernelError(error);
+}
+
 export async function finishPress(
   loadId: Uuid,
   detail?: Record<string, unknown>,

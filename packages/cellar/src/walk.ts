@@ -87,6 +87,7 @@ import {
   paperRecordOperations,
   paperRecords,
   parties,
+  permissions,
   photoUrl,
   pickBins,
   pickById,
@@ -123,6 +124,7 @@ import {
   setMakerMakes,
   setPaperRecordOperations,
   setPartyLogin,
+  setPermission,
   setRoomClimate,
   setVesselTypeBin,
   setVesselTypeFields,
@@ -428,6 +430,8 @@ async function screenFor(place: Place): Promise<HTMLElement> {
       return practiceScreen();
     case "fact-kinds":
       return factKindsScreen();
+    case "permissions":
+      return permissionsScreen(user);
     case "invites":
       return invitesScreen(user);
     case "go":
@@ -1251,6 +1255,11 @@ async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> 
       name: "Letting somebody in",
       note: "An invite code for a new intern. Six characters, good for a week, used once.",
       go: () => go({ at: "invites" }),
+    },
+    {
+      name: "Who may do what",
+      note: "What cellar hands may do beyond the everyday: register bins, add to the lists, and so on.",
+      go: () => go({ at: "permissions" }),
     },
     {
       name: "Take a copy",
@@ -8169,6 +8178,71 @@ function sampleScreen(eventId: string): HTMLElement {
 // the intern types them when they claim. No email, because a winery hands
 // somebody a phone in a barn rather than asking them to check their inbox, and
 // because email delivery would be a dependency this project has not taken.
+// 0152. "Maybe that should be a setting the admins can toggle, like in general
+// what permissions are admin vs cellar." One tick per setting. The kernel holds
+// the answer and enforces it; this only shows it and changes it. A cellar hand
+// can read it too, because knowing why something is refused is half of it.
+function permissionsScreen(user: AppUser): HTMLElement {
+  const body = el("div", {}, empty("Loading."));
+  const view = screen(
+    "Who may do what",
+    lede(
+      user.role === "admin"
+        ? "Administrators may do all of these. Tick what cellar hands may do too. Nothing here takes anything away."
+        : "What cellar hands may do here, as an administrator has set it.",
+    ),
+    body,
+  );
+
+  async function load(): Promise<void> {
+    const rows_ = await permissions();
+    body.replaceChildren(
+      rows(
+        ...rows_.map((p) => {
+          const box = checkbox(p.label, p.cellar_may);
+          box.input.disabled = user.role !== "admin";
+          const said = el("div", {});
+          on(box.input, "change", async () => {
+            box.input.disabled = true;
+            try {
+              await setPermission(p.key, box.input.checked);
+              said.replaceChildren(
+                banner(
+                  box.input.checked
+                    ? "Cellar hands may now do this."
+                    : "Administrators only again.",
+                  "good",
+                ),
+              );
+            } catch (e) {
+              box.input.checked = !box.input.checked;
+              said.replaceChildren(fail(e));
+            } finally {
+              box.input.disabled = false;
+            }
+          });
+          return el(
+            "div",
+            { class: "field" },
+            box.root,
+            el("span", { class: "field-hint", text: p.note }),
+            said,
+          );
+        }),
+        button("Back", () => goBack(), "quiet"),
+      ),
+    );
+  }
+
+  void load().catch((error) => {
+    body.replaceChildren(
+      fail(error),
+      button("Back", () => goBack(), "quiet"),
+    );
+  });
+  return view;
+}
+
 function invitesScreen(user: AppUser): HTMLElement {
   if (user.role !== "admin") {
     return screen(

@@ -108,7 +108,8 @@
 --              supabase/migrations/0148_reds_go_into_fermenters.sql,
 --              supabase/migrations/0149_a_blend_can_be_split_by_juice.sql,
 --              supabase/migrations/0150_off_the_skins.sql,
---              supabase/migrations/0151_a_cut_counts_once.sql]
+--              supabase/migrations/0151_a_cut_counts_once.sql,
+--              supabase/migrations/0152_who_may_do_what.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh, scripts/rpc-args.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -2706,7 +2707,12 @@ begin
   -- on each, all is_admin(), and one update on `money_paper` that only fills an
   -- empty photograph path. None reads blanket true. A receipt is the books, and
   -- the books are administrators only.
-  want := '150';
+  -- 168 since 0152 added eighteen: a read (blanket true, judged below) and an
+  -- administrators' write on `permission`, and sixteen that each widen one
+  -- table for cellar hands when a setting allows it, every one `may(key)`.
+  -- None of the sixteen is blanket true; each is off until an administrator
+  -- turns it on.
+  want := '168';
   if have <> want then
     raise exception
       'FAIL: there are % policies in public and this suite was written against %. If that is deliberate, update this number, and judge the new policy in the disposition list below if it reads or writes blanket true', have, want;
@@ -2779,6 +2785,11 @@ begin
     -- stand in. None of it says whose wine, or how much.
     ('term.term_read', 'permissive',
      'The vocabulary. Every picker in every client reads it, and it names varieties rather than wine.'),
+    -- 0152. What cellar hands may do. Read by everybody signed in, because a
+    -- cellar hand refused something should be able to see that it is a setting
+    -- and who can change it; writing it is administrators' only.
+    ('permission.permission_read', 'permissive',
+     'Five rows saying which things a cellar hand may do beyond the default. Knowing the rules of the house discloses no wine and no money.'),
     -- 0110. The widest deliberate read in the schema, and the narrowest thing
     -- behind it: five rows naming the apps. The front door is the first screen
     -- anybody opens and it draws before there is a session, so scoping this to
@@ -3170,7 +3181,9 @@ begin
   -- direction out or in, its amount above nothing), eight keys (each table's
   -- author, a reading to its paper and to its two terms, a match to its paper
   -- and to its bank line) and three primary keys.
-  want := 'c=79 f=140 p=64 u=28';
+  -- c=79 f=140 p=64 u=28 before 0152: one primary key on `permission`, and one
+  -- key naming who last changed a setting.
+  want := 'c=79 f=141 p=65 u=28';
   if have <> want then
     raise exception
       E'FAIL: the constraint inventory changed.\nnow:  %\nwas:  %\nIf that is deliberate, update this line in the same commit that changed the schema.', have, want;
@@ -3517,7 +3530,9 @@ begin
   -- with their paper, and a match goes with its bank line, the same way a
   -- line's attestations already do. Five no-actions: three authors and the
   -- two vocabulary keys, matching `line_attestation`.
-  want := 'a=81 c=34 n=9 r=16';
+  -- a=81 c=34 n=9 r=16 before 0152: `permission.changed_by` is a plain
+  -- no-action, like every other author key.
+  want := 'a=82 c=34 n=9 r=16';
   if have <> want then
     raise exception
       E'FAIL: foreign key delete behaviour changed.\nnow:  %\nwas:  %\na is no action, c is cascade, n is set null, r is restrict.', have, want;
@@ -4444,7 +4459,13 @@ declare
     -- is overlapped by anything later. `from_at` is `not null`. Exercised in the
     -- 0143 block below, which refuses both a departure before an arrival and two
     -- things in one vessel over the same hours.
-    'placement_keeps_time'
+    'placement_keeps_time',
+    -- `permission_door` has one null and it stands aside deliberately: nobody
+    -- signed in is left to row level security, which refuses them anyway, and
+    -- the table owner is subject to neither. `may()` answers false rather than
+    -- null for an unknown setting, because `exists` is never null. Exercised in
+    -- the 0152 block below, as the role a phone is, with a setting off and on.
+    'permission_door'
   ];
 begin
   for r in
@@ -13511,6 +13532,85 @@ begin
   end if;
   perform test_ok('a press off skins gives what was drawn, 370 L, with the 2nd free run counted once in the free run''s tank');
 
+  perform test_act_as(null);
+end $$;
+
+
+-- ---------------------------------------------------------------------------
+-- 0152. Who may do what.
+-- ---------------------------------------------------------------------------
+--
+-- "Maybe that should be a setting the admins can toggle, like in general what
+-- permissions are admin vs cellar."
+do $$
+declare
+  admin_u  uuid;
+  hand     uuid := '00000000-0000-0000-0000-00000000fb01';
+begin
+  select id into admin_u from app_user where role = 'admin' limit 1;
+  insert into auth.users (id) values (hand) on conflict do nothing;
+  insert into app_user (id, name, role) values (hand, 'ASSERT 0152 cellar hand', 'cellar')
+    on conflict (id) do nothing;
+
+  -- Off, which is where every setting starts. As the role a phone is, so the
+  -- door and the policies are both what is being tested.
+  perform test_act_as(hand);
+  set local role authenticated;
+  if may('vessels.register') then
+    raise exception 'FAIL: a cellar hand may register vessels with the setting off';
+  end if;
+  begin
+    insert into vessel (name, type_id) values ('ASSERT 0152 bin', term_id('vessel_type', 'picking_bin'));
+    raise exception 'FAIL: a cellar hand registered a vessel with the setting off';
+  exception when others then
+    if sqlerrm not like '%for administrators here%Who may do what%' then raise; end if;
+  end;
+  begin
+    perform set_permission('vessels.register', true);
+    raise exception 'FAIL: a cellar hand changed a setting';
+  exception when others then
+    if sqlerrm not like '%only an administrator decides%' then raise; end if;
+  end;
+  perform test_ok('with a setting off a cellar hand is refused in a sentence naming where it can be changed, and cannot change it');
+
+  -- An administrator allows it.
+  reset role;
+  perform test_act_as(admin_u);
+  set local role authenticated;
+  if not may('vessels.register') then
+    raise exception 'FAIL: an administrator may not register vessels';
+  end if;
+  perform set_permission('vessels.register', true);
+  if (select changed_by from permission where key = 'vessels.register') is distinct from admin_u then
+    raise exception 'FAIL: a changed setting does not say who changed it';
+  end if;
+
+  reset role;
+  perform test_act_as(hand);
+  set local role authenticated;
+  if not may('vessels.register') then
+    raise exception 'FAIL: a cellar hand may not register vessels with the setting on';
+  end if;
+  insert into vessel (name, type_id) values ('ASSERT 0152 bin', term_id('vessel_type', 'picking_bin'));
+  -- One setting widens one thing.
+  if may('vocabulary.add') then
+    raise exception 'FAIL: allowing vessels allowed the lists too';
+  end if;
+  perform test_ok('an administrator allows it, the cellar hand may, and only that one thing widens');
+
+  reset role;
+  perform test_act_as(admin_u);
+  set local role authenticated;
+  begin
+    perform set_permission('no.such.thing', true);
+    raise exception 'FAIL: a setting that does not exist was changed';
+  exception when others then
+    if sqlerrm not like '%no setting called%' then raise; end if;
+  end;
+  perform set_permission('vessels.register', false);
+  perform test_ok('a setting that does not exist is refused, and a setting goes back to off');
+
+  reset role;
   perform test_act_as(null);
 end $$;
 

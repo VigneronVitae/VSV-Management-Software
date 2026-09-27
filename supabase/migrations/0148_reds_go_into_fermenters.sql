@@ -7,7 +7,8 @@
 --              supabase/migrations/0033_intake.sql]
 -- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql,
 --                  packages/cellar/src/index.ts,
---                  supabase/migrations/0150_off_the_skins.sql]
+--                  supabase/migrations/0150_off_the_skins.sql,
+--                  supabase/migrations/0152_who_may_do_what.sql]
 -- Axioms enforced: T0-2. What each fermenter was said to hold is stored as it
 --                  was said (pounds, a fill, or nothing); the share of the
 --                  pick's weight each lot got is worked out once, at the

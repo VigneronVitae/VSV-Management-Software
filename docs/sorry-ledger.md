@@ -1607,6 +1607,13 @@ today rather than deciding it.
 *Resolves when:* he has said which, and the function and the policy agree.
 *Load-bearing:* not until somebody other than an administrator has a login, and then yes, on
 the first morning they pick.
+*Discharged 2026-09-27.* The answer was a better question: "maybe that should be a setting
+the admins can toggle, like in general what permissions are admin vs cellar." `0152` adds
+Who may do what: five settings, each off, each adding one permissive policy beside the
+administrator's, so turning one on widens exactly that and nothing is rewritten. With a
+setting off, a door in front of the table refuses in a sentence that says where it can be
+changed, carrying the same SQLSTATE the policy would have. smoke.ts proves both ways as a
+real cellar hand.
 
 **S-146. The rule for the pounds going in is written twice.**
 `0148` put the rule that decides how many pounds a set of bins contributes into a function of

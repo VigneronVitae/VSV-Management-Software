@@ -393,6 +393,10 @@ note_value_matches_its_kind:raise:3	note_value_matches_its_kind	raise	raise exce
 note_value_matches_its_kind:guard:5	note_value_matches_its_kind	guard	if want = 'number' and new.value_text is not null then	if false then	1
 note_value_matches_its_kind:raise:4	note_value_matches_its_kind	raise	raise exception '% is a number; put the rest in the note itself', coalesce(label, 'that kind');	raise notice '% is a number; put the rest in the note itself', coalesce(label, 'that kind');	1
 occurred_at:guard:1	occurred_at	guard	if said is null or said = '' then	if false then	1
+permission_door:guard:1	permission_door	guard	if current_user not in ('authenticated', 'anon') or auth.uid() is null then	if false then	1
+permission_door:earlyreturn:1	permission_door	earlyreturn	return new;	null;	1
+permission_door:guard:2	permission_door	guard	if not may(k) then	if false then	1
+permission_door:raise:1	permission_door	raise	raise exception using	raise notice using	1
 placement_keeps_time:guard:1	placement_keeps_time	guard	if new.to_at is not null and new.to_at < new.from_at then	if false then	1
 placement_keeps_time:raise:1	placement_keeps_time	raise	raise exception 'that takes the wine out of % at %, before it went in at %',	raise notice 'that takes the wine out of % at %, before it went in at %',	1
 placement_keeps_time:guard:2	placement_keeps_time	guard	if found then	if false then	1
@@ -712,6 +716,12 @@ set_party_default_hidden:head:1	set_party_default_hidden	head	if not (p_party_id
 set_party_default_hidden:raise:1	set_party_default_hidden	raise	raise exception 'only that party decides what it hides by default'	raise notice 'only that party decides what it hides by default'	1
 set_party_default_hidden:guard:1	set_party_default_hidden	guard	if not (coalesce(p_hidden, '{}') <@ hideable_fields()) then	if false then	1
 set_party_default_hidden:raise:2	set_party_default_hidden	raise	raise exception 'that is not something the kernel knows how to hide';	raise notice 'that is not something the kernel knows how to hide';	1
+set_permission:guard:1	set_permission	guard	if not is_admin() then	if false then	1
+set_permission:raise:1	set_permission	raise	raise exception 'only an administrator decides what cellar hands may do';	raise notice 'only an administrator decides what cellar hands may do';	1
+set_permission:guard:2	set_permission	guard	if p_cellar_may is null then	if false then	1
+set_permission:raise:2	set_permission	raise	raise exception 'say yes or no';	raise notice 'say yes or no';	1
+set_permission:notfound:1	set_permission	notfound	if not found then	if false then	1
+set_permission:raise:3	set_permission	raise	raise exception 'there is no setting called %', p_key;	raise notice 'there is no setting called %', p_key;	1
 set_room_climate:guard:1	set_room_climate	guard	if not is_facility_user() then	if false then	1
 set_room_climate:raise:1	set_room_climate	raise	raise exception 'only somebody who works here sets a room''s climate'	raise notice 'only somebody who works here sets a room''s climate'	1
 set_room_climate:guard:2	set_room_climate	guard	if l.id is null then	if false then	1

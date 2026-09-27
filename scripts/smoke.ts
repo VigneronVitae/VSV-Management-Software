@@ -2,7 +2,8 @@
 // Type: tool
 // Purpose: "Runs a harvest day through the apps' own client code, signed in as an ordinary cellar hand and as an administrator, against the practice stack, and says which steps worked."
 // Depends on: [scripts/practice.sh, supabase/migrations/0147_a_pressing_knows_what_went_in.sql,
-//              supabase/migrations/0151_a_cut_counts_once.sql]
+//              supabase/migrations/0151_a_cut_counts_once.sql,
+//              supabase/migrations/0152_who_may_do_what.sql]
 // Depended on by: [docs/status-ledger.md]
 // ---------------------------------------------------------------------------
 //
@@ -303,21 +304,42 @@ await step(
   },
 );
 
-await step("S-145: a cellar hand registering a new bin mid-pick", async () => {
-  try {
-    await k.addBinsToPick({
-      pick: { id: randomUUID(), variety_id: chardonnay, vintage: year },
-      newCount: 1,
-      newTypeId: typeId("picking_bin"),
-      namePrefix: `SMN${stamp.slice(-4)}`,
-      fillPct: 100,
-    });
-    return "allowed";
-  } catch (e) {
-    // Recorded, not failed: what should happen is the winemaker's answer.
-    return `refused today: ${e instanceof Error ? e.message : String(e)}`;
-  }
-});
+// 0152, which answered S-145: an administrator decides. Off, a cellar hand is
+// refused in a sentence; on, they may; and it is put back off afterwards so the
+// next run starts where the winery does.
+const newBin = () =>
+  k.addBinsToPick({
+    pick: { id: randomUUID(), variety_id: chardonnay, vintage: year },
+    newCount: 1,
+    newTypeId: typeId("picking_bin"),
+    namePrefix: `SMN${stamp.slice(-4)}`,
+    fillPct: 100,
+  });
+
+await step("a cellar hand is refused a new bin mid-pick, in a sentence", async () =>
+  refused(newBin, /for administrators here.*Who may do what/),
+);
+
+await step(
+  "an administrator lets cellar hands register bins, and then they can",
+  async () => {
+    await k.signOut();
+    await k.signIn(admin.email, admin.password);
+    await k.setPermission("vessels.register", true);
+    await k.signOut();
+    await k.signIn(cellarHand.email, cellarHand.password);
+    try {
+      const out = await newBin();
+      return `registered ${out.registered.join(", ")}`;
+    } finally {
+      await k.signOut();
+      await k.signIn(admin.email, admin.password);
+      await k.setPermission("vessels.register", false);
+      await k.signOut();
+      await k.signIn(cellarHand.email, cellarHand.password);
+    }
+  },
+);
 
 await step("weigh both bins in one reading, the next hour", async () => {
   const held = (await k.vessels()).filter((v) => v.node_id === pick).map((v) => v.id);
