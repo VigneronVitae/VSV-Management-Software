@@ -10392,9 +10392,53 @@ function processScreen(): HTMLElement {
       );
       on(tick.input, "change", () => {
         extra.hidden = !tick.input.checked;
+        drawNames();
       });
+      on(lot, "change", () => drawNames());
       return { vessel: v, tick, lbs, fill, wc, lot, extra };
     });
+
+    // Which lot each ticked fermenter is in, the same answer the save sends.
+    function keyOf(d: Dest, i: number): string {
+      return lotMode === "one"
+        ? "a"
+        : lotMode === "each"
+          ? (LOT_KEYS[i] ?? `x${i}`)
+          : d.lot.value;
+    }
+
+    // A name for each lot, once there is more than one, so the 777 and the
+    // Pommard can be called that rather than A and B. Kept across redraws, so
+    // ticking another fermenter does not wipe what was typed.
+    const lotNames = new Map<string, Field>();
+    const namesBox = el("div", { class: "rows" });
+    function drawNames(): void {
+      const keys = [
+        ...new Set(
+          dests.filter((d) => d.tick.input.checked).map((d, i) => keyOf(d, i)),
+        ),
+      ];
+      if (keys.length < 2) {
+        namesBox.replaceChildren();
+        return;
+      }
+      namesBox.replaceChildren(
+        el("span", { class: "field-label", text: "What to call each lot" }),
+        ...keys.map((k) => {
+          let f = lotNames.get(k);
+          if (!f) {
+            f = field({
+              label: `Lot ${k.toUpperCase()}`,
+              placeholder: "e.g. the clone, or whole cluster",
+              hint: "Blank keeps the pick's name with the letter.",
+            });
+            lotNames.set(k, f);
+          }
+          return f.root;
+        }),
+      );
+    }
+
     const lotModeRow = el("div", { class: "variant-options" });
     function drawLotMode(): void {
       lotModeRow.replaceChildren(
@@ -10419,6 +10463,7 @@ function processScreen(): HTMLElement {
         const choice = d.extra.querySelector<HTMLElement>(".lot-choice");
         if (choice) choice.hidden = lotMode !== "group";
       }
+      drawNames();
     }
     drawLotMode();
 
@@ -10486,16 +10531,16 @@ function processScreen(): HTMLElement {
           vesselIds: bins,
           destinations: chosen.map((d, i) => ({
             vessel_id: d.vessel.id,
-            lot:
-              lotMode === "one"
-                ? "a"
-                : lotMode === "each"
-                  ? (LOT_KEYS[i] ?? `x${i}`)
-                  : d.lot.value,
+            lot: keyOf(d, i),
             net_lbs: num(d.lbs),
             fill_pct: num(d.lbs) === null ? num(d.fill) : null,
             whole_cluster_pct: num(d.wc),
           })),
+          lots: Object.fromEntries(
+            [...lotNames.entries()]
+              .filter(([, f]) => f.value())
+              .map(([k, f]) => [k, { name: f.value() }]),
+          ),
           detail: {
             sort_method: sortMethod.value() || null,
             sorted_out_lbs: num(sortedOut),
@@ -10559,6 +10604,7 @@ function processScreen(): HTMLElement {
         el("h2", { class: "section-head", text: "Into which fermenters" }),
         lotModeRow,
         fermentersBlock,
+        namesBox,
         addition,
         note.root,
         said,
