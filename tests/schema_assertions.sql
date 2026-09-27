@@ -105,7 +105,8 @@
 --              supabase/migrations/0145_the_books_keep_score.sql,
 --              supabase/migrations/0146_harvest_weights.sql,
 --              supabase/migrations/0147_a_pressing_knows_what_went_in.sql,
---              supabase/migrations/0148_reds_go_into_fermenters.sql]
+--              supabase/migrations/0148_reds_go_into_fermenters.sql,
+--              supabase/migrations/0149_a_blend_can_be_split_by_juice.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh, scripts/rpc-args.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -13357,6 +13358,73 @@ begin
     raise exception 'FAIL: processing every bin of a pick left the pick open';
   end if;
   perform test_ok('each fermenter keeps what was said about it, each lot ferments in pounds with its whole cluster and its pick, and the emptied pick closes');
+
+  perform test_act_as(null);
+end $$;
+
+
+-- ---------------------------------------------------------------------------
+-- 0149. A blend can be split by juice.
+-- ---------------------------------------------------------------------------
+--
+-- "Let's do it by juice because the Müller was quite desiccated."
+do $$
+declare
+  u     uuid;
+  a     uuid := '00000000-0000-0000-0000-00000000f901';
+  b     uuid := '00000000-0000-0000-0000-00000000f902';
+  child uuid := '00000000-0000-0000-0000-00000000f903';
+  ev    jsonb;
+  old_b numeric;
+begin
+  select id into u from app_user where role = 'admin' limit 1;
+  insert into node (id, stage, name, quantity, unit, vintage) values
+    (a, 'bin', 'ASSERT 0149 heavy pick', 1000, 'lbs', 2026),
+    (b, 'bin', 'ASSERT 0149 dry pick', 300, 'lbs', 2026),
+    (child, 'load', 'ASSERT 0149 pressing', null, 'L', 2026);
+  insert into lineage (parent_id, child_id, fraction) values (a, child, 0.769231), (b, child, 0.230769);
+
+  perform test_act_as(null);
+  begin
+    perform restate_shares(child, jsonb_build_object(a, 0.9, b, 0.1), 'juice');
+    raise exception 'FAIL: somebody who is not an administrator restated a lot''s shares';
+  exception when others then
+    if sqlerrm not like '%only an administrator%' then raise; end if;
+  end;
+
+  perform test_act_as(u);
+  begin
+    perform restate_shares(child, jsonb_build_object(a, 1.0), 'juice');
+    raise exception 'FAIL: a restatement that left a source out was accepted';
+  exception when others then
+    if sqlerrm not like '%is missing%' then raise; end if;
+  end;
+  begin
+    perform restate_shares(child, jsonb_build_object(a, 0.8, b, 0.3), 'juice');
+    raise exception 'FAIL: shares adding to 1.1 were accepted';
+  exception when others then
+    if sqlerrm not like '%add up to%' then raise; end if;
+  end;
+  begin
+    perform restate_shares(child, jsonb_build_object(a, 0.5, b, 0.4, gen_random_uuid(), 0.1), 'juice');
+    raise exception 'FAIL: a share for something the lot did not come from was accepted';
+  exception when others then
+    if sqlerrm not like '%not something this lot came from%' then raise; end if;
+  end;
+  perform test_ok('restating shares is for administrators, names every source and only those, and adds up to one');
+
+  -- What the column actually holds, which is rounded to its own scale.
+  select fraction into old_b from lineage where child_id = child and parent_id = b;
+  perform restate_shares(child, jsonb_build_object(a, 0.9, b, 0.1), 'juice', 'the dry pick gave little juice');
+  if (select fraction from lineage where child_id = child and parent_id = b) <> 0.1 then
+    raise exception 'FAIL: the restated share did not take';
+  end if;
+  select data into ev from event
+   where subject_id = child and operation_id = term_id('operation', 'restate_shares');
+  if (ev -> 'before' ->> b::text)::numeric <> old_b or ev ->> 'basis' <> 'juice' then
+    raise exception 'FAIL: the history does not keep what the shares were and why they changed: %', ev;
+  end if;
+  perform test_ok('a restated share takes, and the lot''s history keeps the old shares and the basis');
 
   perform test_act_as(null);
 end $$;

@@ -650,6 +650,20 @@ resolve_subject_name:earlyreturn:1	resolve_subject_name	earlyreturn	return null;
 resolve_subject_name:guard:1	resolve_subject_name	guard	if to_regclass('public.' || quote_ident(r.relation)) is null then	if false then	1
 resolve_subject_name:earlyreturn:2	resolve_subject_name	earlyreturn	return null;	null;	2
 resolve_subject_name:earlyreturn:3	resolve_subject_name	earlyreturn	return null;	null;	3
+restate_shares:guard:1	restate_shares	guard	if not is_admin() then	if false then	1
+restate_shares:raise:1	restate_shares	raise	raise exception 'only an administrator restates what a lot is made of';	raise notice 'only an administrator restates what a lot is made of';	1
+restate_shares:guard:2	restate_shares	guard	if not exists (select 1 from node where id = p_node_id) then	if false then	1
+restate_shares:raise:2	restate_shares	raise	raise exception 'there is no lot with that id';	raise notice 'there is no lot with that id';	1
+restate_shares:guard:3	restate_shares	guard	if p_shares is null or jsonb_typeof(p_shares) <> 'object' or p_shares = '{}'::jsonb then	if false then	1
+restate_shares:raise:3	restate_shares	raise	raise exception 'say each source''s share, by its id';	raise notice 'say each source''s share, by its id';	1
+restate_shares:guard:4	restate_shares	guard	if missing is not null then	if false then	1
+restate_shares:raise:4	restate_shares	raise	raise exception 'say a share for every source: % is missing', missing;	raise notice 'say a share for every source: % is missing', missing;	1
+restate_shares:guard:5	restate_shares	guard	if extra is not null then	if false then	1
+restate_shares:raise:5	restate_shares	raise	raise exception '% is not something this lot came from', extra;	raise notice '% is not something this lot came from', extra;	1
+restate_shares:guard:6	restate_shares	guard	if exists (select 1 from jsonb_each_text(p_shares) as s(k, v) where (v)::numeric <= 0) then	if false then	1
+restate_shares:raise:6	restate_shares	raise	raise exception 'every source gave something, so every share is above nothing';	raise notice 'every source gave something, so every share is above nothing';	1
+restate_shares:guard:7	restate_shares	guard	if abs(total - 1) > 0.001 then	if false then	1
+restate_shares:raise:7	restate_shares	raise	raise exception 'the shares add up to %, and a whole is 1', round(total, 4);	raise notice 'the shares add up to %, and a whole is 1', round(total, 4);	1
 resume_at:guard:1	resume_at	guard	if p_was is null then	if false then	1
 send_fruit_away:guard:1	send_fruit_away	guard	if n.id is null then	if false then	1
 send_fruit_away:raise:1	send_fruit_away	raise	raise exception 'no pick with id %', p_node_id;	raise notice 'no pick with id %', p_node_id;	1
