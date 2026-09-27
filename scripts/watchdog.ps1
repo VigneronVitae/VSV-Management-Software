@@ -209,8 +209,18 @@ function Invoke-DailyBackup {
   $repo = $RepoRoot.Replace("\", "/")
 
   $out = & $bash -c "cd '$repo' && bash scripts/db-backup.sh" 2>&1
-  $ok = $LASTEXITCODE -eq 0
+  $code = $LASTEXITCODE
+  $ok = $code -eq 0
   Remove-Item Env:\VSV_BACKUP_DIR -ErrorAction SilentlyContinue
+
+  # 4 is the backup's own word for "the rows are saved and the photographs are
+  # not". Logged as that, because "the backup did not run" would send somebody
+  # looking for a problem with the rows that is not there, and away from the
+  # photographs, where it is.
+  if ($code -eq 4) {
+    Write-Log ("FAIL     rows backed up, photographs NOT: {0}" -f (($out | Select-Object -Last 1) -join " / "))
+    return
+  }
 
   if (-not $ok) {
     Write-Log ("FAIL     the backup did not run: {0}" -f (($out | Select-Object -Last 2) -join " / "))
@@ -231,7 +241,8 @@ function Invoke-DailyBackup {
   }
 
   $rows = (($out | Where-Object { $_ -like "rows:*" }) -join " ").Trim()
-  Write-Log ("backup   {0}, {1}" -f $made.Name, $(if ($rows) { $rows } else { "row count not reported" }))
+  $photos = (($out | Where-Object { $_ -like "photos:*" }) -join " ").Trim()
+  Write-Log ("backup   {0}, {1}, {2}" -f $made.Name, $(if ($rows) { $rows } else { "row count not reported" }), $(if ($photos) { $photos } else { "photographs not reported" }))
 
   # The second copy, on the other drive. Each drive then holds what the other
   # one would lose: the database lives on C: and the repository on D:.

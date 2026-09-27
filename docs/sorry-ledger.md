@@ -288,6 +288,18 @@ data alone. *Resolves when:* seeded rows carry deterministic ids, derived from
 kind and value rather than generated, at which point a backup restores cleanly
 and local and hosted agree. *Load-bearing:* it is the difference between a
 backup that works and one that only looks like it works.
+*Half discharged 2026-09-27.* The backup did only look like it worked, and
+worse than this entry said: the first multi-line row stopped every restore
+before the vocabulary was even reached. `scripts/db-restore.sh` no longer
+merges. It empties every table of a freshly reset database, the reseeded
+vocabulary included, loads the backup verbatim with triggers suspended, and
+commits only if every table's count matches the backup and every foreign key
+holds. Proven by resetting the practice stack, restoring into it, and comparing
+all 64 tables' contents by checksum against the live cellar: identical, and a
+restored photograph opens. **The restore half is resolved.** What remains is
+the other half: ids still differ between any two databases seeded separately,
+so anything exported from one and loaded into another by id still breaks. That
+waits for the hosted database, which does not exist yet.
 
 **S-30. Several writes that look appendable are decided by the kernel, so T1-2's
 line is in the wrong place.**
@@ -1558,6 +1570,11 @@ real number into the running cellar. Screens fail in ways the database cannot be
 *Resolves when:* each has been used once, for real, by somebody who was trying to get work done
 rather than trying it out.
 *Load-bearing:* no. It is a statement about confidence rather than about correctness.
+*Narrowed 2026-09-27.* `scripts/smoke.ts` now runs the kernel calls behind the racking, dump and
+books surfaces through the apps' own client code as a real signed-in user, and they work; it
+found three defects doing so, fixed in `0147` and `scripts/practice.sh`. What it cannot do is
+touch a screen: the layouts, the swipe, the camera tile and the "When" control are still unused
+by a person, and that part of this entry stands.
 
 **S-144. Most verbs still record the moment they are entered, and cannot be told otherwise.**
 `0143` gave the press, the rack and the pick verbs a time, `p_at`, so a pressing entered the
@@ -1574,3 +1591,19 @@ has no "When" control yet.
 it.
 *Load-bearing:* no, now that picks, presses and racks are covered. `record_event` is the
 nearest to it, because a Brix or a punchdown is the next thing somebody will want to batch.
+
+**S-145. A cellar hand is told they may add a vessel, and then refused by the table.**
+Every vessel-adding function (`add_vessels`, and `add_bins_to_pick` registering new bins) says
+"only somebody who works here adds a vessel" and lets a cellar user through, and then
+`vessel_admin_write` refuses the insert because it allows administrators only. So a cellar hand
+registering a new bin in the middle of a pick gets "new row violates row-level security policy
+for table vessel", which is the database's sentence and not the app's. Found 2026-09-27 by
+scripts/smoke.ts, the first thing to act as a cellar hand rather than as the owner. Nobody is
+affected yet: the only account is an administrator's.
+Which is right is the winemaker's call, not a guess: either a cellar hand may register bins and
+vessels (the policy widens to `is_facility_user()`, perhaps for bins only), or they may not (the
+functions refuse in their own words, before the table does). smoke.ts records what happens
+today rather than deciding it.
+*Resolves when:* he has said which, and the function and the policy agree.
+*Load-bearing:* not until somebody other than an administrator has a login, and then yes, on
+the first morning they pick.

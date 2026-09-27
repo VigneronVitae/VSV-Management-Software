@@ -4,7 +4,7 @@
 # Purpose: "Runs the practice stack: a second, identical database with nothing
 #           real in it, where trying a thing and throwing it away is allowed."
 # Depends on: [scripts/db-backup.sh]
-# Depended on by: [docs/practice-mode.md, scripts/db-reset-guard.sh]
+# Depended on by: [docs/practice-mode.md, scripts/db-reset-guard.sh, scripts/smoke.ts]
 # ---------------------------------------------------------------------------
 #
 # The winemaker: "how can I have a server or delete things or whatever so I can
@@ -91,6 +91,26 @@ reset)
   # survive a reset and somebody who has just thrown practice away can sign
   # straight back into it. Storage is left alone for the same reason.
   docker exec "$PRACTICE_DB_CONTAINER" psql -U postgres -q -d postgres     -c "drop schema if exists public cascade; create schema public;"     -c "delete from supabase_migrations.schema_migrations;" >/dev/null 2>&1     || die "the reset failed"
+  # **The grants a new `public` does not have.** Dropping the schema drops
+  # Supabase's standard grants with it: usage for the app roles, and the
+  # default privileges that give every table, function and sequence created
+  # afterwards to anon, authenticated and service_role. Without them every
+  # request from an app to a reset practice stack failed with "permission denied
+  # for schema public". Nothing noticed, because `seed` copied the cellar's
+  # grants in along with its rows; found on 2026-09-27 by scripts/smoke.ts, the
+  # first thing to use practice after a reset without seeding it. These are the
+  # cellar's own, read off it, and set before `up` so every migration's objects
+  # get them as they are made. As supabase_admin, because only it may set
+  # defaults for itself.
+  docker exec "$PRACTICE_DB_CONTAINER" psql -U supabase_admin -q -d postgres -v ON_ERROR_STOP=1 -c "
+    grant usage on schema public to postgres, anon, authenticated, service_role;
+    alter default privileges for role postgres in schema public grant all on tables to postgres, anon, authenticated, service_role;
+    alter default privileges for role postgres in schema public grant all on functions to postgres, anon, authenticated, service_role;
+    alter default privileges for role postgres in schema public grant all on sequences to postgres, anon, authenticated, service_role;
+    alter default privileges for role supabase_admin in schema public grant all on tables to postgres, anon, authenticated, service_role;
+    alter default privileges for role supabase_admin in schema public grant all on functions to postgres, anon, authenticated, service_role;
+    alter default privileges for role supabase_admin in schema public grant all on sequences to postgres, anon, authenticated, service_role;
+  " >/dev/null 2>&1 || die "the reset emptied practice and could not give the apps back their grants"
   bash "$0" up || die "practice is empty and the migrations did not reapply"
   say "Done. Practice is the schema and the seeded vocabulary, and nothing else."
   ;;

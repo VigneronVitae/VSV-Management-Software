@@ -97,11 +97,13 @@ bun run doctor                    # reports nothing, against replay fixtures
 **`supabase db reset` destroys everything in the database.** It is how you prove
 the migrations apply from empty and it is not a development loop. Use
 `bun run db:up` day to day; it applies what is pending and leaves the cellar's
-data alone. Before a reset, run `bun run db:backup`, and know that a restore is
-currently imperfect: seeded vocabulary is reissued with new ids on every reset,
-so lots restored afterwards point at varieties that no longer exist. That is
-S-29, and until it is answered the only reliable protection is not resetting a
-database with real inventory in it.
+data alone. Before a reset, run `bun run db:backup`. A restore
+(`bun run db:restore -- --into cellar|practice`) replaces rather than merges:
+it only goes into a freshly reset database at the backup's migration, and
+commits only if every row count and foreign key agrees with the backup. It has
+been rehearsed against the practice stack and compared table by table with the
+cellar; rehearse it there again after changing either script. Not resetting a
+database with real inventory in it is still the first protection.
 
 `doctor` is not optional. `event.subject_id` cannot be a foreign key (sorry S-4), so
 `doctor` is the only thing standing between the schema and orphaned records. Run it

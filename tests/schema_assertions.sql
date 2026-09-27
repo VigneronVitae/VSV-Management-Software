@@ -103,7 +103,8 @@
 --              supabase/migrations/0143_a_record_can_say_when.sql,
 --              supabase/migrations/0144_a_paper_says_what_money_was.sql,
 --              supabase/migrations/0145_the_books_keep_score.sql,
---              supabase/migrations/0146_harvest_weights.sql]
+--              supabase/migrations/0146_harvest_weights.sql,
+--              supabase/migrations/0147_a_pressing_knows_what_went_in.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh, scripts/rpc-args.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -13201,6 +13202,52 @@ begin
     raise exception 'FAIL: the day groupings do not account for every pick';
   end if;
   perform test_ok('harvest weights by variety, by day and by both add up to exactly the picks they group');
+  perform test_act_as(null);
+end $$;
+
+
+-- ---------------------------------------------------------------------------
+-- 0147. A pressing knows what went in.
+-- ---------------------------------------------------------------------------
+--
+-- Found by scripts/smoke.ts: a pick entered by fill percentage and weighed two
+-- bins at a time pressed as 0 lbs, because the share going in and the whole
+-- pick were estimated two different ways.
+do $$
+declare
+  u     uuid;
+  pick  uuid := '00000000-0000-0000-0000-00000000f701';
+  press uuid := '00000000-0000-0000-0000-00000000f702';
+  out_js jsonb;
+begin
+  select id into u from app_user where role = 'admin' limit 1;
+  perform test_act_as(u);
+  update term set attributes = attributes || '{"tare_lbs": 60, "full_lbs": 850}'::jsonb
+   where kind = 'vessel_type' and value = 'picking_bin';
+  insert into vessel (id, name, type_id) values (press, 'ASSERT 0147 press', term_id('vessel_type', 'press'));
+
+  perform add_bins_to_pick(
+    jsonb_build_object('id', pick, 'variety_id', term_id('variety', 'riesling'), 'vintage', 2026),
+    null, 2, term_id('vessel_type', 'picking_bin'), 'ASRT0147', 100);
+  -- Both bins on the scale at once: the pick is 1336 lbs and no bin has a
+  -- weight of its own.
+  perform weigh_bins(pick, array(select vessel_id from placement where node_id = pick), 1520);
+
+  out_js := start_press(array(select vessel_id from placement where node_id = pick and to_at is null), press);
+  if (out_js ->> 'lbs_in')::numeric <> (select quantity from node where id = pick) then
+    raise exception 'FAIL: a pick of % lbs, weighed two bins at a time, pressed as % lbs',
+      (select quantity from node where id = pick), out_js ->> 'lbs_in';
+  end if;
+  perform test_ok('a pick weighed two bins at a time presses as the weight the scale said, not as nothing');
+
+  -- And the load is in litres from the start, so finishing it changes nothing a
+  -- cellar hand may not change.
+  if (select unit from node where id = (out_js ->> 'node_id')::uuid) is distinct from 'L' then
+    raise exception 'FAIL: a load starts with unit %, so a cellar hand cannot finish it',
+      (select unit from node where id = (out_js ->> 'node_id')::uuid);
+  end if;
+  perform test_ok('a load starts in litres, so a cellar hand can finish the press');
+
   perform test_act_as(null);
 end $$;
 
