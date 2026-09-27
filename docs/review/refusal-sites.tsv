@@ -442,6 +442,46 @@ press:guard:15	press	guard	if exists (select 1 from placement where vessel_id = 
 press:raise:17	press	raise	raise exception	raise notice	17
 press:guard:16	press	guard	if held - weights[i] <= 0.0001 then	if false then	1
 press:silent:1	press	silent	where node_id = parent_ids[i] and to_at is null;	where node_id = parent_ids[i] and true;	1
+process_fruit:guard:1	process_fruit	guard	if not is_facility_user() then	if false then	1
+process_fruit:raise:1	process_fruit	raise	raise exception 'fruit is processed by people who work here';	raise notice 'fruit is processed by people who work here';	1
+process_fruit:guard:2	process_fruit	guard	if n_src = 0 then	if false then	1
+process_fruit:raise:2	process_fruit	raise	raise exception 'no bins were named, so there is no fruit to process';	raise notice 'no bins were named, so there is no fruit to process';	1
+process_fruit:head:1	process_fruit	head	if p_destinations is null or jsonb_typeof(p_destinations) <> 'array'\n     or jsonb_array_length(p_destinations) = 0 then	if false then	1
+process_fruit:raise:3	process_fruit	raise	raise exception 'say which fermenters the fruit is going into';	raise notice 'say which fermenters the fruit is going into';	1
+process_fruit:guard:3	process_fruit	guard	if sorted_out < 0 then	if false then	1
+process_fruit:raise:4	process_fruit	raise	raise exception 'what was sorted out cannot be less than nothing';	raise notice 'what was sorted out cannot be less than nothing';	1
+process_fruit:head:2	process_fruit	head	if nullif(p_detail ->> 'sort_method', '') is not null\n     and not exists (select 1 from term where kind = 'sort_method'\n                        and value = p_detail ->> 'sort_method' and active) then	if false then	1
+process_fruit:raise:5	process_fruit	raise	raise exception '"%" is not a way of sorting on the list', p_detail ->> 'sort_method';	raise notice '"%" is not a way of sorting on the list', p_detail ->> 'sort_method';	1
+process_fruit:guard:4	process_fruit	guard	if (p_detail ->> 'whole_cluster_pct')::numeric not between 0 and 100 then	if false then	1
+process_fruit:raise:6	process_fruit	raise	raise exception 'whole cluster is a percentage, and % is not one', p_detail ->> 'whole_cluster_pct';	raise notice 'whole cluster is a percentage, and % is not one', p_detail ->> 'whole_cluster_pct';	1
+process_fruit:guard:5	process_fruit	guard	if v_name is not null then	if false then	1
+process_fruit:raise:7	process_fruit	raise	raise exception '% has nothing in it, so there is nothing of it to process', v_name;	raise notice '% has nothing in it, so there is nothing of it to process', v_name;	1
+process_fruit:guard:6	process_fruit	guard	if v_name is not null then	if false then	2
+process_fruit:raise:8	process_fruit	raise	raise exception '% is not fruit in a bin, so it is not something to destem', v_name;	raise notice '% is not fruit in a bin, so it is not something to destem', v_name;	1
+process_fruit:guard:7	process_fruit	guard	if v_name is not null then	if false then	3
+process_fruit:raise:9	process_fruit	raise	raise exception '% is closed; its fruit has already gone somewhere', v_name;	raise notice '% is closed; its fruit has already gone somewhere', v_name;	1
+process_fruit:guard:8	process_fruit	guard	if total_lbs > 0 and sorted_out >= total_lbs then	if false then	1
+process_fruit:raise:10	process_fruit	raise	raise exception 'that sorts out % lbs from % lbs going in, which leaves nothing to ferment',	raise notice 'that sorts out % lbs from % lbs going in, which leaves nothing to ferment',	1
+process_fruit:guard:9	process_fruit	guard	if bad is not null then	if false then	1
+process_fruit:raise:11	process_fruit	raise	raise exception 'no active vessel %', bad;	raise notice 'no active vessel %', bad;	1
+process_fruit:guard:10	process_fruit	guard	if bad is not null then	if false then	2
+process_fruit:raise:12	process_fruit	raise	raise exception '% already holds something, so the fruit cannot go in', bad;	raise notice '% already holds something, so the fruit cannot go in', bad;	1
+process_fruit:permissive:1	process_fruit	permissive	where coalesce((vt.attributes ->> 'intake_bin')::boolean, false) or vt.value = 'press';	where coalesce((vt.attributes ->> 'intake_bin')::boolean, true) or vt.value = 'press';	1
+process_fruit:guard:11	process_fruit	guard	if bad is not null then	if false then	3
+process_fruit:raise:13	process_fruit	raise	raise exception '% is a picking bin or a press, not somewhere to ferment', bad;	raise notice '% is a picking bin or a press, not somewhere to ferment', bad;	1
+process_fruit:guard:12	process_fruit	guard	if (select count(*) from fruit_to) <> (select count(distinct vessel_id) from fruit_to) then	if false then	1
+process_fruit:raise:14	process_fruit	raise	raise exception 'the same fermenter is named twice';	raise notice 'the same fermenter is named twice';	1
+process_fruit:guard:13	process_fruit	guard	if exists (select 1 from fruit_to where net_lbs is not null and net_lbs <= 0) then	if false then	1
+process_fruit:raise:15	process_fruit	raise	raise exception 'a fermenter said to hold % lbs holds nothing', (select min(net_lbs) from fruit_to where net_lbs <= 0);	raise notice 'a fermenter said to hold % lbs holds nothing', (select min(net_lbs) from fruit_to where net_lbs <= 0);	1
+process_fruit:guard:14	process_fruit	guard	if exists (select 1 from fruit_to where net_lbs is not null and fill_pct is not null) then	if false then	1
+process_fruit:raise:16	process_fruit	raise	raise exception 'say pounds or a fill for a fermenter, not both: two figures for one amount is one of them wrong';	raise notice 'say pounds or a fill for a fermenter, not both: two figures for one amount is one of them wrong';	1
+process_fruit:head:3	process_fruit	head	if exists (select 1 from fruit_to where fill_pct is not null and (fill_pct <= 0 or fill_pct > 200))\n     or exists (select 1 from fruit_to where wc_pct is not null and wc_pct not between 0 and 100) then	if false then	1
+process_fruit:raise:17	process_fruit	raise	raise exception 'a fill or a whole cluster figure is outside what a percentage can be';	raise notice 'a fill or a whole cluster figure is outside what a percentage can be';	1
+process_fruit:guard:15	process_fruit	guard	if unsaid > 0 then	if false then	1
+process_fruit:guard:16	process_fruit	guard	if fill_avg is null then	if false then	1
+process_fruit:silent:1	process_fruit	silent	and not exists (select 1 from placement pl where pl.node_id = n.id and pl.to_at is null);	and true;	1
+process_fruit:guard:17	process_fruit	guard	if total_lbs > 0 then	if false then	1
+process_fruit:permissive:2	process_fruit	permissive	'measured',       coalesce((select bool_and(weighed) from fruit_share), false));	'measured',       coalesce((select bool_and(weighed) from fruit_share), true));	1
 propose_import:guard:1	propose_import	guard	if not is_facility_user() then	if false then	1
 propose_import:raise:1	propose_import	raise	raise exception 'only somebody who works here brings records in'	raise notice 'only somebody who works here brings records in'	1
 propose_import:head:1	propose_import	head	if p_steps is null or jsonb_typeof(p_steps) <> 'array'\n     or jsonb_array_length(p_steps) = 0 then	if false then	1

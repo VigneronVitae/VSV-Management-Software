@@ -1607,3 +1607,23 @@ today rather than deciding it.
 *Resolves when:* he has said which, and the function and the policy agree.
 *Load-bearing:* not until somebody other than an administrator has a login, and then yes, on
 the first morning they pick.
+
+**S-146. The rule for the pounds going in is written twice.**
+`0148` put the rule that decides how many pounds a set of bins contributes into a function of
+its own, `fruit_going_in`, and `process_fruit` uses it. `start_press` still carries its own
+copy, the one `0147` fixed, because restating a function of four hundred lines twice in one
+day to move a rule it already gets right was the riskier change. The two agree today, and the
+suite asserts both against the same property: all of a weighed pick puts in all of its weight.
+*Resolves when:* `start_press` is next restated for any reason, and calls `fruit_going_in`
+instead. *Load-bearing:* no, while the assertion holds; yes the day somebody changes one and
+not the other, which is what this entry is for.
+
+**S-147. A red cannot yet be pressed off its skins out of fermenters that hold pounds.**
+`process_fruit` puts a red into fermenters as a lot in pounds, because on the crush pad that is
+all anybody knows. `start_press` reads what a fermenting lot puts into a press from
+`placement.volume_l`, which is litres, so pressing that lot off its skins would record nothing
+going in. The winemaker said to leave this for now: "ignoring that these macrobins themselves
+will get pressed off skins at some point".
+*Resolves when:* he says what a pressing off skins should count going in (the pounds of fruit
+the lot started as, a litre estimate of the must, or nothing), and `start_press` reads it.
+*Load-bearing:* yes on the day the first red is pressed, which is a week or two away.

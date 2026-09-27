@@ -172,7 +172,8 @@ process.env.VITE_SUPABASE_URL = url;
 process.env.VITE_SUPABASE_ANON_KEY = anon;
 const k = await import("../packages/core/src/kernel.ts");
 
-const stamp = new Date().toISOString().slice(5, 16).replace(/[-:T]/g, "");
+// To the second, so two runs in one minute do not ask for the same vessel names.
+const stamp = new Date().toISOString().slice(5, 19).replace(/[-:T]/g, "");
 const year = new Date().getFullYear();
 const hoursAgo = (h: number) => new Date(Date.now() - h * 3600_000).toISOString();
 
@@ -195,6 +196,9 @@ let press = "";
 let tankA = "";
 let tankB = "";
 let bins: string[] = [];
+let pinot: string | null = null;
+let redBins: string[] = [];
+let fermBins: string[] = [];
 await step("an administrator registers a press, two tanks and two bins", async () => {
   await k.signIn(admin.email, admin.password);
   types = await k.terms("vessel_type");
@@ -228,9 +232,33 @@ await step("an administrator registers a press, two tanks and two bins", async (
   tankA = t.ids[0] ?? "";
   tankB = t.ids[1] ?? "";
   bins = b.ids;
+  // For the red: two more picking bins and two fermentation bins.
+  pinot = (await k.terms("variety")).find((t) => t.value === "pinot_noir")?.id ?? null;
+  const rb = await k.addVessels(
+    {
+      id: randomUUID(),
+      type_id: typeId("picking_bin"),
+      name: `SMOKE red bin ${stamp}`,
+    },
+    2,
+  );
+  const fb = await k.addVessels(
+    {
+      id: randomUUID(),
+      type_id: typeId("fermentation_bin"),
+      name: `SMOKE ferm ${stamp}`,
+    },
+    2,
+  );
+  redBins = rb.ids;
+  fermBins = fb.ids;
   await k.signOut();
   must(press && tankA && tankB && bins.length === 2, "no ids came back");
-  return `${p.made.join(", ")}; ${t.made.join(", ")}; ${b.made.join(", ")}`;
+  must(
+    redBins.length === 2 && fermBins.length === 2,
+    "the red's bins did not come back",
+  );
+  return `${p.made.join(", ")}; ${t.made.join(", ")}; ${b.made.join(", ")}; ${rb.made.join(", ")}; ${fb.made.join(", ")}`;
 });
 
 // --- as a cellar hand ---------------------------------------------------------
@@ -384,6 +412,53 @@ await step("pour 10 L away, as a loss", async () => {
   });
   return `${out.dumped_l} L dumped`;
 });
+
+// 0148. The red: sorted, one fermenter destemmed and one whole cluster, as two
+// lots, with what came off the sorting table taken off the weight.
+const redPick = randomUUID();
+await step(
+  "a red pick sorted and destemmed into two fermenters as two lots",
+  async () => {
+    await k.addBinsToPick({
+      pick: { id: redPick, variety_id: pinot, vintage: year },
+      vesselIds: redBins,
+      fillPct: 100,
+    });
+    const w = await k.weighBins({
+      nodeId: redPick,
+      vesselIds: redBins,
+      grossLbs: 1500,
+    });
+    const sorts = await k.terms("sort_method");
+    const out = await k.processFruit({
+      vesselIds: redBins,
+      destinations: [
+        { vessel_id: fermBins[0] ?? "", lot: "a", whole_cluster_pct: 0 },
+        { vessel_id: fermBins[1] ?? "", lot: "b", whole_cluster_pct: 100 },
+      ],
+      detail: {
+        sort_method: sorts[0]?.value ?? null,
+        sorted_out_lbs: 50,
+        note: "SMOKE",
+      },
+    });
+    must(out.lots.length === 2, `${out.lots.length} lots came out`);
+    must(
+      Math.abs(Number(out.lbs_in) - Number(w.total_lbs)) < 0.5,
+      `the pick weighed ${w.total_lbs} and ${out.lbs_in} went in`,
+    );
+    const inLots = out.lots.reduce((n, l) => n + Number(l.lbs ?? 0), 0);
+    must(
+      Math.abs(inLots - (Number(out.lbs_in) - 50)) < 0.5,
+      `the lots hold ${inLots} of ${Number(out.lbs_in) - 50}`,
+    );
+    const held = (await k.vessels()).filter(
+      (v) => fermBins.includes(v.id) && !v.is_empty,
+    );
+    must(held.length === 2, `${held.length} fermenters hold the fruit`);
+    return `${out.lots.map((l) => `${l.name} ${l.lbs} lb`).join("; ")}, ${out.bins_emptied} bins free`;
+  },
+);
 
 await step("harvest weights count the pick", async () => {
   const rows = await k.harvestWeights("day_variety", year);

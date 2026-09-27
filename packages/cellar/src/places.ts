@@ -52,6 +52,8 @@ export type Place =
   | { at: "pick-photos"; id: string }
   | { at: "vessel-photos"; id: string }
   | { at: "press" }
+  // 0148. Reds: sort and destem into fermenters.
+  | { at: "process" }
   | { at: "bins-to-return" }
   | { at: "export" }
   // Every pick there has ever been, as a table rather than a list, because it
@@ -123,6 +125,7 @@ const WITHOUT_ID = new Set([
   "pick-bins",
   "scale",
   "press",
+  "process",
   "bins-to-return",
   "export",
   "vineyards",

@@ -104,7 +104,8 @@
 --              supabase/migrations/0144_a_paper_says_what_money_was.sql,
 --              supabase/migrations/0145_the_books_keep_score.sql,
 --              supabase/migrations/0146_harvest_weights.sql,
---              supabase/migrations/0147_a_pressing_knows_what_went_in.sql]
+--              supabase/migrations/0147_a_pressing_knows_what_went_in.sql,
+--              supabase/migrations/0148_reds_go_into_fermenters.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh, scripts/rpc-args.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -4586,8 +4587,10 @@ begin
   -- Nineteen since 0144 registered `paper_kind` to `books`: receipt, check,
   -- invoice, other. The books' second vocabulary, and the first whose terms
   -- carry a rule (how many days either side a bank line can land) as data.
-  if (select count(*) from term_kind where module <> 'core') <> 19 then
-    raise exception 'FAIL: % of the kinds are owned by a module other than core, and the claim is nineteen',
+  -- Twenty since 0148 registered `sort_method` to `winemaking`: by hand, a
+  -- sorting table, an optical sorter, or not sorted.
+  if (select count(*) from term_kind where module <> 'core') <> 20 then
+    raise exception 'FAIL: % of the kinds are owned by a module other than core, and the claim is twenty',
       (select count(*) from term_kind where module <> 'core');
   end if;
   perform test_ok('the registry says which module owns each kind, and fourteen of them are not core''s');
@@ -13247,6 +13250,113 @@ begin
       (select unit from node where id = (out_js ->> 'node_id')::uuid);
   end if;
   perform test_ok('a load starts in litres, so a cellar hand can finish the press');
+
+  perform test_act_as(null);
+end $$;
+
+
+-- ---------------------------------------------------------------------------
+-- 0148. Reds go into fermenters.
+-- ---------------------------------------------------------------------------
+--
+-- "A processing equivalent of the press page for skin contact wines."
+do $$
+declare
+  u      uuid;
+  pick   uuid := '00000000-0000-0000-0000-00000000f801';
+  f1     uuid := '00000000-0000-0000-0000-00000000f802';
+  f2     uuid := '00000000-0000-0000-0000-00000000f803';
+  f3     uuid := '00000000-0000-0000-0000-00000000f804';
+  bins   uuid[];
+  weighed numeric;
+  out_js jsonb;
+  lot_a  uuid;
+begin
+  select id into u from app_user where role = 'admin' limit 1;
+  perform test_act_as(u);
+  update term set attributes = attributes || '{"tare_lbs": 60, "full_lbs": 850}'::jsonb
+   where kind = 'vessel_type' and value = 'picking_bin';
+  insert into vessel (id, name, type_id) values
+    (f1, 'ASSERT 0148 ferm 1', term_id('vessel_type', 'fermentation_bin')),
+    (f2, 'ASSERT 0148 ferm 2', term_id('vessel_type', 'fermentation_bin')),
+    (f3, 'ASSERT 0148 ferm 3', term_id('vessel_type', 'fermentation_bin'));
+
+  perform add_bins_to_pick(
+    jsonb_build_object('id', pick, 'variety_id', term_id('variety', 'pinot_noir'), 'vintage', 2026),
+    null, 2, term_id('vessel_type', 'picking_bin'), 'ASRT0148', 100);
+  bins := array(select vessel_id from placement where node_id = pick and to_at is null);
+  perform weigh_bins(pick, bins, 1500);
+  select quantity into weighed from node where id = pick;
+
+  -- The same rule as a press: all of a weighed pick puts in all of its weight.
+  if (select sum(lbs) from fruit_going_in(bins)) <> weighed then
+    raise exception 'FAIL: all of a % lb pick would put in % lbs', weighed,
+      (select sum(lbs) from fruit_going_in(bins));
+  end if;
+  perform test_ok('the pounds a set of bins puts in follow the press''s rule: all of a weighed pick is all of its weight');
+
+  begin
+    perform process_fruit(bins, jsonb_build_array(jsonb_build_object('vessel_id', f1)),
+                          jsonb_build_object('sort_method', 'by eye'));
+    raise exception 'FAIL: a way of sorting not on the list was accepted';
+  exception when others then
+    if sqlerrm not like '%not a way of sorting on the list%' then raise; end if;
+  end;
+  begin
+    perform process_fruit(bins, jsonb_build_array(jsonb_build_object('vessel_id', f1)),
+                          jsonb_build_object('sorted_out_lbs', weighed + 1));
+    raise exception 'FAIL: sorting out more than went in was accepted';
+  exception when others then
+    if sqlerrm not like '%leaves nothing to ferment%' then raise; end if;
+  end;
+  begin
+    perform process_fruit(bins, jsonb_build_array(jsonb_build_object('vessel_id', bins[1])));
+    raise exception 'FAIL: fruit was processed into a picking bin';
+  exception when others then
+    if sqlerrm not like '%already holds something%' and sqlerrm not like '%not somewhere to ferment%' then raise; end if;
+  end;
+  perform test_ok('processing refuses a sorting method off the list, more sorted out than went in, and a picking bin as a fermenter');
+
+  -- Two lots, one of them in two fermenters, with 100 lbs sorted out. One
+  -- fermenter is said to hold 300 lbs; the rest is shared by fill.
+  out_js := process_fruit(bins,
+    jsonb_build_array(
+      jsonb_build_object('vessel_id', f1, 'lot', 'a', 'net_lbs', 300, 'whole_cluster_pct', 0),
+      jsonb_build_object('vessel_id', f2, 'lot', 'a', 'fill_pct', 50, 'whole_cluster_pct', 0),
+      jsonb_build_object('vessel_id', f3, 'lot', 'b', 'fill_pct', 50, 'whole_cluster_pct', 100)),
+    jsonb_build_object('sort_method', 'hand', 'sorted_out_lbs', 100));
+
+  if jsonb_array_length(out_js -> 'lots') <> 2 then
+    raise exception 'FAIL: two lot keys made % lots', jsonb_array_length(out_js -> 'lots');
+  end if;
+  if (select sum(quantity) from node where id in (
+        select (l ->> 'node_id')::uuid from jsonb_array_elements(out_js -> 'lots') l))
+     <> weighed - 100 then
+    raise exception 'FAIL: the lots hold % lbs of the % that went in less 100 sorted out',
+      (select sum(quantity) from node where id in (
+        select (l ->> 'node_id')::uuid from jsonb_array_elements(out_js -> 'lots') l)), weighed;
+  end if;
+  perform test_ok('processing makes a lot per key, and the lots hold what went in less what was sorted out');
+
+  -- Stored as it was said: pounds where pounds were said, a fill where a fill
+  -- was, and the split kept on the lot rather than written into a placement.
+  if (select net_lbs from placement where vessel_id = f1 and to_at is null) <> 300
+     or (select fill_pct from placement where vessel_id = f2 and to_at is null) <> 50
+     or (select net_lbs from placement where vessel_id = f2 and to_at is null) is not null then
+    raise exception 'FAIL: a fermenter''s placement holds something other than what was said about it';
+  end if;
+  lot_a := (select node_id from placement where vessel_id = f1 and to_at is null);
+  if (select stage from node where id = lot_a) <> 'ferment'
+     or (select unit from node where id = lot_a) <> 'lbs'
+     or (select (attributes ->> 'whole_cluster_pct')::numeric from node where id = lot_a) <> 0
+     or not exists (select 1 from lineage where child_id = lot_a and parent_id = pick) then
+    raise exception 'FAIL: a processed lot is not a fermenting lot in pounds with its whole cluster and its pick';
+  end if;
+  if exists (select 1 from placement where node_id = pick and to_at is null)
+     or (select status from node where id = pick) <> 'closed' then
+    raise exception 'FAIL: processing every bin of a pick left the pick open';
+  end if;
+  perform test_ok('each fermenter keeps what was said about it, each lot ferments in pounds with its whole cluster and its pick, and the emptied pick closes');
 
   perform test_act_as(null);
 end $$;

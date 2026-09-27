@@ -94,6 +94,7 @@ import {
   practiceAvailable,
   pressDraws,
   pressesInProgress,
+  processFruit,
   type RoomClimate,
   type RunningOperation,
   rackPlan,
@@ -390,6 +391,8 @@ async function screenFor(place: Place): Promise<HTMLElement> {
       return pickBinsScreen(place.id);
     case "scale":
       return scaleScreen();
+    case "process":
+      return processScreen();
     case "press":
       return pressScreen();
     case "bins-to-return":
@@ -1106,6 +1109,11 @@ async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> 
           }
         : {}),
       go: () => go({ at: "press" }),
+    },
+    {
+      name: "Sort and destem",
+      note: "Reds into fermenters, destemmed or whole cluster. The press, for fruit that stays on its skins.",
+      go: () => go({ at: "process" }),
     },
     {
       name: "Bins to return",
@@ -3803,8 +3811,14 @@ function rackScreen(): HTMLElement {
 // control on the morning the fruit was picked, and a thumb that trusts the
 // prefill records the weight on the wrong day. Each kind of work walks forward
 // through its own day.
-type WhenFor = "pick" | "weigh" | "press" | "rack";
-const lastWhen: Record<WhenFor, string> = { pick: "", weigh: "", press: "", rack: "" };
+type WhenFor = "pick" | "weigh" | "press" | "rack" | "process";
+const lastWhen: Record<WhenFor, string> = {
+  pick: "",
+  weigh: "",
+  press: "",
+  rack: "",
+  process: "",
+};
 
 function localNow(): string {
   const d = new Date();
@@ -6786,6 +6800,12 @@ function paletteScreen(): HTMLElement {
           note: "Fruit in, juice out.",
           hay: "press cut litres",
           go: () => go({ at: "press" }),
+        },
+        {
+          label: "Sort and destem",
+          note: "Reds into fermenters.",
+          hay: "destem crush sort whole cluster macrobin fermenter red",
+          go: () => go({ at: "process" }),
         },
         {
           label: "Sampling",
@@ -10183,6 +10203,377 @@ function pressScreen(): HTMLElement {
     }
   })();
 
+  return view;
+}
+
+// --- sort and destem: the press, for fruit that stays on its skins ---------
+//
+// 0148. "A processing equivalent of the press page for skin contact wines. I am
+// about to take the bins that we picked of Pinot and we are going to sort it,
+// then destem some of the fruit or keep it whole cluster, but it's going into
+// macrobins now." One lot across the bins or a lot each: "both". Whole cluster
+// per fermenter, overall, or per picking bin: "any of those". Pounds or a fill:
+// "either". And "additions should be an option, plus options for weight
+// discarded, sorting type".
+//
+// The same bins chooser as the press, grouped by pick. Everything this screen
+// works out that is a rule (the pounds going in, the split among fermenters,
+// each lot's whole cluster) is `process_fruit`'s; this lays out the questions.
+const LOT_KEYS = ["a", "b", "c", "d", "e", "f"];
+
+function processScreen(): HTMLElement {
+  const body = el("div", {}, empty("Loading."));
+  const view = screen(
+    "Sort and destem",
+    lede(
+      "Reds into fermenters. Pick the bins, say how it was sorted and how much went " +
+        "in whole cluster, and which fermenters it went into.",
+    ),
+    body,
+  );
+  const when = whenField("process");
+
+  async function load(): Promise<void> {
+    const [picks, allBins, kit, types, sorts, shelf] = await Promise.all([
+      openPicks(),
+      pickBins(),
+      vessels(),
+      terms("vessel_type"),
+      terms("sort_method"),
+      suppliesForAddition(),
+    ]);
+    const typeOf = new Map(types.map((t) => [t.id, t.value]));
+    // Somewhere fruit can ferment on its skins. Not a picking bin, not a press,
+    // and empty, because a fermenter already holding a lot is a blend and that
+    // is racking's job.
+    const fermenters = kit.filter(
+      (v) =>
+        v.is_empty &&
+        ["fermentation_bin", "fermenter", "tank"].includes(typeOf.get(v.type_id) ?? ""),
+    );
+
+    // --- the bins -----------------------------------------------------------
+    const binBoxes = allBins.map((b) => ({
+      bin: b,
+      box: checkbox(
+        b.lbs === null
+          ? `${b.bin} (nobody has said what is in it)`
+          : `${b.bin}, ${Number(b.lbs).toLocaleString()} lb`,
+        false,
+      ),
+    }));
+    const chosenBins = () => binBoxes.filter((b) => b.box.input.checked);
+    const running = el("p", { class: "field-hint" });
+    // Which of the ticked bins went in whole cluster, redrawn as bins are ticked.
+    const wcBinsBox = el("div", { class: "rows" });
+    let wcBinChecks: { id: string; box: Field }[] = [];
+    function drawWcBins(): void {
+      const going = chosenBins();
+      const kept = new Set(
+        wcBinChecks.filter((c) => c.box.input.checked).map((c) => c.id),
+      );
+      wcBinChecks = going.map((g) => ({
+        id: g.bin.vessel_id,
+        box: checkbox(g.bin.bin, kept.has(g.bin.vessel_id)),
+      }));
+      wcBinsBox.replaceChildren(
+        ...(wcBinChecks.length > 0
+          ? wcBinChecks.map((c) => c.box.root)
+          : [empty("Tick the bins going in first.")]),
+      );
+    }
+    function showRunning(): void {
+      const going = chosenBins();
+      const lbs = going.reduce((n, b) => n + Number(b.bin.lbs ?? 0), 0);
+      const blind = going.filter((b) => b.bin.lbs === null).length;
+      running.textContent =
+        going.length === 0
+          ? ""
+          : `${going.length} bin${going.length === 1 ? "" : "s"}, about ${lbs.toLocaleString()} lb` +
+            (blind > 0 ? `, and ${blind} with no figure.` : ".") +
+            " A weighed pick counts at its scale weight.";
+      drawWcBins();
+    }
+    for (const b of binBoxes) on(b.box.input, "change", showRunning);
+
+    const binsBlock =
+      picks.length === 0 || allBins.length === 0
+        ? empty("No open pick with fruit in its bins.")
+        : el(
+            "div",
+            {},
+            ...[...new Set(allBins.map((b) => b.node_id))].map((id) => {
+              const mine = binBoxes.filter((b) => b.bin.node_id === id);
+              return el(
+                "details",
+                { class: "more", ...(picks.length === 1 ? { open: "true" } : {}) },
+                el("summary", {
+                  text: `${mine[0]?.bin.pick ?? "a pick"}: ${mine.length} bin${mine.length === 1 ? "" : "s"}`,
+                }),
+                rows(
+                  button(
+                    "All of them",
+                    () => {
+                      for (const b of mine) b.box.input.checked = true;
+                      showRunning();
+                    },
+                    "quiet",
+                  ),
+                  ...mine.map((b) => b.box.root),
+                ),
+              );
+            }),
+          );
+
+    // --- sorting -------------------------------------------------------------
+    const sortMethod = termPick("How it was sorted", sorts);
+    const sortedOut = field({
+      label: "Sorted out, lbs",
+      type: "number",
+      hint: "What came off the sorting table. It comes off the weight that goes in.",
+    });
+    const note = field({ label: "Note", placeholder: "optional" });
+
+    // --- whole cluster -------------------------------------------------------
+    const wcOverall = field({
+      label: "Whole cluster, % of the whole processing",
+      type: "number",
+      placeholder: "0 is all destemmed",
+      hint: "Or leave this and say it per fermenter below, or per picking bin.",
+    });
+    const wcPerBin = el(
+      "details",
+      { class: "more" },
+      el("summary", { text: "Some picking bins went in whole cluster" }),
+      wcBinsBox,
+    );
+    drawWcBins();
+
+    // --- fermenters ----------------------------------------------------------
+    type Dest = {
+      vessel: (typeof fermenters)[number];
+      tick: Field;
+      lbs: Field;
+      fill: Field;
+      wc: Field;
+      lot: HTMLSelectElement;
+      extra: HTMLElement;
+    };
+    let lotMode: "one" | "each" | "group" = "one";
+    const dests: Dest[] = fermenters.map((v) => {
+      const tick = checkbox(
+        `${v.name}${v.capacity_l ? `, ${v.capacity_l} L` : ""}`,
+        false,
+      );
+      const lbs = field({
+        label: "Lbs in it",
+        type: "number",
+        placeholder: "its share",
+      });
+      const fill = field({ label: "Or how full, %", type: "number" });
+      const wc = field({ label: "Whole cluster %", type: "number" });
+      const lot = el("select", { class: "input" });
+      lot.replaceChildren(
+        ...LOT_KEYS.map((k) =>
+          el("option", { value: k, text: `Lot ${k.toUpperCase()}` }),
+        ),
+      );
+      const lotField = el(
+        "label",
+        { class: "field lot-choice" },
+        el("span", { class: "field-label", text: "Which lot" }),
+        lot,
+      );
+      const extra = el(
+        "div",
+        { class: "pick-varieties", hidden: "hidden" },
+        el("div", { class: "fermenter-row" }, lbs.root, fill.root, wc.root),
+        lotField,
+      );
+      on(tick.input, "change", () => {
+        extra.hidden = !tick.input.checked;
+      });
+      return { vessel: v, tick, lbs, fill, wc, lot, extra };
+    });
+    const lotModeRow = el("div", { class: "variant-options" });
+    function drawLotMode(): void {
+      lotModeRow.replaceChildren(
+        ...(
+          [
+            ["one", "One lot"],
+            ["each", "A lot per fermenter"],
+            ["group", "I'll group them"],
+          ] as const
+        ).map(([k, label]) =>
+          button(
+            label,
+            () => {
+              lotMode = k;
+              drawLotMode();
+            },
+            k === lotMode ? "primary" : "quiet",
+          ),
+        ),
+      );
+      for (const d of dests) {
+        const choice = d.extra.querySelector<HTMLElement>(".lot-choice");
+        if (choice) choice.hidden = lotMode !== "group";
+      }
+    }
+    drawLotMode();
+
+    const fermentersBlock =
+      fermenters.length === 0
+        ? banner(
+            "No empty fermentation bin, fermenter or tank is registered. Add one from " +
+              "Empty vessel, then come back.",
+            "note",
+          )
+        : el(
+            "div",
+            {},
+            ...dests.map((d) =>
+              el("div", { class: "fermenter" }, d.tick.root, d.extra),
+            ),
+          );
+
+    // --- an addition at the crusher --------------------------------------------
+    const fromShelf = el("select", { class: "input" });
+    fromShelf.replaceChildren(
+      el("option", { value: "", text: "Nothing added" }),
+      ...shelf.map((s) =>
+        el("option", {
+          value: s.supply_id,
+          text: `${s.name} (${Number(s.on_hand).toLocaleString()} ${s.unit} on hand)`,
+        }),
+      ),
+    );
+    const addAmount = field({ label: "How much, into each fermenter", type: "number" });
+    const addUnit = field({ label: "Unit", placeholder: "g" });
+    on(fromShelf, "change", () => {
+      const picked = shelf.find((s) => s.supply_id === fromShelf.value);
+      if (picked && !addUnit.value()) addUnit.input.value = picked.unit;
+    });
+    const addition = el(
+      "details",
+      { class: "more" },
+      el("summary", { text: "An addition at the same time" }),
+      el(
+        "label",
+        { class: "field" },
+        el("span", { class: "field-label", text: "What" }),
+        fromShelf,
+      ),
+      addAmount.root,
+      addUnit.root,
+    );
+
+    const said = el("div", {});
+    const go_ = button("Put it in the fermenters", async () => {
+      const bins = chosenBins().map((b) => b.bin.vessel_id);
+      const chosen = dests.filter((d) => d.tick.input.checked);
+      if (bins.length === 0) {
+        said.replaceChildren(banner("Tick the bins going in.", "error"));
+        return;
+      }
+      if (chosen.length === 0) {
+        said.replaceChildren(banner("Tick the fermenters it is going into.", "error"));
+        return;
+      }
+      const num = (f: Field) => (f.value() ? Number(f.value()) : null);
+      try {
+        const out = await processFruit({
+          vesselIds: bins,
+          destinations: chosen.map((d, i) => ({
+            vessel_id: d.vessel.id,
+            lot:
+              lotMode === "one"
+                ? "a"
+                : lotMode === "each"
+                  ? (LOT_KEYS[i] ?? `x${i}`)
+                  : d.lot.value,
+            net_lbs: num(d.lbs),
+            fill_pct: num(d.lbs) === null ? num(d.fill) : null,
+            whole_cluster_pct: num(d.wc),
+          })),
+          detail: {
+            sort_method: sortMethod.value() || null,
+            sorted_out_lbs: num(sortedOut),
+            whole_cluster_pct: num(wcOverall),
+            whole_cluster_bins: wcBinChecks
+              .filter((c) => c.box.input.checked)
+              .map((c) => c.id),
+            note: note.value() || null,
+          },
+          at: when.value(),
+        });
+        // The addition goes in after, into the fermenters that now hold the lots,
+        // through the same verb the additions screen uses.
+        let added = "";
+        if (fromShelf.value && num(addAmount) && addUnit.value()) {
+          try {
+            await addToWine({
+              vesselIds: chosen.map((d) => d.vessel.id),
+              amount: Number(addAmount.value()),
+              unit: addUnit.value(),
+              supplyId: fromShelf.value,
+              at: when.value(),
+            });
+            added = " The addition is recorded.";
+          } catch (e) {
+            added = ` The fruit is in, but the addition did not save: ${(e as Error).message}`;
+          }
+        }
+        said.replaceChildren(
+          banner(
+            `${out.lots.map((l) => `${l.name}${l.lbs ? `, ${Number(l.lbs).toLocaleString()} lb` : ""}`).join("; ")}. ` +
+              `${Number(out.lbs_in).toLocaleString()} lb in` +
+              (out.sorted_out_lbs ? `, ${out.sorted_out_lbs} lb sorted out` : "") +
+              `. ${out.bins_emptied} bin${out.bins_emptied === 1 ? "" : "s"} free.` +
+              (out.measured
+                ? ""
+                : " Nothing was weighed, so the pounds are what the bins were said to hold.") +
+              added,
+            "good",
+          ),
+        );
+        await load();
+        body.prepend(said);
+      } catch (e) {
+        said.replaceChildren(fail(e));
+      }
+    });
+
+    body.replaceChildren(
+      rows(
+        when.root,
+        el("h2", { class: "section-head", text: "Which bins" }),
+        binsBlock,
+        running,
+        el("h2", { class: "section-head", text: "Sorting" }),
+        sortMethod.root,
+        sortedOut.root,
+        el("h2", { class: "section-head", text: "Whole cluster" }),
+        wcOverall.root,
+        wcPerBin,
+        el("h2", { class: "section-head", text: "Into which fermenters" }),
+        lotModeRow,
+        fermentersBlock,
+        addition,
+        note.root,
+        said,
+        go_,
+        button("Back", () => goBack(), "quiet"),
+      ),
+    );
+  }
+
+  void load().catch((error) => {
+    body.replaceChildren(
+      fail(error),
+      button("Back", () => goBack(), "quiet"),
+    );
+  });
   return view;
 }
 

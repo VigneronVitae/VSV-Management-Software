@@ -36,6 +36,8 @@ export type TermKind =
   | "dump_reason"
   // 0144. Receipt, check, invoice, other. The books' second vocabulary.
   | "paper_kind"
+  // 0148. By hand, sorting table, optical sorter, not sorted.
+  | "sort_method"
   // The books module's one vocabulary. Added here rather than cast at the call
   // site, which is what the shop and the vineyard did with theirs, and is why
   // S-61 is still open five vocabularies later.

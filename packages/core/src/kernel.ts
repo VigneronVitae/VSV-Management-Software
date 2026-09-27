@@ -1763,6 +1763,50 @@ export async function drawToLevel(args: {
   return data as LevelDrawn;
 }
 
+// 0148. Reds: bins into fermenters, sorted, destemmed or whole cluster, as one
+// lot or several. The red counterpart of `startPress`.
+export type FermenterLeg = {
+  vessel_id: Uuid;
+  /** Destinations sharing a key are one lot. Blank is one lot for all. */
+  lot?: string | null;
+  net_lbs?: number | null;
+  fill_pct?: number | null;
+  whole_cluster_pct?: number | null;
+};
+
+export type FruitProcessed = {
+  lots: Array<{ node_id: Uuid; name: string; lbs: number | null; fermenters: number }>;
+  lbs_in: number;
+  sorted_out_lbs: number;
+  bins_emptied: number;
+  picks_spent: number;
+  measured: boolean;
+};
+
+export async function processFruit(args: {
+  vesselIds: Uuid[];
+  destinations: FermenterLeg[];
+  detail?: {
+    sort_method?: string | null;
+    sorted_out_lbs?: number | null;
+    whole_cluster_pct?: number | null;
+    whole_cluster_bins?: Uuid[];
+    note?: string | null;
+  };
+  lots?: Record<string, { name?: string; id?: Uuid }>;
+  at?: string | null;
+}): Promise<FruitProcessed> {
+  const { data, error } = await kernel().rpc("process_fruit", {
+    p_vessel_ids: args.vesselIds,
+    p_destinations: args.destinations,
+    p_detail: args.detail ?? {},
+    p_lots: args.lots ?? {},
+    p_at: args.at ?? null,
+  });
+  if (error) throw new KernelError(error);
+  return data as FruitProcessed;
+}
+
 export async function finishPress(
   loadId: Uuid,
   detail?: Record<string, unknown>,

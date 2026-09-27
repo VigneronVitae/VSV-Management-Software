@@ -2003,6 +2003,24 @@ body.practising {
   margin: 0.25rem 0 0.25rem;
 }
 
+/* --- sort and destem. 0148 --------------------------------------------------
+
+   A fermenter's three optional figures side by side, because they are three
+   answers to one question about one vessel and stacking them makes it look
+   like three questions. */
+
+.fermenter {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0.35rem 0;
+}
+
+.fermenter-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
 /* --- harvest weights. 0146 --------------------------------------------------
 
    Tons first and large, because that is how a vintage is talked about; pounds

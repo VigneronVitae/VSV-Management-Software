@@ -4,7 +4,8 @@
 --           weight that went in, and a cellar hand can finish a press."
 -- Depends on: [supabase/migrations/0143_a_record_can_say_when.sql]
 -- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql,
---                  scripts/smoke.ts]
+--                  scripts/smoke.ts,
+--                  supabase/migrations/0148_reds_go_into_fermenters.sql]
 -- Axioms enforced: A13. A press that took in a weighed pick and recorded
 --                  nothing going in was a success that lost the number every
 --                  yield is read from.

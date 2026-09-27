@@ -10,6 +10,7 @@
 //              supabase/migrations/0142_a_dump_says_why.sql,
 //              supabase/migrations/0143_a_record_can_say_when.sql,
 //              supabase/migrations/0146_harvest_weights.sql,
+//              supabase/migrations/0148_reds_go_into_fermenters.sql,
 //             packages/core/src/index.ts]
 // Depended on by: [apps/web/src/index.ts]
 // ---------------------------------------------------------------------------
