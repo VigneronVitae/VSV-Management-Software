@@ -65,11 +65,13 @@ import {
   invites,
   jackets,
   type Location,
+  type LotMakeup,
   type LotWithoutColour,
   type LotWithoutVintage,
   locations,
   lotAdditions,
   lotDetail,
+  lotMakeup,
   lotSeries,
   lotsWithoutColour,
   lotsWithoutVintage,
@@ -416,6 +418,8 @@ async function screenFor(place: Place): Promise<HTMLElement> {
       return weightsScreen();
     case "ferment":
       return fermentScreen();
+    case "makeup":
+      return makeupScreen();
     case "fruit":
       return fruitScreen();
     case "vineyards":
@@ -1104,6 +1108,11 @@ async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> 
       name: "Ferment log",
       note: "Brix and cap work for every lot fermenting, drawn over time. Downloads for Excel.",
       go: () => go({ at: "ferment" }),
+    },
+    {
+      name: "What each wine is made of",
+      note: "Every wine in a vessel, by the blocks and varieties it came from.",
+      go: () => go({ at: "makeup" }),
     },
     {
       name: "Sampling",
@@ -6908,6 +6917,12 @@ function paletteScreen(): HTMLElement {
           note: "Brix and cap work over time.",
           hay: "ferment brix punchdown pumpover cap temperature chart",
           go: () => go({ at: "ferment" }),
+        },
+        {
+          label: "What each wine is made of",
+          note: "Blocks and varieties, in shares.",
+          hay: "makeup composition blend blocks varieties percent",
+          go: () => go({ at: "makeup" }),
         },
         {
           label: "Press",
@@ -13785,4 +13800,124 @@ function shortWhen(iso: string): string {
     hour: "numeric",
     minute: "2-digit",
   });
+}
+
+// --- what each wine is made of (0161) ---------------------------------------
+//
+// The kernel could answer "what is this made of" from 0002 on and no screen
+// asked; the function had been failing since 0039 and nobody noticed, which
+// is what a question nobody asks looks like. One card a wine in a vessel: its
+// blocks as one bar in shares, and its varieties as a line under it. No label
+// thresholds: what a share permits on a label is the advisor's (S-8 to S-12).
+function makeupScreen(): HTMLElement {
+  const body = el("div", {}, empty("Walking every wine back to its picks."));
+  const view = screen(
+    "What each wine is made of",
+    lede(
+      "Every wine in a vessel, by the blocks and varieties it came from, walked back " +
+        "through every press and blend to the picks.",
+    ),
+    body,
+  );
+
+  void (async () => {
+    try {
+      const lots = await lotMakeup();
+      if (lots.length === 0) {
+        body.replaceChildren(empty("Nothing is in a vessel."));
+        return;
+      }
+      const byVintage = new Map<string, LotMakeup[]>();
+      for (const l of lots) {
+        const key = l.vintage === null ? "No vintage" : String(l.vintage);
+        byVintage.set(key, [...(byVintage.get(key) ?? []), l]);
+      }
+      const order = [...byVintage.keys()].sort((a, b) => b.localeCompare(a));
+      body.replaceChildren(
+        rows(
+          ...order.flatMap((v) => [
+            el("h2", { class: "section-head", text: v }),
+            ...(byVintage.get(v) ?? []).map(makeupCard),
+          ]),
+          button("Back", () => goBack(), "quiet"),
+        ),
+      );
+    } catch (error) {
+      body.replaceChildren(
+        fail(error),
+        button("Back", () => goBack(), "quiet"),
+      );
+    }
+  })();
+
+  return view;
+}
+
+function pct(share: number): string {
+  const p = share * 100;
+  return `${p >= 99.95 ? "100" : p < 0.05 ? "<0.1" : p.toFixed(1)}%`;
+}
+
+function makeupCard(l: LotMakeup): HTMLElement {
+  const amount =
+    l.quantity === null
+      ? ""
+      : `${Number(l.quantity).toLocaleString(undefined, { maximumFractionDigits: 1 })} ${l.unit ?? ""}`;
+  const head = el(
+    "div",
+    { class: "makeup-head" },
+    el("span", { class: "makeup-name", text: l.name }),
+    el("span", {
+      class: "makeup-where",
+      text: [l.vessels.join(", "), amount].filter(Boolean).join(", "),
+    }),
+  );
+  if (l.blocks.length === 0) {
+    return el(
+      "article",
+      { class: "makeup-card" },
+      head,
+      el("p", {
+        class: "field-hint",
+        text: "No picks recorded for it here: it was made before this app, or from fruit it never saw.",
+      }),
+    );
+  }
+  // One bar, a segment a block, widest first; six colours from the skin and
+  // then they repeat, which a wine from seven blocks can live with.
+  const bar = el(
+    "div",
+    {
+      class: "makeup-bar",
+      role: "img",
+      "aria-label": l.blocks.map((b) => `${b.block} ${pct(b.share)}`).join(", "),
+    },
+    ...l.blocks.map((b, i) =>
+      el("span", {
+        class: `makeup-seg makeup-seg-${i % 6}`,
+        style: `flex-grow:${Math.max(Number(b.share), 0.001)}`,
+        title: `${b.vineyard ?? ""} ${b.block} ${pct(b.share)}`.trim(),
+      }),
+    ),
+  );
+  const legend = el(
+    "ul",
+    { class: "makeup-legend" },
+    ...l.blocks.map((b, i) =>
+      el(
+        "li",
+        {},
+        el("span", { class: `makeup-key makeup-seg-${i % 6}` }),
+        el("span", { text: `${b.block}${b.vineyard ? `, ${b.vineyard}` : ""}` }),
+        el("span", { class: "makeup-share", text: pct(b.share) }),
+      ),
+    ),
+  );
+  const varieties = el("p", {
+    class: "makeup-varieties",
+    text: l.varieties
+      .map((v) => `${v.variety ?? "No variety said"} ${pct(v.share)}`)
+      .join(", "),
+  });
+  return el("article", { class: "makeup-card" }, head, bar, legend, varieties);
 }

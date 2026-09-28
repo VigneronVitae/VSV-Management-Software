@@ -10,7 +10,8 @@
 --                  supabase/migrations/0113_a_vineyard_is_a_place_you_can_open.sql,
 --                  supabase/migrations/0114_every_pick_stays_on_the_list.sql,
 --                  supabase/migrations/0115_a_vineyard_is_rows_and_plant_spaces.sql,
---                  supabase/migrations/0117_the_vine_map_is_loaded.sql]
+--                  supabase/migrations/0117_the_vine_map_is_loaded.sql,
+--                  supabase/migrations/0160_block_composition_works_again.sql]
 -- Axioms enforced: T0-2 (never store what is derived: a planting inherits the
 --                  block's answer by being asked, not by being copied)
 -- Open sorries: S-55 (acres and years are typed, and no unit is recorded

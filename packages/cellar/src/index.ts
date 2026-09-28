@@ -16,6 +16,7 @@
 //              supabase/migrations/0153_a_bin_can_change_parts.sql,
 //              supabase/migrations/0158_a_ferment_is_variables.sql,
 //              supabase/migrations/0159_what_an_acre_gave.sql,
+//              supabase/migrations/0161_what_each_wine_is_made_of.sql,
 //             packages/core/src/index.ts]
 // Depended on by: [apps/web/src/index.ts]
 // ---------------------------------------------------------------------------

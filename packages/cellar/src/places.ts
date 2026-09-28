@@ -63,6 +63,8 @@ export type Place =
   | { at: "weights" }
   // 0158. Brix and cap work over time, and the Excel download.
   | { at: "ferment" }
+  // 0161. Every wine by the blocks and varieties it came from.
+  | { at: "makeup" }
   | { at: "vineyards" }
   // One vineyard. A vineyard used to be a heading on the list and nothing else,
   // which meant a vineyard with no blocks in it yet was a dead end: nothing to
@@ -136,6 +138,7 @@ const WITHOUT_ID = new Set([
   "fruit",
   "weights",
   "ferment",
+  "makeup",
   "day",
   "paper",
   "makers",

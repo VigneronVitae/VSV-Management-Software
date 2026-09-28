@@ -2139,6 +2139,30 @@ export async function moveBinsToPick(args: {
   return data as BinsMoved;
 }
 
+// --- what each wine is made of (0161) ---------------------------------------
+
+export type LotMakeup = {
+  node_id: Uuid;
+  name: string;
+  stage: string;
+  vintage: number | null;
+  quantity: number | null;
+  unit: string | null;
+  vessels: string[];
+  blocks: { vineyard: string | null; block: string; share: number }[];
+  varieties: { variety: string | null; share: number }[];
+};
+
+export async function lotMakeup(): Promise<LotMakeup[]> {
+  const { data, error } = await kernel()
+    .from("lot_makeup")
+    .select("node_id,name,stage,vintage,quantity,unit,vessels,blocks,varieties")
+    .order("vintage", { ascending: false, nullsFirst: false })
+    .order("name");
+  if (error) throw new KernelError(error);
+  return (data ?? []) as LotMakeup[];
+}
+
 // --- the ferment log (0158) -------------------------------------------------
 
 // A lot fermenting now, with the fermenters holding it.

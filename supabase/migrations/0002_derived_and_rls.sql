@@ -18,7 +18,8 @@
 --                  supabase/migrations/0028_redaction_is_row_level.sql,
 --                  supabase/migrations/0031_scheduling_to_core.sql, supabase/migrations/0037_export.sql,
 --                  supabase/migrations/0137_harvest_so_far.sql,
---                  supabase/migrations/0152_who_may_do_what.sql]
+--                  supabase/migrations/0152_who_may_do_what.sql,
+--                  supabase/migrations/0160_block_composition_works_again.sql]
 -- Axioms enforced: T0-2 (derived over stored), T0-4 (a producer cannot grant
 --                  itself standing), T1-1 (pickers, not text fields)
 -- Open sorries: S-7 (RLS untested against a real cellar user)

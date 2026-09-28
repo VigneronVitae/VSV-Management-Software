@@ -116,7 +116,9 @@
 --              supabase/migrations/0156_a_blend_stays_whole.sql,
 --              supabase/migrations/0157_an_export_says_what_it_is.sql,
 --              supabase/migrations/0158_a_ferment_is_variables.sql,
---              supabase/migrations/0159_what_an_acre_gave.sql]
+--              supabase/migrations/0159_what_an_acre_gave.sql,
+--              supabase/migrations/0160_block_composition_works_again.sql,
+--              supabase/migrations/0161_what_each_wine_is_made_of.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh, scripts/rpc-args.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -14031,6 +14033,113 @@ begin
     raise exception 'FAIL: a block with no map guessed an acreage, or lost its tons or its unweighed bin';
   end if;
   perform test_ok('a block gives tons an acre and pounds a vine over its bearing vines only, and a block with no map says it has none');
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 0160. Block composition works again, and every SQL function still compiles.
+-- ---------------------------------------------------------------------------
+--
+-- A SQL function's body is checked when it is created and never again, so a
+-- column dropped later leaves it failing on every call and nothing says so.
+-- That is how block_composition went quiet from 0039 to 0160. Views cannot
+-- rot this way, because Postgres refuses to drop a column a view reads;
+-- functions can, so each one is recompiled here against the schema as it is
+-- now. Replacing a function with its own definition changes nothing, and the
+-- suite rolls back.
+do $$
+declare
+  r   record;
+  bad text := '';
+begin
+  set local check_function_bodies = on;
+  for r in
+    select p.oid, p.proname
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+      join pg_language l on l.oid = p.prolang
+     where n.nspname = 'public' and l.lanname = 'sql'
+       and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')
+     order by p.proname
+  loop
+    begin
+      execute pg_get_functiondef(r.oid);
+    exception when others then
+      bad := bad || r.proname || ' (' || sqlerrm || '); ';
+    end;
+  end loop;
+  if bad <> '' then
+    raise exception 'FAIL: these SQL functions no longer compile against the schema: %', bad;
+  end if;
+  perform test_ok('every SQL function in the schema still compiles against it');
+end $$;
+
+do $$
+declare
+  vy    uuid := gen_random_uuid();
+  b1    uuid := gen_random_uuid();
+  b2    uuid := gen_random_uuid();
+  pick1 uuid := gen_random_uuid();
+  pick2 uuid := gen_random_uuid();
+  blend uuid := gen_random_uuid();
+  pn    uuid := term_id('variety', 'pinot_noir');
+  got   text;
+  hand  uuid := '00000000-0000-0000-0000-00000000fb01';
+begin
+  insert into auth.users (id) values (hand) on conflict do nothing;
+  insert into app_user (id, name, role) values (hand, 'ASSERT 0152 cellar hand', 'cellar')
+    on conflict (id) do nothing;
+  insert into vineyard (id, name) values (vy, 'ASSERT 0160 vineyard');
+  insert into block (id, vineyard_id, name) values
+    (b1, vy, 'ASSERT 0160 east'), (b2, vy, 'ASSERT 0160 west');
+  insert into node (id, stage, name, quantity, unit, vintage, block_id, variety_id) values
+    (pick1, 'bin', 'ASSERT 0160 east pick', 600, 'lbs', 2026, b1, pn),
+    (pick2, 'bin', 'ASSERT 0160 west pick', 400, 'lbs', 2026, b2, pn);
+  insert into node (id, stage, name, quantity, unit, vintage)
+  values (blend, 'load', 'ASSERT 0160 pressing', 700, 'L', 2026);
+  insert into lineage (parent_id, child_id, fraction) values (pick1, blend, 0.6), (pick2, blend, 0.4);
+
+  -- As somebody who works here, because composition is shown only to them.
+  perform test_act_as(hand);
+  select string_agg(vineyard || ' ' || block_name || ' ' || round(share, 2), '; ' order by share desc)
+    into got from block_composition(blend);
+  perform test_act_as(null);
+  if got is distinct from 'ASSERT 0160 vineyard ASSERT 0160 east 0.60; ASSERT 0160 vineyard ASSERT 0160 west 0.40' then
+    raise exception 'FAIL: block composition reads %', got;
+  end if;
+  perform test_ok('a pressing of two picks says which vineyard and block each share came from');
+end $$;
+
+do $$
+declare
+  hand uuid := '00000000-0000-0000-0000-00000000fb01';
+  vy   uuid := gen_random_uuid();
+  b1   uuid := gen_random_uuid();
+  pk   uuid := gen_random_uuid();
+  wine uuid := gen_random_uuid();
+  tank uuid := gen_random_uuid();
+  r    record;
+begin
+  insert into vineyard (id, name) values (vy, 'ASSERT 0161 vineyard');
+  insert into block (id, vineyard_id, name) values (b1, vy, 'ASSERT 0161 block');
+  insert into node (id, stage, name, quantity, unit, vintage, block_id, variety_id)
+  values (pk, 'bin', 'ASSERT 0161 pick', 500, 'lbs', 2026, b1, term_id('variety', 'riesling'));
+  insert into node (id, stage, name, quantity, unit, vintage)
+  values (wine, 'ferment', 'ASSERT 0161 juice', 300, 'L', 2026);
+  insert into lineage (parent_id, child_id, fraction) values (pk, wine, 1);
+  insert into vessel (id, name, type_id) values (tank, 'ASSERT 0161 tank', term_id('vessel_type', 'tank'));
+  insert into placement (node_id, vessel_id, volume_l) values (wine, tank, 300);
+
+  perform test_act_as(hand);
+  set local role authenticated;
+  select * into r from lot_makeup where node_id = wine;
+  reset role;
+  perform test_act_as(null);
+  if r.blocks -> 0 ->> 'block' is distinct from 'ASSERT 0161 block'
+     or (r.blocks -> 0 ->> 'share')::numeric <> 1
+     or r.varieties -> 0 ->> 'variety' is distinct from 'Riesling' then
+    raise exception 'FAIL: the juice is made of % and %', r.blocks, r.varieties;
+  end if;
+  perform test_ok('a wine in a tank says the block and variety it came from');
 end $$;
 
 do $$ begin raise notice '--- all assertions passed'; end $$;

@@ -3080,3 +3080,125 @@ body.practising {
   font-size: 0.8rem;
   color: var(--ink-faint);
 }
+
+/* ---------------------------------------------------------------------------
+   What each wine is made of (0161). One bar a wine, a segment a block. Six
+   colours, all from tokens so both themes and every skin keep them legible.
+   --------------------------------------------------------------------------- */
+
+:root {
+  --seg-0: #6b2436;
+  --seg-1: #3f6144;
+  --seg-2: #8a5a12;
+  --seg-3: #3d5a80;
+  --seg-4: #8c6f9e;
+  --seg-5: #6f6a5f;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --seg-0: #e08c9e;
+    --seg-1: #8fb894;
+    --seg-2: #d9ab61;
+    --seg-3: #8fb0d6;
+    --seg-4: #c3a8d6;
+    --seg-5: #b3ad9f;
+  }
+}
+
+:root[data-theme="dark"] {
+  --seg-0: #e08c9e;
+  --seg-1: #8fb894;
+  --seg-2: #d9ab61;
+  --seg-3: #8fb0d6;
+  --seg-4: #c3a8d6;
+  --seg-5: #b3ad9f;
+}
+
+.makeup-card {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.9rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 0.75rem;
+}
+
+.makeup-head {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.makeup-name {
+  font-weight: 600;
+}
+
+.makeup-where {
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+
+.makeup-bar {
+  display: flex;
+  height: 0.9rem;
+  border-radius: 0.45rem;
+  overflow: hidden;
+  gap: 2px;
+}
+
+.makeup-seg {
+  display: block;
+  min-width: 3px;
+}
+
+.makeup-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.2rem;
+  font-size: 0.9rem;
+}
+
+.makeup-legend li {
+  display: grid;
+  grid-template-columns: 0.8rem 1fr auto;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.makeup-key {
+  width: 0.8rem;
+  height: 0.8rem;
+  border-radius: 0.2rem;
+}
+
+.makeup-share,
+.makeup-varieties {
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-soft);
+}
+
+.makeup-varieties {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.makeup-seg-0 {
+  background: var(--seg-0);
+}
+.makeup-seg-1 {
+  background: var(--seg-1);
+}
+.makeup-seg-2 {
+  background: var(--seg-2);
+}
+.makeup-seg-3 {
+  background: var(--seg-3);
+}
+.makeup-seg-4 {
+  background: var(--seg-4);
+}
+.makeup-seg-5 {
+  background: var(--seg-5);
+}
