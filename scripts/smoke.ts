@@ -6,7 +6,8 @@
 //              supabase/migrations/0152_who_may_do_what.sql,
 //              supabase/migrations/0153_a_bin_can_change_parts.sql,
 //              supabase/migrations/0154_a_fermenter_shows_its_fruit.sql,
-//              supabase/migrations/0158_a_ferment_is_variables.sql]
+//              supabase/migrations/0158_a_ferment_is_variables.sql,
+//              supabase/migrations/0163_a_bin_tipped_or_thrown_away.sql]
 // Depended on by: [docs/status-ledger.md]
 // ---------------------------------------------------------------------------
 //
@@ -204,6 +205,7 @@ let bins: string[] = [];
 let pinot: string | null = null;
 let redBins: string[] = [];
 let fermBins: string[] = [];
+let spareBins: string[] = [];
 let redTanks: string[] = [];
 await step("an administrator registers a press, two tanks and two bins", async () => {
   await k.signIn(admin.email, admin.password);
@@ -258,6 +260,16 @@ await step("an administrator registers a press, two tanks and two bins", async (
   );
   redBins = rb.ids;
   fermBins = fb.ids;
+  // 0163. Three more, for tipping one bin into another and throwing one away.
+  const sb = await k.addVessels(
+    {
+      id: randomUUID(),
+      type_id: typeId("picking_bin"),
+      name: `SMOKE spare bin ${stamp}`,
+    },
+    3,
+  );
+  spareBins = sb.ids;
   // For pressing the red off its skins: somewhere for the free runs, and
   // somewhere for the pressed wine.
   const rt = await k.addVessels(
@@ -454,6 +466,34 @@ await step("pour 10 L away, as a loss", async () => {
 
 // 0148. The red: sorted, one fermenter destemmed and one whole cluster, as two
 // lots, with what came off the sorting table taken off the weight.
+// 0163. "Yeah, and or a dump bin", and asked which: both. Two light bins
+// become one, and a bin of rot is thrown away, and the pick counts one bin.
+await step("tip one bin into another and throw one away", async () => {
+  const pick = randomUUID();
+  await k.addBinsToPick({
+    pick: { id: pick, variety_id: chardonnay, vintage: year },
+    vesselIds: spareBins,
+    fillPct: 50,
+  });
+  const tipped = await k.tipBin({
+    fromVesselId: spareBins[1] ?? "",
+    intoVesselId: spareBins[0] ?? "",
+    note: "SMOKE light",
+  });
+  const thrown = await k.discardFruit({
+    vesselIds: [spareBins[2] ?? ""],
+    reason: "flaw",
+    lbs: 50,
+    note: "SMOKE rot",
+  });
+  const row = (await k.fruitLog()).find((f) => f.id === pick);
+  must(
+    row?.bins === 1 && row.bins_discarded === 1 && row.bins_held === 1,
+    `the pick reads ${JSON.stringify(row)}`,
+  );
+  return `${tipped.from} into ${tipped.into}; ${thrown.lbs} lbs thrown away; ${row?.bins} bin left`;
+});
+
 const redPick = randomUUID();
 // 0153. The Sep 23 Pinot Noir: two clones picked at once and a bin recorded in
 // the wrong part, found from its label at the scale and moved before weighing.
@@ -535,7 +575,11 @@ await step("a Brix and a punchdown on the ferment log", async () => {
   const lot = lots.find((l) => l.vessel_ids.includes(fermBins[0] ?? ""));
   must(lot, "the destemmed lot is not offered as fermenting");
   const vesselId = fermBins[0] ?? "";
-  await k.recordReading({ vesselId, readings: { brix: "23.4" }, note: "SMOKE" });
+  await k.recordReading({
+    vesselId,
+    readings: { brix: "23.4", temperature_f: "78" },
+    note: "SMOKE",
+  });
   await k.recordEvent({
     nodeId: lot?.node_id ?? "",
     operation: "punchdown",

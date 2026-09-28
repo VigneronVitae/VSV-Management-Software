@@ -48,6 +48,10 @@ attachments, attachment marks and tasks against every registered kind of subject
 scripts/green.sh runs it against a database built from empty and a copy of the cellar on
 every gate. What is left is the schedule: nothing runs it against the live cellar on its
 own. The nightly watchdog is the obvious place and was not touched tonight.
+*Discharged 2026-09-28.* The schedule: "sure if that makes sense." scripts/watchdog.ps1 runs
+`doctor` after every daily backup that succeeds and logs each thing wrong as its own FAIL
+line. The ledger keeps the entry because the column is still not a foreign key; what it
+cost is now paid every night.
 
 **S-5. Vessel `type` granularity unverified.**
 `barrel` may need to distinguish puncheon from barrique from the acacia pieces.
@@ -1693,3 +1697,7 @@ the fermenter is still known. *Resolves when:* the winemaker says whether cap wo
 fermenter separates it, and the ferment log either forks or keeps doing what it does.
 *Load-bearing:* no while each red lot is in one fermenter, which MB01's Pommard is; yes the
 first time a lot is split across two and they are worked differently.
+*Discharged 2026-09-28.* "Once it's in a macrobin it's one lot with a history (the prior
+lots). Punchdown and pumpovers don't create new lots." `0162` makes it the kernel's rule
+rather than the screen's habit: an operation marked as cap work keeps the vessels it names in
+its data and never forks, whoever calls `record_event`.

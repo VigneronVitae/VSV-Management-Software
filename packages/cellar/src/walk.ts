@@ -46,6 +46,7 @@ import {
   dayLog,
   dayNotes,
   declareBarrelColour,
+  discardFruit,
   drawCut,
   drawToLevel,
   dumpWine,
@@ -159,6 +160,7 @@ import {
   takeSample,
   terms,
   termsForVesselField,
+  tipBin,
   toPropagate,
   typedFacts,
   typeNote,
@@ -5745,10 +5747,11 @@ function pickBinsScreen(openOn?: string): HTMLElement {
       showConversion();
 
       async function refreshTally(id: string): Promise<void> {
-        const [waiting, inBins, shots] = await Promise.all([
+        const [waiting, inBins, shots, reasons] = await Promise.all([
           unweighedBins(id),
           binFruit(id),
           attachmentsFor("node", id),
+          terms("dump_reason"),
         ]);
 
         // The total first, because it is the number somebody says out loud and
@@ -5869,9 +5872,127 @@ function pickBinsScreen(openOn?: string): HTMLElement {
                 },
                 "secondary",
               ),
+              ...binGoneControls(b),
               said,
             ),
           );
+        }
+
+        // 0163. "Yeah, and or a dump bin", and asked which: both. Tipping one
+        // bin into another of the same pick, the way the Müller's two light
+        // bins became one; and throwing a bin's fruit away. The kernel decides
+        // what either may do to the weights, and refuses in a sentence the
+        // tips that would weigh fruit twice or never.
+        function binGoneControls(b: BinFruit): HTMLElement[] {
+          const others = inBins.filter((o) => o.vessel_id !== b.vessel_id);
+          const said = el("div", {});
+          const into = el("select", { class: "input" });
+          into.replaceChildren(
+            ...others.map((o) => el("option", { value: o.vessel_id, text: o.bin })),
+          );
+          const reason = el("select", { class: "input" });
+          reason.replaceChildren(
+            ...reasons
+              .filter((r) => r.active)
+              .map((r) => el("option", { value: r.value, text: r.label })),
+          );
+          const lbs = field({
+            label: "Pounds thrown away",
+            type: "number",
+            hint:
+              b.said_as === "weighed"
+                ? "Blank takes the scale's reading, if it was of this bin alone."
+                : "If you know. Blank says nobody weighed it.",
+          });
+          const note = field({
+            label: "Why, in words",
+            placeholder: "rot, bees, dropped",
+          });
+
+          const tip =
+            others.length === 0
+              ? []
+              : [
+                  el(
+                    "label",
+                    { class: "field" },
+                    el("span", { class: "field-label", text: `Tip ${b.bin} into` }),
+                    into,
+                  ),
+                  button(
+                    "Tip it in",
+                    async () => {
+                      try {
+                        const out = await tipBin({
+                          fromVesselId: b.vessel_id,
+                          intoVesselId: into.value,
+                        });
+                        said.replaceChildren(
+                          banner(
+                            `${out.from} tipped into ${out.into}. ${out.pick} is in ${out.bins} bin${
+                              out.bins === 1 ? "" : "s"
+                            } now.`,
+                            "good",
+                          ),
+                        );
+                        await refreshTally(id);
+                      } catch (error) {
+                        said.replaceChildren(fail(error));
+                      }
+                    },
+                    "secondary",
+                  ),
+                ];
+
+          return [
+            el(
+              "details",
+              { class: "more" },
+              el("summary", { text: "Tipped into another bin, or thrown away" }),
+              rows(
+                ...tip,
+                el(
+                  "label",
+                  { class: "field" },
+                  el("span", {
+                    class: "field-label",
+                    text: "Or throw it away, because",
+                  }),
+                  reason,
+                ),
+                lbs.root,
+                note.root,
+                button(
+                  "Throw it away",
+                  async () => {
+                    try {
+                      const out = await discardFruit({
+                        vesselIds: [b.vessel_id],
+                        reason: reason.value,
+                        lbs: lbs.value() ? Number(lbs.value()) : null,
+                        note: note.value() || null,
+                      });
+                      said.replaceChildren(
+                        banner(
+                          `${b.bin} thrown away` +
+                            (out.lbs === null
+                              ? ", pounds unknown."
+                              : `, ${Number(out.lbs).toLocaleString()} lbs.`) +
+                            ` ${out.left} bin${out.left === 1 ? "" : "s"} left in the pick.`,
+                          "good",
+                        ),
+                      );
+                      await refreshTally(id);
+                    } catch (error) {
+                      said.replaceChildren(fail(error));
+                    }
+                  },
+                  "secondary",
+                ),
+                said,
+              ),
+            ),
+          ];
         }
 
         tally.replaceChildren(
@@ -11176,6 +11297,23 @@ function weightsScreen(): HTMLElement {
 
   let vintage = new Date().getFullYear();
   let grouping = (pref("weights_view", "variety") as WeightView) || "variety";
+  // 0163. "Should be a choice." Fruit thrown away came off the vineyard and
+  // never reached the press; which of the two totals is wanted depends on
+  // the question, so the kernel gives both and this chooses.
+  let countThrown = pref("weights_count_thrown", "yes") === "yes";
+  const lbsOf = (w: {
+    lbs: number | null;
+    lbs_picked: number | null;
+    lbs_kept: number | null;
+  }) => (countThrown ? w.lbs_picked : w.lbs_kept) ?? w.lbs;
+  const tonsOf = (w: {
+    lbs: number | null;
+    lbs_picked: number | null;
+    lbs_kept: number | null;
+  }) => {
+    const l = lbsOf(w);
+    return l === null ? null : Math.round(l / 2) / 1000;
+  };
 
   async function draw(): Promise<void> {
     const [byVariety, byDay, byDayVariety, byBlock, picks] = await Promise.all([
@@ -11191,7 +11329,8 @@ function weightsScreen(): HTMLElement {
     ].sort((a, b) => b - a);
     if (!vintages.includes(vintage)) vintages.unshift(vintage);
 
-    const totalLbs = byVariety.reduce((a, r) => a + (r.lbs ?? 0), 0);
+    const totalLbs = byVariety.reduce((a, r) => a + (lbsOf(r) ?? 0), 0);
+    const thrown = byVariety.reduce((a, r) => a + Number(r.lbs_discarded ?? 0), 0);
     const totalBins = byVariety.reduce((a, r) => a + r.bins, 0);
     const unweighed = byVariety.reduce((a, r) => a + r.bins_unweighed, 0);
     const picked = byVariety.reduce((a, r) => a + r.picks, 0);
@@ -11218,6 +11357,14 @@ function weightsScreen(): HTMLElement {
             text: `${unweighed} bin${unweighed === 1 ? "" : "s"} not weighed yet, so this is short.`,
           })
         : el("span", { class: "weights-sub", text: "Every bin weighed." }),
+      thrown > 0
+        ? el("span", {
+            class: "weights-sub",
+            text: `${thrown.toLocaleString(undefined, { maximumFractionDigits: 0 })} lbs thrown away, ${
+              countThrown ? "counted in this" : "left out of this"
+            }.`,
+          })
+        : null,
     );
 
     const vintagePick = el("select", { class: "input" });
@@ -11226,6 +11373,13 @@ function weightsScreen(): HTMLElement {
     vintagePick.value = String(vintage);
     on(vintagePick, "change", () => {
       vintage = Number(vintagePick.value);
+      void draw();
+    });
+
+    const thrownBox = checkbox("Count fruit that was thrown away", countThrown);
+    on(thrownBox.input, "change", () => {
+      countThrown = thrownBox.input.checked;
+      setPref("weights_count_thrown", countThrown ? "yes" : "no");
       void draw();
     });
 
@@ -11338,8 +11492,8 @@ function weightsScreen(): HTMLElement {
             r.bins_unweighed > 0
               ? `${r.bins} (${r.bins_unweighed} to weigh)`
               : String(r.bins),
-            lbsText(r.lbs),
-            tonsText(r.tons),
+            lbsText(lbsOf(r)),
+            tonsText(tonsOf(r)),
           ],
           short: r.bins_unweighed > 0,
         })),
@@ -11363,8 +11517,8 @@ function weightsScreen(): HTMLElement {
             r.bins_unweighed > 0
               ? `${r.bins} (${r.bins_unweighed} to weigh)`
               : String(r.bins),
-            lbsText(r.lbs),
-            tonsText(r.tons),
+            lbsText(lbsOf(r)),
+            tonsText(tonsOf(r)),
           ],
           short: r.bins_unweighed > 0,
         })),
@@ -11381,8 +11535,8 @@ function weightsScreen(): HTMLElement {
             "",
             String(d.picks),
             String(d.bins),
-            lbsText(d.lbs),
-            tonsText(d.tons),
+            lbsText(lbsOf(d)),
+            tonsText(tonsOf(d)),
           ],
           short: d.bins_unweighed > 0,
           sub: true,
@@ -11396,8 +11550,8 @@ function weightsScreen(): HTMLElement {
               r.bins_unweighed > 0
                 ? `${r.bins} (${r.bins_unweighed} to weigh)`
                 : String(r.bins),
-              lbsText(r.lbs),
-              tonsText(r.tons),
+              lbsText(lbsOf(r)),
+              tonsText(tonsOf(r)),
             ],
             short: r.bins_unweighed > 0,
           });
@@ -11419,12 +11573,14 @@ function weightsScreen(): HTMLElement {
       // 0159. Tons an acre and pounds a vine, against the bearing vines the
       // vineyard map counts. A block the map does not cover says so rather
       // than showing a blank that reads like nothing was there.
-      const perAcre = (r: BlockYield) =>
-        r.bearing_acres === null
-          ? "no map"
-          : r.tons_per_acre === null
-            ? ""
-            : r.tons_per_acre.toFixed(2);
+      const perAcre = (r: BlockYield) => {
+        const t = countThrown ? r.tons_per_acre_picked : r.tons_per_acre_kept;
+        return r.bearing_acres === null ? "no map" : t === null ? "" : t.toFixed(2);
+      };
+      const perVine = (r: BlockYield) => {
+        const l = countThrown ? r.lbs_per_vine_picked : r.lbs_per_vine_kept;
+        return l === null ? "" : l.toFixed(2);
+      };
       shown = table(
         [
           { label: "Block" },
@@ -11442,10 +11598,10 @@ function weightsScreen(): HTMLElement {
             r.bins_unweighed > 0
               ? `${r.bins} (${r.bins_unweighed} to weigh)`
               : String(r.bins),
-            tonsText(r.tons),
+            tonsText(tonsOf(r)),
             r.bearing_acres === null ? "" : r.bearing_acres.toFixed(2),
             perAcre(r),
-            r.lbs_per_vine === null ? "" : r.lbs_per_vine.toFixed(2),
+            perVine(r),
           ],
           short: r.bins_unweighed > 0,
         })),
@@ -11509,6 +11665,8 @@ function weightsScreen(): HTMLElement {
               { header: "Bins not weighed", width: 16 },
               { header: "Lbs", width: 12 },
               { header: "Tons", width: 10 },
+              { header: "Lbs thrown away", width: 15 },
+              { header: "Lbs kept", width: 12 },
             ],
             rows: byVariety.map((r) => [
               r.variety ?? "",
@@ -11519,6 +11677,8 @@ function weightsScreen(): HTMLElement {
               r.bins_unweighed,
               r.lbs,
               r.tons,
+              r.lbs_discarded,
+              r.lbs_kept,
             ]),
           },
           {
@@ -11531,6 +11691,8 @@ function weightsScreen(): HTMLElement {
               { header: "Bins not weighed", width: 16 },
               { header: "Lbs", width: 12 },
               { header: "Tons", width: 10 },
+              { header: "Lbs thrown away", width: 15 },
+              { header: "Lbs kept", width: 12 },
             ],
             rows: byDay.map((r) => [
               r.picked ? { date: r.picked } : null,
@@ -11540,6 +11702,8 @@ function weightsScreen(): HTMLElement {
               r.bins_unweighed,
               r.lbs,
               r.tons,
+              r.lbs_discarded,
+              r.lbs_kept,
             ]),
           },
           {
@@ -11552,6 +11716,8 @@ function weightsScreen(): HTMLElement {
               { header: "Bins not weighed", width: 16 },
               { header: "Lbs", width: 12 },
               { header: "Tons", width: 10 },
+              { header: "Lbs thrown away", width: 15 },
+              { header: "Lbs kept", width: 12 },
             ],
             rows: byDayVariety.map((r) => [
               r.picked ? { date: r.picked } : null,
@@ -11561,6 +11727,8 @@ function weightsScreen(): HTMLElement {
               r.bins_unweighed,
               r.lbs,
               r.tons,
+              r.lbs_discarded,
+              r.lbs_kept,
             ]),
           },
           {
@@ -11578,6 +11746,9 @@ function weightsScreen(): HTMLElement {
               { header: "Bearing acres", width: 14 },
               { header: "Tons an acre", width: 13 },
               { header: "Lbs a vine", width: 11 },
+              { header: "Lbs thrown away", width: 15 },
+              { header: "Tons an acre kept", width: 17 },
+              { header: "Lbs a vine kept", width: 15 },
             ],
             rows: byBlock.map((r) => [
               r.vineyard ?? "",
@@ -11592,6 +11763,9 @@ function weightsScreen(): HTMLElement {
               r.bearing_acres,
               r.tons_per_acre,
               r.lbs_per_vine,
+              r.lbs_discarded,
+              r.tons_per_acre_kept,
+              r.lbs_per_vine_kept,
             ]),
           },
           {
@@ -11638,6 +11812,7 @@ function weightsScreen(): HTMLElement {
           el("span", { class: "field-label", text: "Vintage" }),
           vintagePick,
         ),
+        thrownBox.root,
         tabs,
         shown,
         excel,
@@ -13380,27 +13555,75 @@ function fermentScreen(): HTMLElement {
       vesselPick.append(el("option", { value: id, text: lot.vessels[i] ?? id }));
     });
 
-    const boxes = numeric.map((k) => {
-      const unit = typeof k.attributes.unit === "string" ? k.attributes.unit : "";
+    const unitOf = (k: Term) =>
+      typeof k.attributes.unit === "string" ? k.attributes.unit : "";
+
+    // 0162. Kinds that measure the same thing in different units, the two
+    // temperatures, are one box with a choice of unit: "usually F but it
+    // should be an option". The kernel marks which is preferred; the last
+    // choice made here wins after that.
+    const measured = new Map<string, Term[]>();
+    for (const k of numeric) {
+      const m = k.attributes.measures;
+      if (typeof m === "string") measured.set(m, [...(measured.get(m) ?? []), k]);
+    }
+    const plain = numeric.filter((k) => typeof k.attributes.measures !== "string");
+
+    type Box = { root: HTMLElement; value: () => string; kind: () => Term };
+    const boxes: Box[] = plain.map((k) => {
       const before = last(k.value);
-      return {
-        kind: k,
-        f: field({
-          label: unit ? `${k.label}, ${unit}` : k.label,
-          type: "number",
-          placeholder: before ? String(before.value_num) : "",
-          ...(before
-            ? { hint: `Last ${before.value_num}, ${shortWhen(before.at)}.` }
-            : {}),
-        }),
-      };
+      const f = field({
+        label: unitOf(k) ? `${k.label}, ${unitOf(k)}` : k.label,
+        type: "number",
+        placeholder: before ? String(before.value_num) : "",
+        ...(before
+          ? { hint: `Last ${before.value_num}, ${shortWhen(before.at)}.` }
+          : {}),
+      });
+      return { root: f.root, value: f.value, kind: () => k };
     });
+    for (const [m, group] of measured) {
+      const unitPick = el("select", { class: "input ferment-unit" });
+      for (const k of group)
+        unitPick.append(el("option", { value: k.value, text: unitOf(k) }));
+      const preferred = group.find((k) => k.attributes.preferred === true) ?? group[0];
+      const remembered = pref(`ferment_unit_${m}`, "");
+      unitPick.value = group.some((k) => k.value === remembered)
+        ? remembered
+        : (preferred?.value ?? "");
+      on(unitPick, "change", () => setPref(`ferment_unit_${m}`, unitPick.value));
+      const input = el("input", {
+        class: "input",
+        type: "number",
+        inputmode: "decimal",
+      });
+      const chosen = () => group.find((k) => k.value === unitPick.value) ?? group[0];
+      const before = [...series]
+        .reverse()
+        .find((r) => group.some((k) => k.value === r.variable) && r.value_num !== null);
+      if (before) input.placeholder = String(before.value_num);
+      const title = m.charAt(0).toUpperCase() + m.slice(1);
+      boxes.push({
+        root: el(
+          "label",
+          { class: "field" },
+          el("span", { class: "field-label", text: title }),
+          el("span", { class: "ferment-measured" }, input, unitPick),
+          before
+            ? el("span", {
+                class: "field-hint",
+                text: `Last ${before.value_num} ${before.unit ?? ""}, ${shortWhen(before.at)}.`,
+              })
+            : null,
+        ),
+        value: () => input.value.trim(),
+        kind: () => chosen() as Term,
+      });
+    }
     const ticks = cap.map((o) => ({ op: o, box: checkbox(o.label) }));
     const note = field({ label: "Note", placeholder: "cap dry on top, smells fine" });
     const when = whenField("ferment");
     const said = el("div", {});
-
-    const noTemp = !numeric.some((k) => /temp/i.test(k.value) || /temp/i.test(k.label));
 
     return el(
       "section",
@@ -13417,15 +13640,7 @@ function fermentScreen(): HTMLElement {
             class: "field-hint",
             text: `In ${lot.vessels[0] ?? "its fermenter"}.`,
           }),
-      el("div", { class: "ferment-boxes" }, ...boxes.map((b) => b.f.root)),
-      noTemp
-        ? el("p", {
-            class: "field-hint",
-            text:
-              "No temperature box yet, because nobody has said which unit the thermometer reads. " +
-              "Add Temperature, with its unit, under What a note can be turned into, and it appears here.",
-          })
-        : null,
+      el("div", { class: "ferment-boxes" }, ...boxes.map((b) => b.root)),
       ...(ticks.length > 0
         ? [el("div", { class: "ferment-ticks" }, ...ticks.map((t) => t.box.root))]
         : []),
@@ -13433,7 +13648,7 @@ function fermentScreen(): HTMLElement {
       when.root,
       button("Save", async () => {
         const readings: Record<string, string> = {};
-        for (const b of boxes) if (b.f.value()) readings[b.kind.value] = b.f.value();
+        for (const b of boxes) if (b.value()) readings[b.kind().value] = b.value();
         const doing = ticks.filter((t) => t.box.input.checked);
         if (Object.keys(readings).length === 0 && doing.length === 0) {
           said.replaceChildren(

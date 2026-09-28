@@ -6,7 +6,8 @@
 -- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql,
 --                  scripts/smoke.ts,
 --                  supabase/migrations/0148_reds_go_into_fermenters.sql,
---                  supabase/migrations/0149_a_blend_can_be_split_by_juice.sql]
+--                  supabase/migrations/0149_a_blend_can_be_split_by_juice.sql,
+--                  supabase/migrations/0163_a_bin_tipped_or_thrown_away.sql]
 -- Axioms enforced: A13. A press that took in a weighed pick and recorded
 --                  nothing going in was a success that lost the number every
 --                  yield is read from.

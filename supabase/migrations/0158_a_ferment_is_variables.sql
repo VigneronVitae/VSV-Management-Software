@@ -8,7 +8,8 @@
 --              supabase/migrations/0143_a_record_can_say_when.sql,
 --              supabase/migrations/0150_off_the_skins.sql]
 -- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql,
---                  packages/cellar/src/index.ts, scripts/smoke.ts]
+--                  packages/cellar/src/index.ts, scripts/smoke.ts,
+--                  supabase/migrations/0162_a_temperature_and_the_cap.sql]
 -- Axioms enforced: T0-2. The series is a view over the notes and events
 --                  already written; nothing is copied into it.
 --                  T0-5. A reading is a sample event and typed notes about

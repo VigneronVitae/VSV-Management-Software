@@ -3202,3 +3202,14 @@ body.practising {
 .makeup-seg-5 {
   background: var(--seg-5);
 }
+
+/* 0162. A reading with a choice of unit: the number, then the unit. */
+.ferment-measured {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.4rem;
+}
+
+.ferment-unit {
+  width: auto;
+}

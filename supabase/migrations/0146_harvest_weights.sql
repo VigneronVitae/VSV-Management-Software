@@ -8,7 +8,8 @@
 -- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql,
 --                  packages/cellar/src/index.ts,
 --                  supabase/migrations/0153_a_bin_can_change_parts.sql,
---                  supabase/migrations/0159_what_an_acre_gave.sql]
+--                  supabase/migrations/0159_what_an_acre_gave.sql,
+--                  supabase/migrations/0163_a_bin_tipped_or_thrown_away.sql]
 -- Axioms enforced: T0-2. Three views over `fruit_log`, nothing stored.
 --                  A13. A pick with bins nobody has weighed yet is counted as
 --                  such, so a total that is short says it is short.

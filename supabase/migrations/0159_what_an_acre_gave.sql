@@ -5,7 +5,8 @@
 -- Depends on: [supabase/migrations/0115_a_vineyard_is_rows_and_plant_spaces.sql,
 --              supabase/migrations/0146_harvest_weights.sql]
 -- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql,
---                  packages/cellar/src/index.ts]
+--                  packages/cellar/src/index.ts,
+--                  supabase/migrations/0163_a_bin_tipped_or_thrown_away.sql]
 -- Axioms enforced: T0-2. Tons from the picks, acres from the plant spaces,
 --                  both computed on read. A13. A block with no map says it has
 --                  no acreage rather than dividing by a guess, and a total

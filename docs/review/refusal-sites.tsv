@@ -219,6 +219,26 @@ declare_barrel_colour:raise:3	declare_barrel_colour	raise	raise exception	raise 
 declare_barrel_colour:guard:4	declare_barrel_colour	guard	if want = 'white' then	if false then	1
 declare_barrel_colour:guard:5	declare_barrel_colour	guard	if now_ = 'red' then	if false then	1
 declare_barrel_colour:raise:4	declare_barrel_colour	raise	raise exception	raise notice	4
+discard_fruit:guard:1	discard_fruit	guard	if not is_facility_user() then	if false then	1
+discard_fruit:raise:1	discard_fruit	raise	raise exception 'only somebody who works here throws fruit away'	raise notice 'only somebody who works here throws fruit away'	1
+discard_fruit:guard:2	discard_fruit	guard	if p_vessel_ids is null or cardinality(p_vessel_ids) = 0 then	if false then	1
+discard_fruit:raise:2	discard_fruit	raise	raise exception 'say which bins';	raise notice 'say which bins';	1
+discard_fruit:head:1	discard_fruit	head	if p_reason is null or not exists (select 1 from term where kind = 'dump_reason'\n                                        and value = p_reason and active) then	if false then	1
+discard_fruit:raise:3	discard_fruit	raise	raise exception 'say why: %',	raise notice 'say why: %',	1
+discard_fruit:guard:3	discard_fruit	guard	if p_lbs is not null and p_lbs <= 0 then	if false then	1
+discard_fruit:raise:4	discard_fruit	raise	raise exception 'a weight of fruit thrown away is more than nothing';	raise notice 'a weight of fruit thrown away is more than nothing';	1
+discard_fruit:guard:4	discard_fruit	guard	if missing is not null then	if false then	1
+discard_fruit:raise:5	discard_fruit	raise	raise exception '% % not holding fruit from a pick', missing,	raise notice '% % not holding fruit from a pick', missing,	1
+discard_fruit:guard:5	discard_fruit	guard	if cardinality(picks) > 1 then	if false then	1
+discard_fruit:raise:6	discard_fruit	raise	raise exception 'those bins are from different picks; throw away one pick''s at a time';	raise notice 'those bins are from different picks; throw away one pick''s at a time';	1
+discard_fruit:guard:6	discard_fruit	guard	if n_weighed > 0 and n_weighed < n_all then	if false then	1
+discard_fruit:raise:7	discard_fruit	raise	raise exception 'some of those bins have been weighed and some have not; throw them away separately, so the pounds can be said for each';	raise notice 'some of those bins have been weighed and some have not; throw them away separately, so the pounds can be said for each';	1
+discard_fruit:guard:7	discard_fruit	guard	if weighed then	if false then	1
+discard_fruit:guard:8	discard_fruit	guard	if stray is not null and p_lbs is null then	if false then	1
+discard_fruit:raise:8	discard_fruit	raise	raise exception 'the reading that weighed those bins also weighed %, so say how many pounds were thrown away', stray;	raise notice 'the reading that weighed those bins also weighed %, so say how many pounds were thrown away', stray;	1
+discard_fruit:guard:9	discard_fruit	guard	if p_lbs is not null then	if false then	1
+discard_fruit:guard:10	discard_fruit	guard	if not exists (select 1 from placement where node_id = pick.id and to_at is null) then	if false then	1
+discard_fruit:silent:1	discard_fruit	silent	where node_id = pick.id and to_at is null));	where node_id = pick.id and true;	1
 doctor:guard:1	doctor	guard	if auth.uid() is not null and not is_admin() then	if false then	1
 doctor:raise:1	doctor	raise	raise exception 'only an administrator asks the doctor'	raise notice 'only an administrator asks the doctor'	1
 doctor:head:1	doctor	head	if not exists (\n      select 1 from information_schema.columns c\n       where c.table_schema = 'public' and c.table_name = r.relation\n         and c.column_name = 'id' and c.data_type = 'uuid'\n    ) then	if false then	1
@@ -433,6 +453,7 @@ permission_door:guard:1	permission_door	guard	if current_user not in ('authentic
 permission_door:earlyreturn:1	permission_door	earlyreturn	return new;	null;	1
 permission_door:guard:2	permission_door	guard	if not may(k) then	if false then	1
 permission_door:raise:1	permission_door	raise	raise exception using	raise notice using	1
+pick_weight_left:permissive:1	pick_weight_left	permissive	and coalesce((e.data ->> 'weighed')::boolean, false)), 0)	and coalesce((e.data ->> 'weighed')::boolean, true)), 0)	1
 placement_keeps_time:guard:1	placement_keeps_time	guard	if new.to_at is not null and new.to_at < new.from_at then	if false then	1
 placement_keeps_time:raise:1	placement_keeps_time	raise	raise exception 'that takes the wine out of % at %, before it went in at %',	raise notice 'that takes the wine out of % at %, before it went in at %',	1
 placement_keeps_time:guard:2	placement_keeps_time	guard	if found then	if false then	1
@@ -574,9 +595,12 @@ recondition_barrel:guard:3	recondition_barrel	guard	if p_method is null or btrim
 recondition_barrel:raise:3	recondition_barrel	raise	raise exception	raise notice	3
 record_event:guard:1	record_event	guard	if op_id is null then	if false then	1
 record_event:raise:1	record_event	raise	raise exception 'there is no operation called %', p_operation;	raise notice 'there is no operation called %', p_operation;	1
+record_event:head:1	record_event	head	if coalesce((select (t.attributes ->> 'cap')::boolean from term t where t.id = op_id), false)\n     and p_vessel_ids is not null and array_length(p_vessel_ids, 1) > 0 then	if false then	1
+record_event:head:2	record_event	head	if not exists (select 1 from placement\n                    where node_id = p_node_id and to_at is null and vessel_id = any(p_vessel_ids)) then	if false then	1
+record_event:raise:2	record_event	raise	raise exception 'none of those vessels hold that lot';	raise notice 'none of those vessels hold that lot';	1
 record_event:guard:2	record_event	guard	if p_vessel_ids is not null and array_length(p_vessel_ids, 1) > 0 then	if false then	1
 record_event:guard:3	record_event	guard	if n_here = 0 then	if false then	1
-record_event:raise:2	record_event	raise	raise exception 'none of those vessels hold that lot';	raise notice 'none of those vessels hold that lot';	1
+record_event:raise:3	record_event	raise	raise exception 'none of those vessels hold that lot';	raise notice 'none of those vessels hold that lot';	2
 record_event:guard:4	record_event	guard	if n_here < n_total then	if false then	1
 record_machine_work:guard:1	record_machine_work	guard	if not is_facility_user() then	if false then	1
 record_machine_work:raise:1	record_machine_work	raise	raise exception 'only somebody who works here records work on a machine'	raise notice 'only somebody who works here records work on a machine'	1
@@ -839,6 +863,26 @@ take_sample:guard:2	take_sample	guard	if not exists (select 1 from subject_resol
 take_sample:raise:2	take_sample	raise	raise exception 'nothing in this system is a %, so a sample cannot be of one',	raise notice 'nothing in this system is a %, so a sample cannot be of one',	1
 take_sample:guard:3	take_sample	guard	if name is null then	if false then	1
 take_sample:raise:3	take_sample	raise	raise exception 'there is no % with id % to sample', p_subject_type, p_subject_id;	raise notice 'there is no % with id % to sample', p_subject_type, p_subject_id;	1
+tip_bin:guard:1	tip_bin	guard	if not is_facility_user() then	if false then	1
+tip_bin:raise:1	tip_bin	raise	raise exception 'only somebody who works here tips one bin into another'	raise notice 'only somebody who works here tips one bin into another'	1
+tip_bin:guard:2	tip_bin	guard	if p_from_vessel is null or p_into_vessel is null then	if false then	1
+tip_bin:raise:2	tip_bin	raise	raise exception 'say which bin was tipped, and into which';	raise notice 'say which bin was tipped, and into which';	1
+tip_bin:guard:3	tip_bin	guard	if p_from_vessel = p_into_vessel then	if false then	1
+tip_bin:raise:3	tip_bin	raise	raise exception 'a bin cannot be tipped into itself';	raise notice 'a bin cannot be tipped into itself';	1
+tip_bin:guard:4	tip_bin	guard	if f.id is null then	if false then	1
+tip_bin:raise:4	tip_bin	raise	raise exception '% holds nothing, so there is nothing to tip', coalesce(f_name, 'that bin');	raise notice '% holds nothing, so there is nothing to tip', coalesce(f_name, 'that bin');	1
+tip_bin:guard:5	tip_bin	guard	if i.id is null then	if false then	1
+tip_bin:raise:5	tip_bin	raise	raise exception '% is empty; fruit tipped into an empty bin is the same fruit in a different bin, which is a move',	raise notice '% is empty; fruit tipped into an empty bin is the same fruit in a different bin, which is a move',	1
+tip_bin:guard:6	tip_bin	guard	if pick.stage <> 'bin' or pick.status = 'closed' then	if false then	1
+tip_bin:raise:6	tip_bin	raise	raise exception '% is not holding fruit from an open pick', f_name;	raise notice '% is not holding fruit from an open pick', f_name;	1
+tip_bin:guard:7	tip_bin	guard	if i.node_id <> f.node_id then	if false then	1
+tip_bin:raise:7	tip_bin	raise	raise exception '% and % hold different picks. Tipping them together would blend two picks in one bin; move the bin to the other part first',	raise notice '% and % hold different picks. Tipping them together would blend two picks in one bin; move the bin to the other part first',	1
+tip_bin:guard:8	tip_bin	guard	if f.from_at > at_ or i.from_at > at_ then	if false then	1
+tip_bin:raise:8	tip_bin	raise	raise exception 'one of those bins had not been filled yet at that time';	raise notice 'one of those bins had not been filled yet at that time';	1
+tip_bin:guard:9	tip_bin	guard	if f_weighed and not i_weighed then	if false then	1
+tip_bin:raise:9	tip_bin	raise	raise exception '% has been weighed and % has not. Weigh % first, or its reading will count %''s fruit a second time',	raise notice '% has been weighed and % has not. Weigh % first, or its reading will count %''s fruit a second time',	1
+tip_bin:guard:10	tip_bin	guard	if i_weighed and not f_weighed then	if false then	1
+tip_bin:raise:10	tip_bin	raise	raise exception '% was weighed without %''s fruit in it, so that fruit would never be weighed. Weigh % first',	raise notice '% was weighed without %''s fruit in it, so that fruit would never be weighed. Weigh % first',	1
 topping_check:guard:1	topping_check	guard	if tgt is null then	if false then	1
 topping_check:earlyreturn:1	topping_check	earlyreturn	return;	null;	1
 topping_check:guard:2	topping_check	guard	if (src -> f) is distinct from (tgt -> f) then	if false then	1

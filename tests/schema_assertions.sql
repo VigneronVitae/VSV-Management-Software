@@ -118,7 +118,9 @@
 --              supabase/migrations/0158_a_ferment_is_variables.sql,
 --              supabase/migrations/0159_what_an_acre_gave.sql,
 --              supabase/migrations/0160_block_composition_works_again.sql,
---              supabase/migrations/0161_what_each_wine_is_made_of.sql]
+--              supabase/migrations/0161_what_each_wine_is_made_of.sql,
+--              supabase/migrations/0162_a_temperature_and_the_cap.sql,
+--              supabase/migrations/0163_a_bin_tipped_or_thrown_away.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh, scripts/rpc-args.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -14140,6 +14142,161 @@ begin
     raise exception 'FAIL: the juice is made of % and %', r.blocks, r.varieties;
   end if;
   perform test_ok('a wine in a tank says the block and variety it came from');
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 0162. A temperature in either unit, and cap work never forks.
+-- ---------------------------------------------------------------------------
+do $$
+declare
+  hand uuid := '00000000-0000-0000-0000-00000000fb01';
+  lot_id uuid := gen_random_uuid();
+  mb1  uuid := gen_random_uuid();
+  mb2  uuid := gen_random_uuid();
+  out1 jsonb;
+begin
+  insert into auth.users (id) values (hand) on conflict do nothing;
+  insert into app_user (id, name, role) values (hand, 'ASSERT 0152 cellar hand', 'cellar')
+    on conflict (id) do nothing;
+  insert into node (id, stage, name, quantity, unit, vintage)
+  values (lot_id, 'ferment', 'ASSERT 0162 two macrobins', 3000, 'lbs', 2026);
+  insert into vessel (id, name, type_id) values
+    (mb1, 'ASSERT 0162 MB1', term_id('vessel_type', 'fermentation_bin')),
+    (mb2, 'ASSERT 0162 MB2', term_id('vessel_type', 'fermentation_bin'));
+  insert into placement (node_id, vessel_id, from_at) values
+    (lot_id, mb1, now() - interval '1 day'), (lot_id, mb2, now() - interval '1 day');
+
+  perform test_act_as(hand);
+  set local role authenticated;
+  -- "Once it's in a macrobin it's one lot with a history. Punchdown and
+  -- pumpovers don't create new lots."
+  out1 := record_event(lot_id, 'punchdown', '{}'::jsonb, array[mb1]);
+  if (out1 ->> 'forked')::boolean or (out1 ->> 'node_id')::uuid <> lot_id then
+    raise exception 'FAIL: a punchdown on one of two macrobins forked the lot: %', out1;
+  end if;
+  if not exists (select 1 from event where id = (out1 ->> 'event_id')::uuid
+                  and data -> 'vessels' ? mb1::text) then
+    raise exception 'FAIL: the punchdown does not say which macrobin it was';
+  end if;
+  perform record_reading(mb1, '{"temperature_f": 78, "temperature_c": 25.5}');
+  reset role;
+  perform test_act_as(null);
+
+  if (select count(*) from lot_series where node_id = lot_id and variable in ('temperature_f', 'temperature_c')) <> 2 then
+    raise exception 'FAIL: a temperature in each unit is not two readings, each in its own';
+  end if;
+  if not exists (select 1 from term where kind = 'fact_kind' and value = 'temperature_f'
+                  and (attributes ->> 'preferred')::boolean) then
+    raise exception 'FAIL: Fahrenheit is not the preferred unit here';
+  end if;
+  perform test_ok('cap work on one of two macrobins stays one lot and says which, and a temperature keeps the unit it was read in');
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 0163. A bin tipped into another, or thrown away.
+-- ---------------------------------------------------------------------------
+do $$
+declare
+  hand  uuid := '00000000-0000-0000-0000-00000000fb01';
+  pick  uuid := gen_random_uuid();
+  b4    uuid := gen_random_uuid();
+  b5    uuid := gen_random_uuid();
+  b6    uuid := gen_random_uuid();
+  b7    uuid := gen_random_uuid();
+  b8    uuid := gen_random_uuid();
+  r     record;
+  out1  jsonb;
+begin
+  insert into auth.users (id) values (hand) on conflict do nothing;
+  insert into node (id, stage, name, quantity, unit, vintage)
+  values (pick, 'bin', 'ASSERT 0163 pick', null, 'lbs', 2026);
+  insert into vessel (id, name, type_id) values
+    (b4, 'ASSERT 0163 PB4', term_id('vessel_type', 'picking_bin')),
+    (b5, 'ASSERT 0163 PB5', term_id('vessel_type', 'picking_bin')),
+    (b6, 'ASSERT 0163 PB6', term_id('vessel_type', 'picking_bin')),
+    (b7, 'ASSERT 0163 PB7', term_id('vessel_type', 'picking_bin')),
+    (b8, 'ASSERT 0163 PB8', term_id('vessel_type', 'picking_bin'));
+  insert into placement (node_id, vessel_id, from_at) values
+    (pick, b4, now() - interval '1 day'), (pick, b5, now() - interval '1 day'),
+    (pick, b6, now() - interval '1 day'), (pick, b7, now() - interval '1 day'),
+    (pick, b8, now() - interval '1 day');
+
+  perform test_act_as(hand);
+  set local role authenticated;
+
+  -- The Müller: two light bins, one tipped into the other before the scale.
+  perform tip_bin(b5, b4, now() - interval '20 hours', 'light');
+  -- PB4 and PB6 weighed; PB7 weighed on its own; PB8 never.
+  update node set quantity = null where id = pick;
+  reset role;
+  insert into event (operation_id, subject_type, subject_id, by_user, data) values
+    (term_id('operation', 'weigh'), 'node', pick, hand,
+     jsonb_build_object('bins', jsonb_build_array(b4, b6), 'net_lbs', 900)),
+    (term_id('operation', 'weigh'), 'node', pick, hand,
+     jsonb_build_object('bins', jsonb_build_array(b7), 'net_lbs', 400));
+  update node set quantity = 1300 where id = pick;
+  set local role authenticated;
+
+  -- A weighed bin into an unweighed one would be weighed twice.
+  begin
+    perform tip_bin(b7, b8);
+    raise exception 'FAIL: a weighed bin was tipped into an unweighed one';
+  exception when others then
+    if sqlerrm not like '%Weigh % first, or its reading will count%' then raise; end if;
+  end;
+  -- An unweighed one into a weighed one would never be weighed.
+  begin
+    perform tip_bin(b8, b7);
+    raise exception 'FAIL: an unweighed bin was tipped into a weighed one';
+  exception when others then
+    if sqlerrm not like '%would never be weighed%' then raise; end if;
+  end;
+  -- PB6 shared its reading with PB4, so its pounds are for a person to say.
+  begin
+    perform discard_fruit(array[b6], 'flaw');
+    raise exception 'FAIL: half a shared reading was thrown away without a figure';
+  exception when others then
+    if sqlerrm not like '%also weighed%say how many pounds%' then raise; end if;
+  end;
+  begin
+    perform discard_fruit(array[b8], 'mouldy');
+    raise exception 'FAIL: fruit was thrown away for no reason on the list';
+  exception when others then
+    if sqlerrm not like 'say why:%' then raise; end if;
+  end;
+  perform test_ok('a tip that would weigh fruit twice or never, a shared reading, and a reason off the list are each refused in a sentence');
+
+  -- PB7 was weighed alone: its reading is what went. PB8 was not: a guess.
+  out1 := discard_fruit(array[b7], 'flaw', null, null, 'rot');
+  if (out1 ->> 'lbs')::numeric <> 400 then
+    raise exception 'FAIL: throwing away PB7 took % lbs, not its reading of 400', out1 ->> 'lbs';
+  end if;
+  perform discard_fruit(array[b8], 'loss', 150, null, 'dropped off the trailer');
+  reset role;
+  perform test_act_as(null);
+
+  select * into r from fruit_log where id = pick;
+  -- Five bins picked; PB5 tipped away and PB7 and PB8 thrown away no longer
+  -- count, so two remain, both weighed.
+  if r.bins <> 2 or r.bins_weighed <> 2 or r.bins_discarded <> 2
+     or r.lbs <> 1300 or r.lbs_discarded_weighed <> 400 or r.lbs_discarded_unweighed <> 150 then
+    raise exception 'FAIL: the pick reads % bins, % weighed, % thrown away, % lbs, % + % lbs thrown away',
+      r.bins, r.bins_weighed, r.bins_discarded, r.lbs, r.lbs_discarded_weighed, r.lbs_discarded_unweighed;
+  end if;
+  select * into r from harvest_weights_by_day_variety
+   where picked = (select picked from fruit_log where id = pick) and variety = 'No variety said'
+     and vintage = 2026;
+  if r.lbs_picked < 1450 or r.lbs_kept > r.lbs_picked - 550 then
+    raise exception 'FAIL: the totals do not offer picked (with what was thrown) and kept (without): % and %',
+      r.lbs_picked, r.lbs_kept;
+  end if;
+  -- What is left to press is PB4 and PB6, which had the 900 lb reading, not
+  -- the pick's 1300: the thrown-away PB7 is out of the share.
+  if (select round(lbs) from fruit_going_in(array[b4, b6])) <> 900 then
+    raise exception 'FAIL: pressing what is left puts in % lbs, not 900',
+      (select round(lbs) from fruit_going_in(array[b4, b6]));
+  end if;
+  perform test_ok('tipped and thrown-away bins stop counting, the pick keeps its weight, the totals say picked and kept, and what is left to press is what is left');
 end $$;
 
 do $$ begin raise notice '--- all assertions passed'; end $$;

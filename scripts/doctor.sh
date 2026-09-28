@@ -4,7 +4,7 @@
 # Purpose: "Asks a database what looks wrong and says it in sentences, failing
 #           when anything is wrong rather than merely worth a look."
 # Depends on: [supabase/migrations/0155_doctor.sql]
-# Depended on by: [README.md, scripts/green.sh, docs/status-ledger.md]
+# Depended on by: [README.md, scripts/green.sh, docs/status-ledger.md, scripts/watchdog.ps1]
 # ---------------------------------------------------------------------------
 #
 # Usage: bun run doctor                  the cellar

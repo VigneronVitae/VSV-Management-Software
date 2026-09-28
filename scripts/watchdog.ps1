@@ -2,7 +2,7 @@
 # Type: tool
 # Purpose: "Brings the cellar back up when it goes down, without anybody
 #           noticing it went down."
-# Depends on: [CLAUDE.md]
+# Depends on: [CLAUDE.md, scripts/doctor.sh]
 # Depended on by: [scripts/watchdog-loop.ps1, scripts/watchdog-install.ps1,
 #                  docs/status-ledger.md,
 #                  docs/moving-off-tailscale.md,
@@ -260,6 +260,24 @@ function Invoke-DailyBackup {
     Get-ChildItem -Path $dir -Filter "vsv-*.sql" -ErrorAction SilentlyContinue |
       Where-Object { $_.LastWriteTime -lt $cut } |
       Remove-Item -Force -ErrorAction SilentlyContinue
+  }
+
+  # S-4, the half that was left: the doctor on a schedule. Once a day, after
+  # the backup and only when it succeeded, so the morning's log says whether
+  # anything in the cellar points at nothing. Each thing it finds wrong is its
+  # own FAIL line; things merely worth a look are left to `bun run doctor`.
+  $doc = & $bash -c "cd '$repo' && bash scripts/doctor.sh" 2>&1
+  $dcode = $LASTEXITCODE
+  foreach ($line in $doc) {
+    if ("$line" -like "WRONG*") { Write-Log ("FAIL     doctor: {0}" -f "$line".Substring(5).Trim()) }
+  }
+  $summary = ($doc | Where-Object { "$_" -like "doctor:*" } | Select-Object -Last 1)
+  if ($dcode -eq 0) {
+    Write-Log ("ok       {0}" -f $summary)
+  } elseif ($dcode -eq 1) {
+    Write-Log ("FAIL     {0}" -f $summary)
+  } else {
+    Write-Log ("warn     the doctor could not ask the cellar: {0}" -f (($doc | Select-Object -Last 1) -join " "))
   }
 }
 

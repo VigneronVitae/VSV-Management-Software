@@ -1397,6 +1397,9 @@ export type FruitRow = {
   bins: number;
   bins_held: number;
   bins_weighed: number;
+  // 0163. Bins whose fruit was thrown away. A tipped or thrown bin is no
+  // longer in `bins`.
+  bins_discarded: number;
 };
 
 // --- what a machine is made of, and its papers, 0119 ----------------------
@@ -1597,7 +1600,7 @@ export async function fruitLog(): Promise<FruitRow[]> {
   const { data, error } = await kernel()
     .from("fruit_log")
     .select(
-      "id,name,picked,created_at,vintage,non_vintage,status,variety,vineyard,block,lbs,tons,bins,bins_held,bins_weighed",
+      "id,name,picked,created_at,vintage,non_vintage,status,variety,vineyard,block,lbs,tons,bins,bins_held,bins_weighed,bins_discarded",
     )
     .order("created_at", { ascending: false });
   if (error) throw new KernelError(error);
@@ -1618,6 +1621,11 @@ export type WeightTotal = {
   tons: number | null;
   first_picked?: string;
   last_picked?: string;
+  // 0163. Thrown-away fruit, and the two ways of counting it: picked is
+  // everything that came off the vineyard, kept is what was not thrown away.
+  lbs_discarded: number | null;
+  lbs_picked: number | null;
+  lbs_kept: number | null;
 };
 
 export type WeightGrouping = "variety" | "day" | "day_variety";
@@ -1633,9 +1641,10 @@ export async function harvestWeights(
   }[grouping];
   const columns = {
     variety:
-      "vintage,variety,picks,bins,bins_unweighed,lbs,tons,first_picked,last_picked",
-    day: "vintage,picked,picks,bins,bins_unweighed,lbs,tons,varieties",
-    day_variety: "vintage,picked,variety,picks,bins,bins_unweighed,lbs,tons",
+      "vintage,variety,picks,bins,bins_unweighed,lbs,tons,first_picked,last_picked,lbs_discarded,lbs_picked,lbs_kept",
+    day: "vintage,picked,picks,bins,bins_unweighed,lbs,tons,varieties,lbs_discarded,lbs_picked,lbs_kept",
+    day_variety:
+      "vintage,picked,variety,picks,bins,bins_unweighed,lbs,tons,lbs_discarded,lbs_picked,lbs_kept",
   }[grouping];
   let q = kernel().from(relation).select(columns).eq("vintage", vintage);
   q =
@@ -1667,13 +1676,20 @@ export type BlockYield = {
   lbs_per_vine: number | null;
   first_picked: string | null;
   last_picked: string | null;
+  lbs_discarded: number | null;
+  lbs_picked: number | null;
+  lbs_kept: number | null;
+  tons_per_acre_picked: number | null;
+  tons_per_acre_kept: number | null;
+  lbs_per_vine_picked: number | null;
+  lbs_per_vine_kept: number | null;
 };
 
 export async function blockYield(vintage: number): Promise<BlockYield[]> {
   const { data, error } = await kernel()
     .from("block_yield")
     .select(
-      "vintage,vineyard,block,variety,picks,bins,bins_unweighed,lbs,tons,bearing_vines,bearing_acres,tons_per_acre,lbs_per_vine,first_picked,last_picked",
+      "vintage,vineyard,block,variety,picks,bins,bins_unweighed,lbs,tons,bearing_vines,bearing_acres,tons_per_acre,lbs_per_vine,first_picked,last_picked,lbs_discarded,lbs_picked,lbs_kept,tons_per_acre_picked,tons_per_acre_kept,lbs_per_vine_picked,lbs_per_vine_kept",
     )
     .eq("vintage", vintage)
     .order("vineyard")
@@ -1688,6 +1704,13 @@ export async function blockYield(vintage: number): Promise<BlockYield[]> {
     bearing_acres: num(r.bearing_acres),
     tons_per_acre: num(r.tons_per_acre),
     lbs_per_vine: num(r.lbs_per_vine),
+    lbs_discarded: num(r.lbs_discarded),
+    lbs_picked: num(r.lbs_picked),
+    lbs_kept: num(r.lbs_kept),
+    tons_per_acre_picked: num(r.tons_per_acre_picked),
+    tons_per_acre_kept: num(r.tons_per_acre_kept),
+    lbs_per_vine_picked: num(r.lbs_per_vine_picked),
+    lbs_per_vine_kept: num(r.lbs_per_vine_kept),
   }));
 }
 
@@ -2919,6 +2942,56 @@ export async function moveVessels(
 // One bin, corrected. The batch figure goes into every bin that went out
 // together, which is right until somebody walks the row and sees the last one
 // is half empty.
+// 0163. One bin of a pick tipped into another of the same pick.
+export async function tipBin(args: {
+  fromVesselId: Uuid;
+  intoVesselId: Uuid;
+  at?: string | null;
+  note?: string | null;
+}): Promise<{ pick: string; from: string; into: string; bins: number }> {
+  const { data, error } = await kernel().rpc("tip_bin", {
+    p_from_vessel: args.fromVesselId,
+    p_into_vessel: args.intoVesselId,
+    p_at: args.at ?? null,
+    p_note: args.note ?? null,
+  });
+  if (error) throw new KernelError(error);
+  return data as { pick: string; from: string; into: string; bins: number };
+}
+
+// 0163. Fruit thrown away, with a reason and the pounds if known. A weighed
+// bin's pounds are its reading unless somebody says otherwise; the kernel
+// decides that, and refuses when the reading was shared.
+export async function discardFruit(args: {
+  vesselIds: Uuid[];
+  reason: string;
+  lbs?: number | null;
+  at?: string | null;
+  note?: string | null;
+}): Promise<{
+  pick: string;
+  bins: number;
+  weighed: boolean;
+  lbs: number | null;
+  left: number;
+}> {
+  const { data, error } = await kernel().rpc("discard_fruit", {
+    p_vessel_ids: args.vesselIds,
+    p_reason: args.reason,
+    p_lbs: args.lbs ?? null,
+    p_at: args.at ?? null,
+    p_note: args.note ?? null,
+  });
+  if (error) throw new KernelError(error);
+  return data as {
+    pick: string;
+    bins: number;
+    weighed: boolean;
+    lbs: number | null;
+    left: number;
+  };
+}
+
 export async function setBinFruit(
   vesselId: Uuid,
   args: { netLbs?: number | null; grossLbs?: number | null; pct?: number | null },
