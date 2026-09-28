@@ -3,7 +3,9 @@
 // Purpose: "Runs a harvest day through the apps' own client code, signed in as an ordinary cellar hand and as an administrator, against the practice stack, and says which steps worked."
 // Depends on: [scripts/practice.sh, supabase/migrations/0147_a_pressing_knows_what_went_in.sql,
 //              supabase/migrations/0151_a_cut_counts_once.sql,
-//              supabase/migrations/0152_who_may_do_what.sql]
+//              supabase/migrations/0152_who_may_do_what.sql,
+//              supabase/migrations/0153_a_bin_can_change_parts.sql,
+//              supabase/migrations/0154_a_fermenter_shows_its_fruit.sql]
 // Depended on by: [docs/status-ledger.md]
 // ---------------------------------------------------------------------------
 //
@@ -452,14 +454,37 @@ await step("pour 10 L away, as a loss", async () => {
 // 0148. The red: sorted, one fermenter destemmed and one whole cluster, as two
 // lots, with what came off the sorting table taken off the weight.
 const redPick = randomUUID();
+// 0153. The Sep 23 Pinot Noir: two clones picked at once and a bin recorded in
+// the wrong part, found from its label at the scale and moved before weighing.
+await step("a bin in the wrong part moves to the right one", async () => {
+  const wrong = randomUUID();
+  await k.addBinsToPick({
+    pick: { id: redPick, variety_id: pinot, vintage: year },
+    vesselIds: [redBins[0] ?? ""],
+    fillPct: 100,
+  });
+  await k.addBinsToPick({
+    pick: { id: wrong, variety_id: pinot, vintage: year },
+    vesselIds: [redBins[1] ?? ""],
+    fillPct: 100,
+  });
+  const offered = await k.pickSiblings(wrong);
+  must(
+    offered.some((p) => p.id === redPick),
+    "the scale does not offer the other part",
+  );
+  const out = await k.moveBinsToPick({
+    vesselIds: [redBins[1] ?? ""],
+    toNodeId: redPick,
+    note: "SMOKE label says the other part",
+  });
+  must(out.to_bins === 2 && out.from_bins === 0, `moved ${JSON.stringify(out)}`);
+  return `${out.moved} bin moved; ${out.to_name} now has ${out.to_bins}`;
+});
+
 await step(
   "a red pick sorted and destemmed into two fermenters as two lots",
   async () => {
-    await k.addBinsToPick({
-      pick: { id: redPick, variety_id: pinot, vintage: year },
-      vesselIds: redBins,
-      fillPct: 100,
-    });
     const w = await k.weighBins({
       nodeId: redPick,
       vesselIds: redBins,
@@ -492,6 +517,9 @@ await step(
       (v) => fermBins.includes(v.id) && !v.is_empty,
     );
     must(held.length === 2, `${held.length} fermenters hold the fruit`);
+    // 0154. A fermenter says its pounds, and the two add up to the lots.
+    const shown = held.reduce((n, v) => n + Number(v.fruit_lbs ?? 0), 0);
+    must(Math.abs(shown - inLots) < 1, `the fermenters show ${shown} lb of ${inLots}`);
     return `${out.lots.map((l) => `${l.name} ${l.lbs} lb`).join("; ")}, ${out.bins_emptied} bins free`;
   },
 );

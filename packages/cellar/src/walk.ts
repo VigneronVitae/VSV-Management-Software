@@ -71,6 +71,7 @@ import {
   makeInvite,
   markBought,
   markPropagated,
+  moveBinsToPick,
   moveSupply,
   moveVessels,
   type NodePayload,
@@ -91,6 +92,7 @@ import {
   photoUrl,
   pickBins,
   pickById,
+  pickSiblings,
   pickWeighings,
   plantings,
   practiceAvailable,
@@ -6340,12 +6342,15 @@ function scaleScreen(): HTMLElement {
     "Weigh bins",
     lede(
       "Tick the bins that went on the scale together and type what it said. " +
-        "Their tares come off automatically.",
+        "Their tares come off automatically. If a bin's label says it is the " +
+        "other part, move it before you weigh it.",
     ),
     body,
   );
 
-  void (async () => {
+  // A function rather than run once, because moving a bin changes which pick
+  // it is listed under and the whole list has to be read again.
+  const load = async () => {
     try {
       const waiting = await unweighedBins();
       if (waiting.length === 0) {
@@ -6398,11 +6403,87 @@ function scaleScreen(): HTMLElement {
         const result = el("div", {});
         const when = whenField("weigh");
 
+        // 0153. The bins were labelled with the fruit in them and the pick
+        // could not say which was which, so a bin in the wrong part is fixed
+        // here, where the label is being read, and before the reading that
+        // would pin it to this pick (S-149). The choices are the kernel's.
+        const moveArea = el("div", {});
+        const offerMove = button(
+          "A ticked bin belongs to another part",
+          async () => {
+            const chosen = boxes.filter((b) => b.box.input.checked).map((b) => b.bin);
+            if (chosen.length === 0) {
+              moveArea.replaceChildren(
+                banner("Tick the bins whose labels say the other part.", "error"),
+              );
+              return;
+            }
+            try {
+              const siblings = await pickSiblings(nodeId);
+              if (siblings.length === 0) {
+                moveArea.replaceChildren(
+                  banner(
+                    "There is no other open pick of this vintage to move them to. " +
+                      "Start the other part from Picking first.",
+                    "note",
+                  ),
+                );
+                return;
+              }
+              const into = el("select", { class: "input" });
+              into.replaceChildren(
+                ...siblings.map((p) =>
+                  el("option", {
+                    value: p.id,
+                    text:
+                      [p.block, p.variety].filter(Boolean).join(", ") +
+                      `, picked ${p.picked} (${p.bins} bin${p.bins === 1 ? "" : "s"})`,
+                  }),
+                ),
+              );
+              const said = el("div", {});
+              moveArea.replaceChildren(
+                rows(
+                  el("span", {
+                    class: "field-label",
+                    text: `Move ${chosen.map((b) => b.bin_name).join(", ")} into`,
+                  }),
+                  into,
+                  button("Move them", async () => {
+                    try {
+                      const out = await moveBinsToPick({
+                        vesselIds: chosen.map((b) => b.vessel_id),
+                        toNodeId: into.value,
+                      });
+                      message.replaceChildren(
+                        banner(
+                          `Moved ${out.moved} bin${out.moved === 1 ? "" : "s"} into ${out.to_name}, ` +
+                            `which now has ${out.to_bins}. ${out.from_name} has ${out.from_bins}.`,
+                          "good",
+                        ),
+                      );
+                      await load();
+                    } catch (error) {
+                      said.replaceChildren(fail(error));
+                    }
+                  }),
+                  said,
+                ),
+              );
+            } catch (error) {
+              moveArea.replaceChildren(fail(error));
+            }
+          },
+          "quiet",
+        );
+
         return el(
           "div",
           { class: "rows" },
           el("h2", { class: "section-head", text: binsHere[0]?.pick_name ?? "Pick" }),
           ...boxes.map((b) => b.box.root),
+          offerMove,
+          moveArea,
           gross.root,
           note.root,
           photo.root,
@@ -6498,7 +6579,8 @@ function scaleScreen(): HTMLElement {
         button("Back", () => goBack(), "quiet"),
       );
     }
-  })();
+  };
+  void load();
 
   return view;
 }

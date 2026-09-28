@@ -172,9 +172,10 @@ export type VesselState = {
   location_ambient_c: number | null;
   location_controlled: boolean;
   effective_temp_c: number | null;
-  // What is in a picking bin. Fruit is weighed rather than measured in litres,
-  // so this is null for everything else and `current_volume_l` is null for a
-  // bin. Two quantities because there are two kinds of thing in a cellar.
+  // What is in a picking bin, or since 0154 a fermenter holding fruit on its
+  // skins. Fruit is weighed rather than measured in litres, so this is null for
+  // wine and `current_volume_l` is null for fruit. Two quantities because there
+  // are two kinds of thing in a cellar.
   fruit_lbs: number | null;
   fruit_tons: number | null;
   fruit_pct: number | null;

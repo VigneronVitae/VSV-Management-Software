@@ -342,6 +342,29 @@ match_paper:guard:2	match_paper	guard	if not exists (select 1 from money_paper w
 match_paper:raise:2	match_paper	raise	raise exception 'there is no paper with that id';	raise notice 'there is no paper with that id';	1
 match_paper:guard:3	match_paper	guard	if not exists (select 1 from bank_line where id = p_line_id) then	if false then	1
 match_paper:raise:3	match_paper	raise	raise exception 'there is no bank transaction with that id';	raise notice 'there is no bank transaction with that id';	1
+move_bins_to_pick:guard:1	move_bins_to_pick	guard	if not is_facility_user() then	if false then	1
+move_bins_to_pick:raise:1	move_bins_to_pick	raise	raise exception 'only somebody who works here says which pick a bin belongs to'	raise notice 'only somebody who works here says which pick a bin belongs to'	1
+move_bins_to_pick:guard:2	move_bins_to_pick	guard	if p_vessel_ids is null or cardinality(p_vessel_ids) = 0 then	if false then	1
+move_bins_to_pick:raise:2	move_bins_to_pick	raise	raise exception 'say which bins';	raise notice 'say which bins';	1
+move_bins_to_pick:guard:3	move_bins_to_pick	guard	if target.id is null then	if false then	1
+move_bins_to_pick:raise:3	move_bins_to_pick	raise	raise exception 'there is no pick with that id';	raise notice 'there is no pick with that id';	1
+move_bins_to_pick:guard:4	move_bins_to_pick	guard	if target.stage <> 'bin' then	if false then	1
+move_bins_to_pick:raise:4	move_bins_to_pick	raise	raise exception '% is not a pick, so bins cannot move into it', target.name;	raise notice '% is not a pick, so bins cannot move into it', target.name;	1
+move_bins_to_pick:guard:5	move_bins_to_pick	guard	if target.status = 'closed' then	if false then	1
+move_bins_to_pick:raise:5	move_bins_to_pick	raise	raise exception '% is closed; its fruit has already gone somewhere', target.name;	raise notice '% is closed; its fruit has already gone somewhere', target.name;	1
+move_bins_to_pick:guard:6	move_bins_to_pick	guard	if missing is not null then	if false then	1
+move_bins_to_pick:raise:6	move_bins_to_pick	raise	raise exception '% % not holding fruit from a pick',	raise notice '% % not holding fruit from a pick',	1
+move_bins_to_pick:guard:7	move_bins_to_pick	guard	if cardinality(sources) > 1 then	if false then	1
+move_bins_to_pick:raise:7	move_bins_to_pick	raise	raise exception 'those bins are from different picks; move one pick''s bins at a time';	raise notice 'those bins are from different picks; move one pick''s bins at a time';	1
+move_bins_to_pick:guard:8	move_bins_to_pick	guard	if source.id = target.id then	if false then	1
+move_bins_to_pick:raise:8	move_bins_to_pick	raise	raise exception 'those bins are already part of %', target.name;	raise notice 'those bins are already part of %', target.name;	1
+move_bins_to_pick:guard:9	move_bins_to_pick	guard	if source.owner_id <> target.owner_id then	if false then	1
+move_bins_to_pick:raise:9	move_bins_to_pick	raise	raise exception	raise notice	9
+move_bins_to_pick:guard:10	move_bins_to_pick	guard	if source.vintage is distinct from target.vintage then	if false then	1
+move_bins_to_pick:raise:10	move_bins_to_pick	raise	raise exception '% and % are different vintages', source.name, target.name;	raise notice '% and % are different vintages', source.name, target.name;	1
+move_bins_to_pick:guard:11	move_bins_to_pick	guard	if weighed is not null then	if false then	1
+move_bins_to_pick:raise:11	move_bins_to_pick	raise	raise exception	raise notice	11
+move_bins_to_pick:silent:1	move_bins_to_pick	silent	where vessel_id = any (p_vessel_ids) and to_at is null and node_id = source.id;	where vessel_id = any (p_vessel_ids) and true;	1
 move_place:guard:1	move_place	guard	if not is_facility_user() then	if false then	1
 move_place:raise:1	move_place	raise	raise exception 'places are moved by people who work here';	raise notice 'places are moved by people who work here';	1
 move_place:guard:2	move_place	guard	if not exists (select 1 from location where id = p_location_id) then	if false then	1

@@ -6,7 +6,8 @@
 -- Depends on: [supabase/migrations/0006_vessel_thermal.sql,
 --              supabase/migrations/0099_a_vessel_says_which_vintage.sql]
 -- Depended on by: [tests/schema_assertions.sql,
---                  supabase/migrations/0101_a_note_can_be_about_a_screen.sql]
+--                  supabase/migrations/0101_a_note_can_be_about_a_screen.sql,
+--                  supabase/migrations/0154_a_fermenter_shows_its_fruit.sql]
 -- Axioms enforced: T0-2 (which way a machine is running is derived from the
 --                  jackets on it and is never a second thing to set), T0-5
 --                  (a hookup is a period with a start and an end, like a

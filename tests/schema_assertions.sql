@@ -109,7 +109,9 @@
 --              supabase/migrations/0149_a_blend_can_be_split_by_juice.sql,
 --              supabase/migrations/0150_off_the_skins.sql,
 --              supabase/migrations/0151_a_cut_counts_once.sql,
---              supabase/migrations/0152_who_may_do_what.sql]
+--              supabase/migrations/0152_who_may_do_what.sql,
+--              supabase/migrations/0153_a_bin_can_change_parts.sql,
+--              supabase/migrations/0154_a_fermenter_shows_its_fruit.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh, scripts/rpc-args.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -13612,6 +13614,126 @@ begin
 
   reset role;
   perform test_act_as(null);
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 0153. A bin can change parts.
+-- ---------------------------------------------------------------------------
+--
+-- The Sep 23 Pinot Noir: one block, two clones, nine bins labelled with the
+-- fruit in them and a pick that could not say which was which.
+do $$
+declare
+  hand   uuid := '00000000-0000-0000-0000-00000000fb01';
+  pom    uuid := gen_random_uuid();
+  s777   uuid := gen_random_uuid();
+  old    uuid := gen_random_uuid();
+  bin1   uuid := gen_random_uuid();
+  bin2   uuid := gen_random_uuid();
+begin
+  insert into auth.users (id) values (hand) on conflict do nothing;
+  insert into app_user (id, name, role) values (hand, 'ASSERT 0152 cellar hand', 'cellar')
+    on conflict (id) do nothing;
+  insert into node (id, stage, name, quantity, unit, vintage) values
+    (pom,  'bin', 'ASSERT 0153 Pommard', null, 'lbs', 2026),
+    (s777, 'bin', 'ASSERT 0153 777', null, 'lbs', 2026),
+    (old,  'bin', 'ASSERT 0153 last year', null, 'lbs', 2025);
+  insert into vessel (id, name, type_id) values
+    (bin1, 'ASSERT 0153 bin 1', term_id('vessel_type', 'picking_bin')),
+    (bin2, 'ASSERT 0153 bin 2', term_id('vessel_type', 'picking_bin'));
+  insert into placement (node_id, vessel_id) values (pom, bin1), (pom, bin2);
+  -- Bin 2 has been on the scale with the Pommard.
+  insert into event (operation_id, subject_type, subject_id, by_user, data)
+  values (term_id('operation', 'weigh'), 'node', pom, hand,
+          jsonb_build_object('bins', jsonb_build_array(bin2), 'net_lbs', 800));
+
+  perform test_act_as(hand);
+  set local role authenticated;
+
+  if not exists (select 1 from pick_siblings(pom) where id = s777)
+     or exists (select 1 from pick_siblings(pom) where id in (old, pom)) then
+    raise exception 'FAIL: pick_siblings does not offer exactly the same vintage''s other picks';
+  end if;
+
+  perform move_bins_to_pick(array[bin1], s777, 'label says 777');
+  if (select node_id from placement where vessel_id = bin1 and to_at is null) <> s777 then
+    raise exception 'FAIL: the bin did not move';
+  end if;
+  if (select count(*) from event
+       where operation_id = term_id('operation', 'bins_moved')
+         and subject_id in (pom, s777) and data ->> 'note' = 'label says 777') <> 2 then
+    raise exception 'FAIL: a move is not in both picks'' histories';
+  end if;
+  perform test_ok('an unweighed bin moves to the other part, and both picks say so');
+
+  begin
+    perform move_bins_to_pick(array[bin2], s777);
+    raise exception 'FAIL: a weighed bin moved without its weight';
+  exception when others then
+    if sqlerrm not like '%been weighed as part of%' then raise; end if;
+  end;
+  begin
+    perform move_bins_to_pick(array[bin1], old);
+    raise exception 'FAIL: a bin moved into another vintage';
+  exception when others then
+    if sqlerrm not like '%different vintages%' then raise; end if;
+  end;
+  begin
+    perform move_bins_to_pick(array[bin1], s777);
+    raise exception 'FAIL: a bin moved into the pick it is already in';
+  exception when others then
+    if sqlerrm not like '%already part of%' then raise; end if;
+  end;
+  perform test_ok('a weighed bin, another vintage and the same pick are each refused in a sentence (S-149)');
+
+  reset role;
+  perform test_act_as(null);
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 0154. A fermenter shows its fruit.
+-- ---------------------------------------------------------------------------
+--
+-- MB01 held 2087 lbs of Pommard and drew empty.
+do $$
+declare
+  hand uuid := '00000000-0000-0000-0000-00000000fb01';
+  lot  uuid := gen_random_uuid();
+  solo uuid := gen_random_uuid();
+  fa   uuid := gen_random_uuid();
+  fb   uuid := gen_random_uuid();
+  fc   uuid := gen_random_uuid();
+  pa   uuid := gen_random_uuid();
+  pb   uuid := gen_random_uuid();
+  pc   uuid := gen_random_uuid();
+begin
+  insert into auth.users (id) values (hand) on conflict do nothing;
+  insert into node (id, stage, name, quantity, unit, vintage) values
+    (lot,  'ferment', 'ASSERT 0154 two fermenters', 900, 'lbs', 2026),
+    (solo, 'ferment', 'ASSERT 0154 one fermenter', 500, 'lbs', 2026);
+  insert into vessel (id, name, type_id) values
+    (fa, 'ASSERT 0154 MB a', term_id('vessel_type', 'fermentation_bin')),
+    (fb, 'ASSERT 0154 MB b', term_id('vessel_type', 'fermentation_bin')),
+    (fc, 'ASSERT 0154 MB c', term_id('vessel_type', 'fermentation_bin'));
+  insert into placement (id, node_id, vessel_id, fill_pct) values
+    (pa, lot, fa, 80), (pb, lot, fb, 40), (pc, solo, fc, null);
+  insert into event (operation_id, subject_type, subject_id, by_user, data)
+  values (term_id('operation', 'destem'), 'node', lot, hand,
+          jsonb_build_object('fermenters', jsonb_build_array(
+            jsonb_build_object('vessel_id', fa, 'lbs', 600),
+            jsonb_build_object('vessel_id', fb, 'lbs', 300))));
+
+  if fermenter_lbs(pa) <> 600 or fermenter_lbs(pb) <> 300 then
+    raise exception 'FAIL: two fermenters show % and %, not 600 and 300',
+      fermenter_lbs(pa), fermenter_lbs(pb);
+  end if;
+  if fermenter_lbs(pc) <> 500 then
+    raise exception 'FAIL: a lot in one fermenter shows %, not all 500', fermenter_lbs(pc);
+  end if;
+  if (select fruit_pct from vessel_state where id = fa) <> 80 then
+    raise exception 'FAIL: a fermenter said to be 80%% full does not say so';
+  end if;
+  perform test_ok('a fermenter shows its share of the lot''s pounds and how full it was said to be');
 end $$;
 
 do $$ begin raise notice '--- all assertions passed'; end $$;

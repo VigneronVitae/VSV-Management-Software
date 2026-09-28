@@ -1651,3 +1651,14 @@ tank twice to be one lot growing, and a closed lot is not found again.
 *Resolves when:* a blended cut is closed and still found by the next draw of the same cut into
 the same tank, or open lots with no placement are left out of the lists that count lots.
 *Load-bearing:* no. It is a count of lots, not of wine.
+
+**S-149. A weighed bin cannot move to the other part of a pick.**
+`move_bins_to_pick` (`0153`) moves a bin that went into the wrong part, the 777 recorded as
+Pommard, but only while it is unweighed. A scale reading names the bins that were on it and
+is recorded against one pick, and the lot's pounds are that reading; moving a weighed bin
+would leave the reading and its pounds on the pick the fruit is not in. It is refused, in a
+sentence that says so.
+*Resolves when:* a move can carry a bin's share of a reading with it, which needs the
+reading to be of that bin alone or a rule for dividing one that is not.
+*Load-bearing:* no. The scale screen offers the move before the weight, which is where the
+label on the bin is read.

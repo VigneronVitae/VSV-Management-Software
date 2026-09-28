@@ -6,7 +6,8 @@
 -- Depends on: [supabase/migrations/0114_every_pick_stays_on_the_list.sql,
 --              supabase/migrations/0143_a_record_can_say_when.sql]
 -- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql,
---                  packages/cellar/src/index.ts]
+--                  packages/cellar/src/index.ts,
+--                  supabase/migrations/0153_a_bin_can_change_parts.sql]
 -- Axioms enforced: T0-2. Three views over `fruit_log`, nothing stored.
 --                  A13. A pick with bins nobody has weighed yet is counted as
 --                  such, so a total that is short says it is short.

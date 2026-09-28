@@ -2051,6 +2051,48 @@ export async function unweighedBins(nodeId?: Uuid): Promise<UnweighedBin[]> {
   return (data ?? []) as UnweighedBin[];
 }
 
+// 0153. The picks a bin of this one could move to, as the kernel rules it, so
+// the scale offers exactly what `moveBinsToPick` accepts.
+export type PickSibling = {
+  id: Uuid;
+  name: string;
+  block: string | null;
+  variety: string | null;
+  picked: string;
+  bins: number;
+};
+
+export async function pickSiblings(nodeId: Uuid): Promise<PickSibling[]> {
+  const { data, error } = await kernel().rpc("pick_siblings", { p_node_id: nodeId });
+  if (error) throw new KernelError(error);
+  return (data ?? []) as PickSibling[];
+}
+
+export type BinsMoved = {
+  moved: number;
+  from: Uuid;
+  from_name: string;
+  from_bins: number;
+  to: Uuid;
+  to_name: string;
+  to_bins: number;
+};
+
+// 0153. A bin recorded in the wrong part of a pick, before it is weighed.
+export async function moveBinsToPick(args: {
+  vesselIds: Uuid[];
+  toNodeId: Uuid;
+  note?: string | null;
+}): Promise<BinsMoved> {
+  const { data, error } = await kernel().rpc("move_bins_to_pick", {
+    p_vessel_ids: args.vesselIds,
+    p_to_node: args.toNodeId,
+    p_note: args.note ?? null,
+  });
+  if (error) throw new KernelError(error);
+  return data as BinsMoved;
+}
+
 // --- press -----------------------------------------------------------------
 
 // Build order 3: where lots acquire their identity. See migration 0034. The
