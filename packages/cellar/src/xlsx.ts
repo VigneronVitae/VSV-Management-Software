@@ -23,7 +23,9 @@
 // file short. Dates are Excel serial numbers with a date format, so a column of
 // them sorts and filters as dates.
 
-export type Cell = string | number | null | { date: string };
+// `{ at }` is an instant, written as the winery's wall-clock date and time,
+// because a ferment log is read by the hour and a model wants the time too.
+export type Cell = string | number | null | { date: string } | { at: string };
 
 export type Sheet = {
   name: string;
@@ -62,10 +64,46 @@ function serial(iso: string): number | null {
   return utc / 86400000 + 25569;
 }
 
+// Days since 1899-12-30 with the time as the fraction, in the winery's own
+// zone rather than the phone's or UTC, so 6pm reads as 6pm in the sheet.
+function serialAt(iso: string): number | null {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Los_Angeles",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    })
+      .formatToParts(d)
+      .map((p) => [p.type, p.value]),
+  );
+  const wall = Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    Number(parts.hour),
+    Number(parts.minute),
+    Number(parts.second),
+  );
+  return wall / 86400000 + 25569;
+}
+
 function cellXml(ref: string, v: Cell, header: boolean): string {
   if (v === null || v === "") return "";
   if (typeof v === "number") {
     return Number.isFinite(v) ? `<c r="${ref}"><v>${v}</v></c>` : "";
+  }
+  if (typeof v === "object" && "at" in v) {
+    const n = serialAt(v.at);
+    return n === null
+      ? `<c r="${ref}" t="inlineStr"><is><t>${esc(v.at)}</t></is></c>`
+      : `<c r="${ref}" s="3"><v>${n}</v></c>`;
   }
   if (typeof v === "object") {
     const n = serial(v.date);
@@ -115,11 +153,12 @@ const STYLES =
   `<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>` +
   `<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>` +
   `<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>` +
-  // 0 plain, 1 bold header, 2 a date.
-  `<cellXfs count="3">` +
+  // 0 plain, 1 bold header, 2 a date, 3 a date and time (0158).
+  `<cellXfs count="4">` +
   `<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>` +
   `<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>` +
   `<xf numFmtId="14" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>` +
+  `<xf numFmtId="22" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>` +
   `</cellXfs></styleSheet>`;
 
 export function workbook(sheets: Sheet[]): Blob {

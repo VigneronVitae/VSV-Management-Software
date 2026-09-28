@@ -7,7 +7,8 @@
 --              supabase/migrations/0142_a_dump_says_why.sql]
 -- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql,
 --                  packages/cellar/src/index.ts,
---                  supabase/migrations/0151_a_cut_counts_once.sql]
+--                  supabase/migrations/0151_a_cut_counts_once.sql,
+--                  supabase/migrations/0158_a_ferment_is_variables.sql]
 -- Axioms enforced: T0-2. Which lots are on their skins is a view over what
 --                  0148 wrote, never a flag kept up to date by hand.
 -- Open sorries: none new. S-147 is discharged by this and the press screen.

@@ -114,7 +114,8 @@
 --              supabase/migrations/0154_a_fermenter_shows_its_fruit.sql,
 --              supabase/migrations/0155_doctor.sql,
 --              supabase/migrations/0156_a_blend_stays_whole.sql,
---              supabase/migrations/0157_an_export_says_what_it_is.sql]
+--              supabase/migrations/0157_an_export_says_what_it_is.sql,
+--              supabase/migrations/0158_a_ferment_is_variables.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh, scripts/rpc-args.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -13895,6 +13896,82 @@ begin
     raise exception 'FAIL: the export does not say it is not a restore point and has no photographs: %', about;
   end if;
   perform test_ok('the export file says in words that it is a record, not a restore point, and has no photographs (S-54, S-68)');
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 0158. A ferment is variables.
+-- ---------------------------------------------------------------------------
+--
+-- "I want them all saved as variables that can be modeled in whichever way."
+do $$
+declare
+  hand  uuid := '00000000-0000-0000-0000-00000000fb01';
+  lot_id uuid := gen_random_uuid();
+  mb    uuid := gen_random_uuid();
+  empty_mb uuid := gen_random_uuid();
+  n     int;
+begin
+  insert into auth.users (id) values (hand) on conflict do nothing;
+  insert into app_user (id, name, role) values (hand, 'ASSERT 0152 cellar hand', 'cellar')
+    on conflict (id) do nothing;
+  insert into node (id, stage, name, quantity, unit, vintage, attributes)
+  values (lot_id, 'ferment', 'ASSERT 0158 on skins', 2000, 'lbs', 2026, '{"on_skins": true}');
+  insert into vessel (id, name, type_id) values
+    (mb, 'ASSERT 0158 MB', term_id('vessel_type', 'fermentation_bin')),
+    (empty_mb, 'ASSERT 0158 empty MB', term_id('vessel_type', 'fermentation_bin'));
+  insert into placement (node_id, vessel_id, from_at) values (lot_id, mb, now() - interval '1 day');
+
+  perform test_act_as(hand);
+  set local role authenticated;
+  perform record_reading(mb, '{"brix": "22.5", "fruit_condition": ""}', now() - interval '3 hours', 'off the top');
+  perform record_event(lot_id, 'punchdown', jsonb_build_object('vessel', mb), null, now() - interval '2 hours');
+
+  select count(*) into n from lot_series
+   where node_id = lot_id and variable = 'brix' and kind = 'reading'
+     and value_num = 22.5 and unit = '°Bx' and vessel_id = mb and entered_late;
+  if n <> 1 then
+    raise exception 'FAIL: the Brix is not one reading of 22.5 from the fermenter, entered late (% rows)', n;
+  end if;
+  select count(*) into n from lot_series
+   where node_id = lot_id and variable = 'punchdown' and kind = 'action' and vessel_id = mb;
+  if n <> 1 then
+    raise exception 'FAIL: the punchdown is not in the series against its fermenter (% rows)', n;
+  end if;
+  if exists (select 1 from lot_series where node_id = lot_id and variable = 'fruit_condition') then
+    raise exception 'FAIL: a blank box became a reading';
+  end if;
+  if not exists (select 1 from ferment_lot where node_id = lot_id and on_skins and mb = any (vessel_ids)) then
+    raise exception 'FAIL: the lot is not offered as fermenting in its fermenter';
+  end if;
+  perform test_ok('a Brix and a punchdown are rows of the series, each at its time and fermenter, and a blank box is nothing');
+
+  begin
+    perform record_reading(mb, '{"brix": "sweet"}');
+    raise exception 'FAIL: "sweet" was taken as a Brix';
+  exception when others then
+    if sqlerrm not like '%is a number%' then raise; end if;
+  end;
+  begin
+    perform record_reading(mb, '{"sugar": 20}');
+    raise exception 'FAIL: a kind nobody registered was read';
+  exception when others then
+    if sqlerrm not like '%no kind of reading called%' then raise; end if;
+  end;
+  begin
+    perform record_reading(mb, '{"brix": ""}');
+    raise exception 'FAIL: a form of blank boxes was saved';
+  exception when others then
+    if sqlerrm not like '%every box was blank%' then raise; end if;
+  end;
+  begin
+    perform record_reading(empty_mb, '{"brix": 20}');
+    raise exception 'FAIL: a reading was taken from an empty fermenter';
+  exception when others then
+    if sqlerrm not like '%held nothing then%' then raise; end if;
+  end;
+  perform test_ok('a word for a number, an unknown kind, all blanks and an empty fermenter are each refused in a sentence');
+  reset role;
+  perform test_act_as(null);
 end $$;
 
 do $$ begin raise notice '--- all assertions passed'; end $$;

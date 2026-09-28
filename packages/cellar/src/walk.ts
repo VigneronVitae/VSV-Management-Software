@@ -48,8 +48,10 @@ import {
   drawToLevel,
   dumpWine,
   exportCellar,
+  type FermentLot,
   type FruitRow,
   facilityParty,
+  fermentLots,
   fillVessel,
   finishPress,
   fruitLog,
@@ -66,6 +68,7 @@ import {
   locations,
   lotAdditions,
   lotDetail,
+  lotSeries,
   lotsWithoutColour,
   lotsWithoutVintage,
   makeInvite,
@@ -104,6 +107,8 @@ import {
   rackPlan,
   rackTransfer,
   reconditionBarrel,
+  recordEvent,
+  recordReading,
   registerBins,
   registerGlycolMachine,
   removeDayNote,
@@ -115,6 +120,7 @@ import {
   rooms,
   running,
   type SampleKind,
+  type SeriesRow,
   type SiteFields,
   type SubjectNote,
   type SupplyOnHand,
@@ -223,7 +229,7 @@ import {
   variantSwitch,
   whenNoteWanted,
 } from "./ui.ts";
-import { download, workbook } from "./xlsx.ts";
+import { type Cell, download, workbook } from "./xlsx.ts";
 
 // The inventory walk. Its acceptance test is a stranger's first run: empty
 // database, fresh account, and you get from sign up to a labelled barrel with
@@ -406,6 +412,8 @@ async function screenFor(place: Place): Promise<HTMLElement> {
       return exportScreen();
     case "weights":
       return weightsScreen();
+    case "ferment":
+      return fermentScreen();
     case "fruit":
       return fruitScreen();
     case "vineyards":
@@ -1089,6 +1097,11 @@ async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> 
       name: "Harvest weights",
       note: "Every pick so far, by variety or by picking day. Downloads for Excel.",
       go: () => go({ at: "weights" }),
+    },
+    {
+      name: "Ferment log",
+      note: "Brix and cap work for every lot fermenting, drawn over time. Downloads for Excel.",
+      go: () => go({ at: "ferment" }),
     },
     {
       name: "Sampling",
@@ -3823,13 +3836,14 @@ function rackScreen(): HTMLElement {
 // control on the morning the fruit was picked, and a thumb that trusts the
 // prefill records the weight on the wrong day. Each kind of work walks forward
 // through its own day.
-type WhenFor = "pick" | "weigh" | "press" | "rack" | "process";
+type WhenFor = "pick" | "weigh" | "press" | "rack" | "process" | "ferment";
 const lastWhen: Record<WhenFor, string> = {
   pick: "",
   weigh: "",
   press: "",
   rack: "",
   process: "",
+  ferment: "",
 };
 
 function localNow(): string {
@@ -6886,6 +6900,12 @@ function paletteScreen(): HTMLElement {
           note: "What the scale said.",
           hay: "weigh scale weight lbs",
           go: () => go({ at: "scale" }),
+        },
+        {
+          label: "Ferment log",
+          note: "Brix and cap work over time.",
+          hay: "ferment brix punchdown pumpover cap temperature chart",
+          go: () => go({ at: "ferment" }),
         },
         {
           label: "Press",
@@ -13157,4 +13177,533 @@ function scanScreen(): HTMLElement {
       "quiet",
     ),
   );
+}
+
+// --- the ferment log (0158) ------------------------------------------------
+//
+// "I want them all saved as variables that can be modeled in whichever way."
+// Every reading from a fermenting lot and everything done to it is a row of
+// `lot_series`: a variable, a time, a value. This screen records them in one
+// go, draws each numeric variable as its own small chart over one shared time
+// line with the actions marked under it, and writes the rows out as they are.
+//
+// **Small multiples, not one chart with two axes.** Brix falls from 24 to 0 and
+// a temperature moves between 10 and 32; on one axis one of them is a flat
+// line, and a second axis invites reading a crossing that means nothing. One
+// chart a variable, all on the same time line, is the honest picture and is
+// also what "whichever way" asks for: any variable can be hidden.
+function fermentScreen(): HTMLElement {
+  const body = el("div", {}, empty("Loading."));
+  const message = el("div", {});
+  const view = screen(
+    "Ferment log",
+    lede(
+      "Readings and cap work for each lot that is fermenting, drawn over time. " +
+        "Every row is in the spreadsheet too, one variable at one time a row.",
+    ),
+    body,
+  );
+
+  let chosen = pref("ferment_lot", "");
+  const hidden = prefSet("ferment_hidden");
+
+  async function draw(): Promise<void> {
+    const [lots, kinds, ops] = await Promise.all([
+      fermentLots(),
+      terms("fact_kind"),
+      terms("operation"),
+    ]);
+    if (lots.length === 0) {
+      body.replaceChildren(
+        empty(
+          "Nothing is fermenting. A lot shows up here once Sort and destem puts it in a fermenter.",
+        ),
+        button("Back", () => goBack(), "quiet"),
+      );
+      return;
+    }
+    const lot = lots.find((l) => l.node_id === chosen) ?? lots[0];
+    if (!lot) return;
+    chosen = lot.node_id;
+    setPref("ferment_lot", chosen);
+    const series = await lotSeries(lot.node_id);
+
+    const lotPick = el("select", { class: "input" });
+    for (const l of lots) {
+      lotPick.append(
+        el("option", {
+          value: l.node_id,
+          text: `${l.name} (${l.vessels.join(", ")})`,
+        }),
+      );
+    }
+    lotPick.value = lot.node_id;
+    on(lotPick, "change", () => {
+      chosen = lotPick.value;
+      void draw();
+    });
+
+    body.replaceChildren(
+      rows(
+        lots.length > 1
+          ? el(
+              "label",
+              { class: "field" },
+              el("span", { class: "field-label", text: "Which lot" }),
+              lotPick,
+            )
+          : el("h2", { class: "section-head", text: lot.name }),
+        entryCard(lot, kinds, ops, series),
+        message,
+        chartCard(lot, series),
+        exportCard(lot, series),
+        button("Back", () => goBack(), "quiet"),
+      ),
+    );
+  }
+
+  // Everything that can be read or done, in one card. The numbers the kernel
+  // knows how to read are boxes; the cap work it marks as cap work is ticks.
+  // Blank boxes are skipped by the kernel, so a punchdown alone is one tick
+  // and a save.
+  function entryCard(
+    lot: FermentLot,
+    kinds: Term[],
+    ops: Term[],
+    series: SeriesRow[],
+  ): HTMLElement {
+    const numeric = kinds.filter(
+      (k) => k.active && k.attributes.value_type === "number",
+    );
+    const cap = ops.filter((o) => o.active && o.attributes.cap === true);
+    const last = (variable: string): SeriesRow | undefined =>
+      [...series]
+        .reverse()
+        .find((r) => r.variable === variable && r.value_num !== null);
+
+    const vesselPick = el("select", { class: "input" });
+    lot.vessel_ids.forEach((id, i) => {
+      vesselPick.append(el("option", { value: id, text: lot.vessels[i] ?? id }));
+    });
+
+    const boxes = numeric.map((k) => {
+      const unit = typeof k.attributes.unit === "string" ? k.attributes.unit : "";
+      const before = last(k.value);
+      return {
+        kind: k,
+        f: field({
+          label: unit ? `${k.label}, ${unit}` : k.label,
+          type: "number",
+          placeholder: before ? String(before.value_num) : "",
+          ...(before
+            ? { hint: `Last ${before.value_num}, ${shortWhen(before.at)}.` }
+            : {}),
+        }),
+      };
+    });
+    const ticks = cap.map((o) => ({ op: o, box: checkbox(o.label) }));
+    const note = field({ label: "Note", placeholder: "cap dry on top, smells fine" });
+    const when = whenField("ferment");
+    const said = el("div", {});
+
+    const noTemp = !numeric.some((k) => /temp/i.test(k.value) || /temp/i.test(k.label));
+
+    return el(
+      "section",
+      { class: "ferment-entry rows" },
+      el("h2", { class: "section-head", text: "Record" }),
+      lot.vessel_ids.length > 1
+        ? el(
+            "label",
+            { class: "field" },
+            el("span", { class: "field-label", text: "Which fermenter" }),
+            vesselPick,
+          )
+        : el("p", {
+            class: "field-hint",
+            text: `In ${lot.vessels[0] ?? "its fermenter"}.`,
+          }),
+      el("div", { class: "ferment-boxes" }, ...boxes.map((b) => b.f.root)),
+      noTemp
+        ? el("p", {
+            class: "field-hint",
+            text:
+              "No temperature box yet, because nobody has said which unit the thermometer reads. " +
+              "Add Temperature, with its unit, under What a note can be turned into, and it appears here.",
+          })
+        : null,
+      ...(ticks.length > 0
+        ? [el("div", { class: "ferment-ticks" }, ...ticks.map((t) => t.box.root))]
+        : []),
+      note.root,
+      when.root,
+      button("Save", async () => {
+        const readings: Record<string, string> = {};
+        for (const b of boxes) if (b.f.value()) readings[b.kind.value] = b.f.value();
+        const doing = ticks.filter((t) => t.box.input.checked);
+        if (Object.keys(readings).length === 0 && doing.length === 0) {
+          said.replaceChildren(
+            banner("Type a reading or tick what was done.", "error"),
+          );
+          return;
+        }
+        const vesselId =
+          lot.vessel_ids.length > 1 ? vesselPick.value : (lot.vessel_ids[0] ?? "");
+        const at = when.value();
+        try {
+          const done: string[] = [];
+          if (Object.keys(readings).length > 0) {
+            const out = await recordReading({
+              vesselId,
+              readings,
+              at,
+              note: note.value() || null,
+            });
+            done.push(`${out.readings} reading${out.readings === 1 ? "" : "s"}`);
+          }
+          // S-150. Against the whole lot, with the fermenter in the data, so
+          // cap work on one of two fermenters does not fork the lot.
+          for (const t of doing) {
+            await recordEvent({
+              nodeId: lot.node_id,
+              operation: t.op.value,
+              data: {
+                vessel: vesselId,
+                ...(note.value() && Object.keys(readings).length === 0
+                  ? { note: note.value() }
+                  : {}),
+              },
+              at,
+            });
+            done.push(t.op.label.toLowerCase());
+          }
+          message.replaceChildren(
+            banner(
+              `Saved: ${done.join(", ")}${at ? ", at the earlier time" : ""}.`,
+              "good",
+            ),
+          );
+          await draw();
+        } catch (error) {
+          said.replaceChildren(fail(error));
+        }
+      }),
+      said,
+    );
+  }
+
+  function chartCard(lot: FermentLot, series: SeriesRow[]): HTMLElement {
+    const numbers = series.filter((r) => r.kind === "reading" && r.value_num !== null);
+    const actions = series.filter((r) => r.kind === "action");
+    if (numbers.length === 0 && actions.length === 0) {
+      return el(
+        "section",
+        { class: "rows" },
+        el("h2", { class: "section-head", text: "Over time" }),
+        empty("Nothing read or done yet. The first reading starts the line."),
+      );
+    }
+
+    const variables = [...new Set(numbers.map((r) => r.variable))];
+    const labelOf = new Map(series.map((r) => [r.variable, r.label] as const));
+    const unitOf = new Map(numbers.map((r) => [r.variable, r.unit ?? ""] as const));
+
+    // One time line for every chart, from when the lot went in to now.
+    const t0 = Math.min(
+      new Date(lot.since).getTime(),
+      ...series.map((r) => new Date(r.at).getTime()),
+    );
+    const t1 = Math.max(Date.now(), ...series.map((r) => new Date(r.at).getTime()));
+
+    const toggles = el(
+      "div",
+      { class: "ferment-toggles" },
+      ...variables.map((v) => {
+        const c = checkbox(labelOf.get(v) ?? v, !hidden.has(v));
+        on(c.input, "change", () => {
+          if (c.input.checked) hidden.delete(v);
+          else hidden.add(v);
+          setPrefSet("ferment_hidden", hidden);
+          void draw();
+        });
+        return c.root;
+      }),
+    );
+
+    const shown = variables.filter((v) => !hidden.has(v));
+    return el(
+      "section",
+      { class: "rows" },
+      el("h2", { class: "section-head", text: "Over time" }),
+      variables.length > 1 ? toggles : null,
+      ...shown.map((v) =>
+        smallChart(
+          `${labelOf.get(v) ?? v}${unitOf.get(v) ? `, ${unitOf.get(v)}` : ""}`,
+          numbers.filter((r) => r.variable === v),
+          t0,
+          t1,
+        ),
+      ),
+      actionStrip(actions, t0, t1),
+      axisLabels(t0),
+    );
+  }
+
+  function exportCard(lot: FermentLot, series: SeriesRow[]): HTMLElement {
+    return el(
+      "section",
+      { class: "rows" },
+      el("h2", { class: "section-head", text: "Take it away" }),
+      el("p", {
+        class: "field-hint",
+        text:
+          "Two sheets. Every row as it is, one variable at one time, with hours since the " +
+          "lot went in: the shape a model reads. And one row a moment with a column a " +
+          "variable, the shape a person reads.",
+      }),
+      button(
+        "Download for Excel",
+        () => {
+          const since = new Date(lot.since).getTime();
+          const hours = (at: string) =>
+            Math.round(((new Date(at).getTime() - since) / 3_600_000) * 100) / 100;
+          const tidy: Cell[][] = series.map((r) => [
+            { at: r.at },
+            hours(r.at),
+            r.vessel ?? "",
+            r.kind,
+            r.label,
+            r.value_num,
+            r.value_text ?? "",
+            r.unit ?? "",
+            r.note ?? "",
+            r.entered_late ? "yes" : "",
+          ]);
+          const variables = [...new Set(series.map((r) => r.label))];
+          const moments = [...new Set(series.map((r) => r.at))].sort();
+          const wide: Cell[][] = moments.map((at) => {
+            const here = series.filter((r) => r.at === at);
+            return [
+              { at },
+              hours(at),
+              [...new Set(here.map((r) => r.vessel).filter(Boolean))].join(", "),
+              ...variables.map((v) => {
+                const r = here.find((x) => x.label === v);
+                if (!r) return null;
+                return r.value_num ?? (r.kind === "action" ? 1 : (r.value_text ?? ""));
+              }),
+            ];
+          });
+          const blob = workbook([
+            {
+              name: "Every row",
+              columns: [
+                { header: "When", width: 17 },
+                { header: "Hours in", width: 9 },
+                { header: "Fermenter", width: 12 },
+                { header: "Kind", width: 9 },
+                { header: "Variable", width: 16 },
+                { header: "Value", width: 9 },
+                { header: "Said as", width: 14 },
+                { header: "Unit", width: 7 },
+                { header: "Note", width: 30 },
+                { header: "Entered later", width: 12 },
+              ],
+              rows: tidy,
+            },
+            {
+              name: "By moment",
+              columns: [
+                { header: "When", width: 17 },
+                { header: "Hours in", width: 9 },
+                { header: "Fermenter", width: 12 },
+                ...variables.map((v) => ({
+                  header: v,
+                  width: Math.max(10, v.length + 2),
+                })),
+              ],
+              rows: wide,
+            },
+          ]);
+          const day = new Date().toISOString().slice(0, 10);
+          download(
+            blob,
+            `ferment-${lot.name.replace(/[^A-Za-z0-9]+/g, "-")}-${day}.xlsx`,
+          );
+        },
+        "secondary",
+      ),
+    );
+  }
+
+  void draw().catch((error) => body.replaceChildren(fail(error)));
+  return view;
+}
+
+const SVG = "http://www.w3.org/2000/svg";
+
+function svgEl(tag: string, attrs: Record<string, string | number>): SVGElement {
+  const e = document.createElementNS(SVG, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, String(v));
+  return e;
+}
+
+// One variable over the shared time line. The scale is the readings' own
+// range with a little room, so a Brix falling from 23 to 21 is visible rather
+// than a flat line near the top of a 0 to 30 box; the first and last values are
+// printed, because a line is a shape and a winemaker wants the number.
+function smallChart(
+  title: string,
+  points: SeriesRow[],
+  t0: number,
+  t1: number,
+): HTMLElement {
+  const w = 320;
+  const h = 96;
+  const padL = 6;
+  const padR = 6;
+  const padT = 10;
+  const padB = 10;
+  const values = points.map((p) => Number(p.value_num));
+  let lo = Math.min(...values);
+  let hi = Math.max(...values);
+  if (hi - lo < 1e-9) {
+    lo -= 1;
+    hi += 1;
+  }
+  const room = (hi - lo) * 0.12;
+  lo -= room;
+  hi += room;
+  const x = (t: number) => padL + ((t - t0) / Math.max(1, t1 - t0)) * (w - padL - padR);
+  const y = (v: number) => padT + (1 - (v - lo) / (hi - lo)) * (h - padT - padB);
+
+  const svg = svgEl("svg", {
+    viewBox: `0 0 ${w} ${h}`,
+    class: "ferment-chart",
+    role: "img",
+    "aria-label": title,
+  });
+  for (const f of [0.25, 0.5, 0.75]) {
+    svg.append(
+      svgEl("line", {
+        x1: padL,
+        x2: w - padR,
+        y1: padT + f * (h - padT - padB),
+        y2: padT + f * (h - padT - padB),
+        class: "ferment-grid",
+      }),
+    );
+  }
+  const sorted = [...points].sort((a, b) => a.at.localeCompare(b.at));
+  const d = sorted
+    .map(
+      (p, i) =>
+        `${i === 0 ? "M" : "L"}${x(new Date(p.at).getTime()).toFixed(1)} ${y(Number(p.value_num)).toFixed(1)}`,
+    )
+    .join(" ");
+  svg.append(svgEl("path", { d, class: "ferment-line" }));
+  for (const p of sorted) {
+    const dot = svgEl("circle", {
+      cx: x(new Date(p.at).getTime()).toFixed(1),
+      cy: y(Number(p.value_num)).toFixed(1),
+      r: 3,
+      class: p.entered_late ? "ferment-dot ferment-late" : "ferment-dot",
+    });
+    const tip = document.createElementNS(SVG, "title");
+    tip.textContent = `${p.value_num} ${p.unit ?? ""}, ${shortWhen(p.at)}${p.vessel ? `, ${p.vessel}` : ""}`;
+    dot.append(tip);
+    svg.append(dot);
+  }
+
+  const first = sorted[0];
+  const lastPoint = sorted[sorted.length - 1];
+  return el(
+    "figure",
+    { class: "ferment-figure" },
+    el(
+      "figcaption",
+      { class: "ferment-caption" },
+      el("span", { class: "ferment-title", text: title }),
+      el("span", {
+        class: "ferment-values",
+        text:
+          first && lastPoint && first !== lastPoint
+            ? `${first.value_num} to ${lastPoint.value_num}`
+            : `${lastPoint?.value_num ?? ""}`,
+      }),
+    ),
+    svg as unknown as HTMLElement,
+  );
+}
+
+// What was done, as marks on the same time line: one row a kind of action, so
+// punchdowns and pumpovers can be told apart at a glance and counted.
+function actionStrip(actions: SeriesRow[], t0: number, t1: number): HTMLElement {
+  if (actions.length === 0) return el("div", {});
+  const kinds = [...new Set(actions.map((a) => a.label))];
+  const w = 320;
+  const row = 16;
+  const h = kinds.length * row + 4;
+  const x = (t: number) => 6 + ((t - t0) / Math.max(1, t1 - t0)) * (w - 12);
+  const svg = svgEl("svg", {
+    viewBox: `0 0 ${w} ${h}`,
+    class: "ferment-actions",
+    role: "img",
+    "aria-label": `What was done: ${kinds.join(", ")}`,
+  });
+  kinds.forEach((k, i) => {
+    const cy = 2 + i * row + row / 2;
+    svg.append(
+      svgEl("line", { x1: 6, x2: w - 6, y1: cy, y2: cy, class: "ferment-grid" }),
+    );
+    for (const a of actions.filter((r) => r.label === k)) {
+      const tick = svgEl("line", {
+        x1: x(new Date(a.at).getTime()).toFixed(1),
+        x2: x(new Date(a.at).getTime()).toFixed(1),
+        y1: cy - 5,
+        y2: cy + 5,
+        class: a.entered_late ? "ferment-tick ferment-late" : "ferment-tick",
+      });
+      const tip = document.createElementNS(SVG, "title");
+      tip.textContent = `${k}, ${shortWhen(a.at)}${a.vessel ? `, ${a.vessel}` : ""}${a.note ? `: ${a.note}` : ""}`;
+      tick.append(tip);
+      svg.append(tick);
+    }
+  });
+  return el(
+    "figure",
+    { class: "ferment-figure" },
+    el(
+      "figcaption",
+      { class: "ferment-caption" },
+      el("span", { class: "ferment-title", text: "Done" }),
+      el("span", {
+        class: "ferment-values",
+        text: kinds
+          .map(
+            (k) => `${actions.filter((a) => a.label === k).length} ${k.toLowerCase()}`,
+          )
+          .join(", "),
+      }),
+    ),
+    svg as unknown as HTMLElement,
+  );
+}
+
+function axisLabels(t0: number): HTMLElement {
+  return el(
+    "div",
+    { class: "ferment-axis" },
+    el("span", { text: shortWhen(new Date(t0).toISOString()) }),
+    el("span", { text: "now" }),
+  );
+}
+
+function shortWhen(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }

@@ -943,12 +943,16 @@ export async function recordEvent(args: {
   operation: string;
   data?: Record<string, unknown>;
   vesselIds?: Uuid[];
+  /** When it happened, if not now. Left out rather than sent as null, because
+   *  record_event defaults to now and a null would be a time of nothing. */
+  at?: string | null;
 }): Promise<{ event_id: Uuid; node_id: Uuid; forked: boolean }> {
   const { data, error } = await kernel().rpc("record_event", {
     p_node_id: args.nodeId,
     p_operation: args.operation,
     p_data: args.data ?? {},
     p_vessel_ids: args.vesselIds ?? null,
+    ...(args.at ? { p_at: args.at } : {}),
   });
   if (error) throw new KernelError(error);
   return data as { event_id: Uuid; node_id: Uuid; forked: boolean };
@@ -2091,6 +2095,93 @@ export async function moveBinsToPick(args: {
   });
   if (error) throw new KernelError(error);
   return data as BinsMoved;
+}
+
+// --- the ferment log (0158) -------------------------------------------------
+
+// A lot fermenting now, with the fermenters holding it.
+export type FermentLot = {
+  node_id: Uuid;
+  name: string;
+  quantity: number | null;
+  unit: string | null;
+  on_skins: boolean;
+  vessel_ids: Uuid[];
+  vessels: string[];
+  since: string;
+};
+
+export async function fermentLots(): Promise<FermentLot[]> {
+  const { data, error } = await kernel()
+    .from("ferment_lot")
+    .select("node_id,name,quantity,unit,on_skins,vessel_ids,vessels,since")
+    .order("on_skins", { ascending: false })
+    .order("since", { ascending: false });
+  if (error) throw new KernelError(error);
+  return (data ?? []) as FermentLot[];
+}
+
+// One variable at one moment: a reading or something done.
+export type SeriesRow = {
+  node_id: Uuid;
+  lot: string;
+  vessel_id: Uuid | null;
+  vessel: string | null;
+  at: string;
+  variable: string;
+  label: string;
+  kind: "reading" | "action";
+  value_num: number | null;
+  value_text: string | null;
+  unit: string | null;
+  note: string | null;
+  source_id: Uuid;
+  entered_late: boolean;
+};
+
+export async function lotSeries(nodeId: Uuid): Promise<SeriesRow[]> {
+  const { data, error } = await kernel()
+    .from("lot_series")
+    .select(
+      "node_id,lot,vessel_id,vessel,at,variable,label,kind,value_num,value_text,unit,note,source_id,entered_late",
+    )
+    .eq("node_id", nodeId)
+    .order("at");
+  if (error) throw new KernelError(error);
+  return ((data ?? []) as SeriesRow[]).map((r) => ({
+    ...r,
+    value_num: r.value_num === null ? null : Number(r.value_num),
+  }));
+}
+
+// A sample from one fermenter and what it read, by kind. Blank values are
+// skipped by the kernel rather than here.
+export async function recordReading(args: {
+  vesselId: Uuid;
+  readings: Record<string, string>;
+  at?: string | null;
+  note?: string | null;
+}): Promise<{
+  event_id: Uuid;
+  vessel: string;
+  lot: string;
+  node_id: Uuid;
+  readings: number;
+}> {
+  const { data, error } = await kernel().rpc("record_reading", {
+    p_vessel_id: args.vesselId,
+    p_readings: args.readings,
+    p_at: args.at ?? null,
+    p_note: args.note ?? null,
+  });
+  if (error) throw new KernelError(error);
+  return data as {
+    event_id: Uuid;
+    vessel: string;
+    lot: string;
+    node_id: Uuid;
+    readings: number;
+  };
 }
 
 // --- press -----------------------------------------------------------------

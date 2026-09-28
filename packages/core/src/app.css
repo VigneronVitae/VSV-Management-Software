@@ -2979,3 +2979,104 @@ body.practising {
   border-width: 2px;
   font-weight: 600;
 }
+
+/* ---------------------------------------------------------------------------
+   The ferment log (0158). One small chart a variable on one shared time line,
+   the actions as ticks under them. Colours come from the tokens, so every skin
+   and both themes draw it.
+   --------------------------------------------------------------------------- */
+
+.ferment-entry {
+  padding: 1rem;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 0.75rem;
+}
+
+.ferment-boxes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.75rem;
+}
+
+.ferment-ticks,
+.ferment-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1.25rem;
+}
+
+.ferment-figure {
+  margin: 0;
+  display: grid;
+  gap: 0.2rem;
+}
+
+.ferment-caption {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.85rem;
+}
+
+.ferment-title {
+  font-weight: 600;
+}
+
+.ferment-values {
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.ferment-chart,
+.ferment-actions {
+  width: 100%;
+  height: auto;
+  display: block;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 0.5rem;
+}
+
+.ferment-grid {
+  stroke: var(--rule);
+  stroke-width: 1;
+}
+
+.ferment-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.ferment-dot {
+  fill: var(--accent);
+  stroke: var(--surface);
+  stroke-width: 1.5;
+}
+
+.ferment-tick {
+  stroke: var(--ink-soft);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+/* Entered after the fact: hollow, so a batch typed in at six is visible as
+   such without being hidden. */
+.ferment-dot.ferment-late {
+  fill: var(--surface);
+  stroke: var(--accent);
+}
+
+.ferment-tick.ferment-late {
+  stroke-dasharray: 2 2;
+}
+
+.ferment-axis {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: var(--ink-faint);
+}

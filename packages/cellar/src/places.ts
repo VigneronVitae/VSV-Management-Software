@@ -61,6 +61,8 @@ export type Place =
   | { at: "fruit" }
   // 0146. Harvest weights so far, grouped, and the Excel download.
   | { at: "weights" }
+  // 0158. Brix and cap work over time, and the Excel download.
+  | { at: "ferment" }
   | { at: "vineyards" }
   // One vineyard. A vineyard used to be a heading on the list and nothing else,
   // which meant a vineyard with no blocks in it yet was a dead end: nothing to
@@ -133,6 +135,7 @@ const WITHOUT_ID = new Set([
   "vineyards",
   "fruit",
   "weights",
+  "ferment",
   "day",
   "paper",
   "makers",

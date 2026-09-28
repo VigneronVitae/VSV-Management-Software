@@ -606,6 +606,20 @@ record_paper:guard:7	record_paper	guard	if p_due_on is not null and p_on_date is
 record_paper:raise:6	record_paper	raise	raise exception 'that is due on % and dated %, so it was due before it was written', p_due_on, p_on_date;	raise notice 'that is due on % and dated %, so it was due before it was written', p_due_on, p_on_date;	1
 record_paper:guard:8	record_paper	guard	if not exists (select 1 from money_paper where id = p_id) then	if false then	1
 record_paper:guard:9	record_paper	guard	elsif p_photo_path is not null then	elsif false then	1
+record_reading:guard:1	record_reading	guard	if not is_facility_user() then	if false then	1
+record_reading:raise:1	record_reading	raise	raise exception 'readings are taken by people who work here'	raise notice 'readings are taken by people who work here'	1
+record_reading:guard:2	record_reading	guard	if p_readings is null or jsonb_typeof(p_readings) <> 'object' then	if false then	1
+record_reading:raise:2	record_reading	raise	raise exception 'say what was read, by kind: {"brix": 22.4}';	raise notice 'say what was read, by kind: {"brix": 22.4}';	1
+record_reading:guard:3	record_reading	guard	if vname is null then	if false then	1
+record_reading:raise:3	record_reading	raise	raise exception 'there is no vessel with that id to take a reading from';	raise notice 'there is no vessel with that id to take a reading from';	1
+record_reading:guard:4	record_reading	guard	if lot is null then	if false then	1
+record_reading:raise:4	record_reading	raise	raise exception '% held nothing then, so a reading from it is a reading of nothing', vname;	raise notice '% held nothing then, so a reading from it is a reading of nothing', vname;	1
+record_reading:guard:5	record_reading	guard	if kt.id is null then	if false then	1
+record_reading:raise:5	record_reading	raise	raise exception 'there is no kind of reading called %', k;	raise notice 'there is no kind of reading called %', k;	1
+record_reading:guard:6	record_reading	guard	if kt.attributes ->> 'value_type' = 'number' and said !~ '^-?[0-9]+([.][0-9]+)?$' then	if false then	1
+record_reading:raise:6	record_reading	raise	raise exception '% is a number, and "%" is not one', kt.label, said;	raise notice '% is a number, and "%" is not one', kt.label, said;	1
+record_reading:guard:7	record_reading	guard	if n = 0 then	if false then	1
+record_reading:raise:7	record_reading	raise	raise exception 'every box was blank, so nothing was read';	raise notice 'every box was blank, so nothing was read';	1
 record_vessel_note:guard:1	record_vessel_note	guard	if op is null then	if false then	1
 record_vessel_note:raise:1	record_vessel_note	raise	raise exception 'there is no operation called %', p_operation;	raise notice 'there is no operation called %', p_operation;	1
 record_work:guard:1	record_work	guard	if not is_facility_user() then	if false then	1

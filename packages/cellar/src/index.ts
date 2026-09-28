@@ -14,6 +14,7 @@
 //              supabase/migrations/0150_off_the_skins.sql,
 //              supabase/migrations/0152_who_may_do_what.sql,
 //              supabase/migrations/0153_a_bin_can_change_parts.sql,
+//              supabase/migrations/0158_a_ferment_is_variables.sql,
 //             packages/core/src/index.ts]
 // Depended on by: [apps/web/src/index.ts]
 // ---------------------------------------------------------------------------

@@ -5,7 +5,8 @@
 //              supabase/migrations/0151_a_cut_counts_once.sql,
 //              supabase/migrations/0152_who_may_do_what.sql,
 //              supabase/migrations/0153_a_bin_can_change_parts.sql,
-//              supabase/migrations/0154_a_fermenter_shows_its_fruit.sql]
+//              supabase/migrations/0154_a_fermenter_shows_its_fruit.sql,
+//              supabase/migrations/0158_a_ferment_is_variables.sql]
 // Depended on by: [docs/status-ledger.md]
 // ---------------------------------------------------------------------------
 //
@@ -523,6 +524,33 @@ await step(
     return `${out.lots.map((l) => `${l.name} ${l.lbs} lb`).join("; ")}, ${out.bins_emptied} bins free`;
   },
 );
+
+// 0158. "I want them all saved as variables that can be modeled in whichever
+// way." A Brix from one fermenter and a punchdown, the way the ferment log's
+// Save button records them, read back as rows of the series. Now rather than
+// earlier: the fermenter was filled a moment ago, and a reading from before
+// that is refused, correctly, as a reading of nothing.
+await step("a Brix and a punchdown on the ferment log", async () => {
+  const lots = await k.fermentLots();
+  const lot = lots.find((l) => l.vessel_ids.includes(fermBins[0] ?? ""));
+  must(lot, "the destemmed lot is not offered as fermenting");
+  const vesselId = fermBins[0] ?? "";
+  await k.recordReading({ vesselId, readings: { brix: "23.4" }, note: "SMOKE" });
+  await k.recordEvent({
+    nodeId: lot?.node_id ?? "",
+    operation: "punchdown",
+    data: { vessel: vesselId },
+  });
+  const series = await k.lotSeries(lot?.node_id ?? "");
+  const brix = series.find((r) => r.variable === "brix");
+  const punch = series.find((r) => r.variable === "punchdown");
+  must(
+    brix?.value_num === 23.4 && brix.unit === "°Bx",
+    `the Brix reads ${JSON.stringify(brix)}`,
+  );
+  must(punch?.vessel_id === vesselId, `the punchdown reads ${JSON.stringify(punch)}`);
+  return `${series.length} rows: ${series.map((r) => r.variable).join(", ")}`;
+});
 
 // 0150. Off the skins: "free run (pumping the juice out before pressing), 2nd
 // free run, press, hard press. All in litres."
