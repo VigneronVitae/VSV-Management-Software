@@ -22,6 +22,7 @@ import {
   type BarrelColour,
   type BinFruit,
   type Block,
+  type BlockYield,
   barrelColours,
   barrelWarning,
   bindCode,
@@ -29,6 +30,7 @@ import {
   binInventory,
   binsToReturn,
   blocks,
+  blockYield,
   cancelPick,
   captionPhoto,
   claimAccount,
@@ -11125,7 +11127,7 @@ function siteForm(
 // A weight that is still missing bins says so on its own row. A total that is
 // short and does not say it is short is the A13 shape, and during picking most
 // of the latest day is exactly that.
-type WeightView = "variety" | "day" | "day_variety" | "picks";
+type WeightView = "variety" | "day" | "day_variety" | "block" | "picks";
 
 function lbsText(n: number | null): string {
   return n === null
@@ -11161,10 +11163,11 @@ function weightsScreen(): HTMLElement {
   let grouping = (pref("weights_view", "variety") as WeightView) || "variety";
 
   async function draw(): Promise<void> {
-    const [byVariety, byDay, byDayVariety, picks] = await Promise.all([
+    const [byVariety, byDay, byDayVariety, byBlock, picks] = await Promise.all([
       harvestWeights("variety", vintage),
       harvestWeights("day", vintage),
       harvestWeights("day_variety", vintage),
+      blockYield(vintage),
       fruitLog(),
     ]);
     const mine = picks.filter((p) => p.vintage === vintage);
@@ -11219,6 +11222,7 @@ function weightsScreen(): HTMLElement {
           ["variety", "By variety"],
           ["day", "By day"],
           ["day_variety", "Day and variety"],
+          ["block", "By block"],
           ["picks", "Every pick"],
         ] as const
       ).map(([k, label]) =>
@@ -11396,6 +11400,50 @@ function weightsScreen(): HTMLElement {
         rowsOf,
         ["Every day", "", ...footTotals],
       );
+    } else if (grouping === "block") {
+      // 0159. Tons an acre and pounds a vine, against the bearing vines the
+      // vineyard map counts. A block the map does not cover says so rather
+      // than showing a blank that reads like nothing was there.
+      const perAcre = (r: BlockYield) =>
+        r.bearing_acres === null
+          ? "no map"
+          : r.tons_per_acre === null
+            ? ""
+            : r.tons_per_acre.toFixed(2);
+      shown = table(
+        [
+          { label: "Block" },
+          { label: "Variety" },
+          { label: "Bins", num: true },
+          { label: "Tons", num: true },
+          { label: "Bearing acres", num: true },
+          { label: "Tons an acre", num: true },
+          { label: "Lbs a vine", num: true },
+        ],
+        byBlock.map((r) => ({
+          cells: [
+            [r.vineyard, r.block].filter(Boolean).join(", "),
+            r.variety ?? "",
+            r.bins_unweighed > 0
+              ? `${r.bins} (${r.bins_unweighed} to weigh)`
+              : String(r.bins),
+            tonsText(r.tons),
+            r.bearing_acres === null ? "" : r.bearing_acres.toFixed(2),
+            perAcre(r),
+            r.lbs_per_vine === null ? "" : r.lbs_per_vine.toFixed(2),
+          ],
+          short: r.bins_unweighed > 0,
+        })),
+        [
+          "Every block",
+          "",
+          String(byBlock.reduce((a, r) => a + r.bins, 0)),
+          (totalLbs / 2000).toFixed(2),
+          "",
+          "",
+          "",
+        ],
+      );
     } else {
       const sorted = [...mine].sort((a, b) => a.picked.localeCompare(b.picked));
       shown = table(
@@ -11501,6 +11549,37 @@ function weightsScreen(): HTMLElement {
             ]),
           },
           {
+            name: "By block",
+            columns: [
+              { header: "Vineyard", width: 24 },
+              { header: "Block", width: 22 },
+              { header: "Variety", width: 20 },
+              { header: "Picks", width: 8 },
+              { header: "Bins", width: 8 },
+              { header: "Bins not weighed", width: 16 },
+              { header: "Lbs", width: 12 },
+              { header: "Tons", width: 10 },
+              { header: "Bearing vines", width: 14 },
+              { header: "Bearing acres", width: 14 },
+              { header: "Tons an acre", width: 13 },
+              { header: "Lbs a vine", width: 11 },
+            ],
+            rows: byBlock.map((r) => [
+              r.vineyard ?? "",
+              r.block,
+              r.variety ?? "",
+              r.picks,
+              r.bins,
+              r.bins_unweighed,
+              r.lbs,
+              r.tons,
+              r.bearing_vines,
+              r.bearing_acres,
+              r.tons_per_acre,
+              r.lbs_per_vine,
+            ]),
+          },
+          {
             name: "Every pick",
             columns: [
               { header: "Picked", width: 13 },
@@ -11549,7 +11628,7 @@ function weightsScreen(): HTMLElement {
         excel,
         el("p", {
           class: "field-hint",
-          text: "One file, four sheets: by variety, by day, day and variety, and every pick. Dates are real dates in Excel.",
+          text: "One file, five sheets: by variety, by day, day and variety, by block with tons an acre, and every pick. Dates are real dates in Excel.",
         }),
         button("Back", () => goBack(), "quiet"),
       ),

@@ -115,7 +115,8 @@
 --              supabase/migrations/0155_doctor.sql,
 --              supabase/migrations/0156_a_blend_stays_whole.sql,
 --              supabase/migrations/0157_an_export_says_what_it_is.sql,
---              supabase/migrations/0158_a_ferment_is_variables.sql]
+--              supabase/migrations/0158_a_ferment_is_variables.sql,
+--              supabase/migrations/0159_what_an_acre_gave.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh, scripts/rpc-args.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -13972,6 +13973,64 @@ begin
   perform test_ok('a word for a number, an unknown kind, all blanks and an empty fermenter are each refused in a sentence');
   reset role;
   perform test_act_as(null);
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 0159. What an acre gave.
+-- ---------------------------------------------------------------------------
+do $$
+declare
+  hand   uuid := '00000000-0000-0000-0000-00000000fb01';
+  vy     uuid := gen_random_uuid();
+  mapped uuid := gen_random_uuid();
+  bare   uuid := gen_random_uuid();
+  vrow   uuid := gen_random_uuid();
+  sp     uuid;
+  pick1  uuid := gen_random_uuid();
+  pick2  uuid := gen_random_uuid();
+  bin1   uuid := gen_random_uuid();
+  bin2   uuid := gen_random_uuid();
+  pn     uuid := term_id('variety', 'pinot_noir');
+  r      record;
+begin
+  insert into auth.users (id) values (hand) on conflict do nothing;
+  insert into vineyard (id, name) values (vy, 'ASSERT 0159 vineyard');
+  insert into block (id, vineyard_id, name, vines_per_acre) values
+    (mapped, vy, 'ASSERT 0159 mapped', 1000),
+    (bare,   vy, 'ASSERT 0159 no map', null);
+  insert into vine_row (id, block_id, number) values (vrow, mapped, 1);
+  -- Ten bearing vines and two young scions, which carry no fruit yet.
+  for i in 1..12 loop
+    sp := gen_random_uuid();
+    insert into plant_space (id, row_id, number) values (sp, vrow, i);
+    insert into plant_change (space_id, state_id, variety_id, at)
+    values (sp, term_id('plant_state', case when i <= 10 then 'vine' else 'young_scion' end),
+            pn, '2020-01-01');
+  end loop;
+
+  insert into node (id, stage, name, quantity, unit, vintage, block_id, variety_id) values
+    (pick1, 'bin', 'ASSERT 0159 mapped pick', 1000, 'lbs', 2026, mapped, pn),
+    (pick2, 'bin', 'ASSERT 0159 bare pick',   500,  'lbs', 2026, bare,   pn);
+  insert into vessel (id, name, type_id) values
+    (bin1, 'ASSERT 0159 bin 1', term_id('vessel_type', 'picking_bin')),
+    (bin2, 'ASSERT 0159 bin 2', term_id('vessel_type', 'picking_bin'));
+  insert into placement (node_id, vessel_id) values (pick1, bin1), (pick2, bin2);
+  insert into event (operation_id, subject_type, subject_id, by_user, data)
+  values (term_id('operation', 'weigh'), 'node', pick1, hand,
+          jsonb_build_object('bins', jsonb_build_array(bin1), 'net_lbs', 1000));
+
+  select * into r from block_yield where block = 'ASSERT 0159 mapped';
+  -- 1000 lbs is half a ton; ten bearing vines at 1000 an acre are 0.01 acres.
+  if r.bearing_vines <> 10 or r.bearing_acres <> 0.010 or r.tons_per_acre <> 50.00
+     or r.lbs_per_vine <> 100.00 or r.bins_unweighed <> 0 then
+    raise exception 'FAIL: the mapped block reads % vines, % acres, % t/ac, % lb/vine, % unweighed',
+      r.bearing_vines, r.bearing_acres, r.tons_per_acre, r.lbs_per_vine, r.bins_unweighed;
+  end if;
+  select * into r from block_yield where block = 'ASSERT 0159 no map';
+  if r.bearing_acres is not null or r.tons_per_acre is not null or r.tons <> 0.250 or r.bins_unweighed <> 1 then
+    raise exception 'FAIL: a block with no map guessed an acreage, or lost its tons or its unweighed bin';
+  end if;
+  perform test_ok('a block gives tons an acre and pounds a vine over its bearing vines only, and a block with no map says it has none');
 end $$;
 
 do $$ begin raise notice '--- all assertions passed'; end $$;

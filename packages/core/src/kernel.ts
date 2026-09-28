@@ -1649,6 +1649,48 @@ export async function harvestWeights(
   return (data ?? []) as unknown as WeightTotal[];
 }
 
+// 0159. What each block gave: tons an acre and pounds a vine, from the picks
+// and the vineyard map. Null acreage is a block the map does not cover.
+export type BlockYield = {
+  vintage: number;
+  vineyard: string | null;
+  block: string;
+  variety: string | null;
+  picks: number;
+  bins: number;
+  bins_unweighed: number;
+  lbs: number | null;
+  tons: number | null;
+  bearing_vines: number | null;
+  bearing_acres: number | null;
+  tons_per_acre: number | null;
+  lbs_per_vine: number | null;
+  first_picked: string | null;
+  last_picked: string | null;
+};
+
+export async function blockYield(vintage: number): Promise<BlockYield[]> {
+  const { data, error } = await kernel()
+    .from("block_yield")
+    .select(
+      "vintage,vineyard,block,variety,picks,bins,bins_unweighed,lbs,tons,bearing_vines,bearing_acres,tons_per_acre,lbs_per_vine,first_picked,last_picked",
+    )
+    .eq("vintage", vintage)
+    .order("vineyard")
+    .order("block")
+    .order("variety");
+  if (error) throw new KernelError(error);
+  const num = (v: unknown) => (v === null || v === undefined ? null : Number(v));
+  return ((data ?? []) as BlockYield[]).map((r) => ({
+    ...r,
+    lbs: num(r.lbs),
+    tons: num(r.tons),
+    bearing_acres: num(r.bearing_acres),
+    tons_per_acre: num(r.tons_per_acre),
+    lbs_per_vine: num(r.lbs_per_vine),
+  }));
+}
+
 export async function openPicks(): Promise<Pick[]> {
   // `open_pick` rather than `node` with three filters. What counts as an open
   // pick is a rule, and it was in this function until 0057 asked what relation
