@@ -10983,8 +10983,10 @@ function exportScreen(): HTMLElement {
             : []),
           banner(
             "This is a copy of the record, not a restore point. There is no way " +
-              "to load it back in yet, so keep it beside the real backup rather " +
-              "than instead of it. Sorry S-54.",
+              "to load it back in yet, and the photographs are not in it, only " +
+              "their names. The real backup is taken every night on the winery's " +
+              "computer, photographs included; keep this beside it, not instead " +
+              "of it. The file says the same at the top. Sorries S-54 and S-68.",
             "note",
           ),
           el("h2", { class: "section-head", text: "What is in it" }),

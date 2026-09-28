@@ -1,72 +1,100 @@
 -- ---------------------------------------------------------------------------
 -- Type: migration
--- Purpose: "Drawing a cut into a tank that already holds wine is a blend, not an
---           error. The tank keeps its lot, the lot grows, and every pressing
---           that fed it is in its lineage."
--- Depends on: [supabase/migrations/0014_rack.sql,
---              supabase/migrations/0052_press_as_a_process.sql,
---              supabase/migrations/0101_a_note_can_be_about_a_screen.sql]
--- Depended on by: [tests/schema_assertions.sql,
---                  supabase/migrations/0103_racking_keeps_what_was_already_there.sql,
---                  supabase/migrations/0156_a_blend_stays_whole.sql]
--- Axioms enforced: T0-2 (what a lot is made of is its lineage, recomputed from
---                  the volumes that went in, never a second stored fact), A13
---                  (a refusal in the middle of a press is a number nobody
---                  records)
--- Open sorries: S-90
+-- Purpose: "A cut drawn into a tank that already holds wine leaves that wine's
+--           sources adding to one whole, whoever drew it."
+-- Depends on: [supabase/migrations/0102_a_tank_takes_more_than_one_pressing.sql,
+--              supabase/migrations/0155_doctor.sql]
+-- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql]
+-- Axioms enforced: A13. The rescale failed silently for a cellar hand; it now
+--                  happens, or the draw is refused.
+-- Open sorries: none new.
 -- ---------------------------------------------------------------------------
---
--- The winemaker, mid press: *"It's not letting me press a second lot into the
--- second tank as the first because 'Skinny Boy already holds wine'. The big tank
--- will hold multiple pressings of the same variety."*
---
--- And asked what the tank should hold afterwards: *"Well like this is all
--- Pearlstaad Chardonnay so it should carry the lineage from the pressings but
--- also be just Pearlstaad chardonnay."*
---
--- **The rule was already written down, in the other place it applies.** `0014`
--- says it plainly: "a destination that already holds a different lot is not an
--- error, it is a blend, and the lot already in there is another parent". Racking
--- has worked that way since the beginning. `draw_cut` never learned it and
--- refused instead, which is a refusal arriving while juice is running.
---
--- **It is wider than the case he hit.** The same refusal stops free run and hard
--- press going into one tank, because each cut is its own lot. Two loads into one
--- tank and two cuts into one tank are the same act and were both blocked.
---
--- **The tank keeps its lot rather than minting a new one.** This is the one
--- place this migration departs from rack, and it is his answer: rack mints a
--- blend node because racking is a deliberate act of combining two wines, while
--- filling a tank over a day of pressing is one wine being made. Minting per draw
--- would give four generations of lot for one tank of Chardonnay, each with a
--- name nobody chose.
---
--- So the lineage carries it. The resident lot gains the cut as a parent, and
--- every parent's share is rescaled by what it actually contributed, which is the
--- same arithmetic `0014` uses: volume in over volume total. Composition stays
--- derived, so what the tank is made of follows from the draws rather than from
--- anybody writing it down.
---
--- **A different variety is said, not refused.** His ruling, the same one he gave
--- for barrels: somebody can pour before telling the app, and a refusal at the
--- press loses the number. It comes back on the result so the screen can say it
--- while the person is still standing there.
 
-begin;
+-- Found by `doctor` on its first run against practice: two pressings off
+-- skins whose tanks' lots came from their sources in shares adding to 1.18 and
+-- 1.2. scripts/smoke.ts draws the free run and the 2nd free run into one tank,
+-- as a cellar hand. `draw_cut` (0102) blends the second into the first: it
+-- scales the shares already there by what was held over what is now there and
+-- adds the arriving cut's. The scaling is an UPDATE on `lineage`, and only an
+-- administrator may update lineage, so for anybody else row level security
+-- filtered it to nothing without a word. The new share was inserted, the old
+-- ones stayed whole, and every composition read from that tank would have
+-- over-counted the first cut. The cellar's own pressings were all drawn by an
+-- administrator, and doctor finds nothing wrong there.
+--
+-- **Not `draw_cut` as its definer.** That would fix this and also let it see,
+-- and blend into, a client's lot the person drawing may not see. So the one
+-- step that needs the right moves into a helper that has it and does only
+-- that: scale a lot's shares for what arrived and add the arriving cut's. It
+-- keeps a whole a whole whatever it is called with, it refuses anybody who
+-- does not work here, and it refuses anything but a press cut going into a lot
+-- that is in a vessel.
 
-create or replace function draw_cut(
-  p_load_id    uuid,
-  p_vessel_id  uuid,
-  p_volume_l   numeric,
-  p_cut_id     uuid default null,
-  p_name       text default null,
-  p_note       text default null
+create or replace function blend_cut_shares(
+  p_resident uuid,
+  p_cut      uuid,
+  p_volume_l numeric,
+  p_held_l   numeric
 )
-returns jsonb
+returns void
 language plpgsql
-set search_path to 'public', 'pg_temp'
+security definer
+set search_path = public, pg_temp
 as $$
 declare
+  new_total numeric;
+begin
+  if not is_facility_user() then
+    raise exception 'only somebody who works here draws juice into a tank'
+      using errcode = 'insufficient_privilege';
+  end if;
+  if p_volume_l is null or p_volume_l <= 0 or p_held_l is null or p_held_l < 0 then
+    raise exception 'a blend needs what arrived and what was already there';
+  end if;
+  if not exists (select 1 from lineage l join node ld on ld.id = l.parent_id
+                  where l.child_id = p_cut and ld.stage = 'load') then
+    raise exception 'only a cut off a press blends into a tank this way';
+  end if;
+  if not exists (select 1 from placement where node_id = p_resident and to_at is null) then
+    raise exception 'that lot is not in a vessel, so nothing can be drawn into it';
+  end if;
+
+  new_total := p_held_l + p_volume_l;
+
+  -- Every parent's share is what it contributed over what is now there. The
+  -- existing parents kept `held` between them, so they keep held/new_total of
+  -- what they had, and the arriving cut takes the rest. Clamped the way 0014
+  -- clamps, because the constraint is fraction > 0.
+  update lineage
+     set fraction = greatest(least(fraction * p_held_l / new_total, 1), 0.00001)
+   where child_id = p_resident;
+
+  -- The cut may already be a parent, from an earlier draw into this same tank,
+  -- in which case its share grows rather than being written twice.
+  insert into lineage (parent_id, child_id, fraction)
+  values (p_cut, p_resident, greatest(least(p_volume_l / new_total, 1), 0.00001))
+  on conflict (parent_id, child_id) do update
+    set fraction = least(lineage.fraction + excluded.fraction, 1);
+end $$;
+
+comment on function blend_cut_shares is
+  'Rescales a tank''s lot''s shares when a press cut is drawn into it. Called by draw_cut; '
+  'runs as its definer because only administrators may change lineage directly.';
+
+revoke all on function blend_cut_shares(uuid, uuid, numeric, numeric) from public;
+grant execute on function blend_cut_shares(uuid, uuid, numeric, numeric) to authenticated;
+
+insert into capability_exemption (fn, reason) values
+  ('blend_cut_shares', 'The share arithmetic inside draw_cut, which needs a right a cellar hand does not have. Not a verb of its own.')
+on conflict (fn) do update set reason = excluded.reason;
+
+CREATE OR REPLACE FUNCTION public.draw_cut(p_load_id uuid, p_vessel_id uuid, p_volume_l numeric, p_cut_id uuid DEFAULT NULL::uuid, p_name text DEFAULT NULL::text, p_note text DEFAULT NULL::text, p_at timestamp with time zone DEFAULT NULL::timestamp with time zone)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare
+  was_at text := current_setting('vsv.occurred_at', true);
   load_n    node%rowtype;
   cut_id    uuid;
   cut_n     node%rowtype;
@@ -85,6 +113,7 @@ declare
   cut_var   uuid;
   blended   boolean := false;
 begin
+  perform happening_at(p_at);
   select * into load_n from node where id = p_load_id;
   if load_n.id is null then
     raise exception 'no load with id %', p_load_id;
@@ -194,22 +223,12 @@ begin
       held      := coalesce(held, 0);
       new_total := held + p_volume_l;
 
-      -- Every parent's share is what it contributed over what is now there. The
-      -- existing parents kept `held` between them, so they keep held/new_total
-      -- of what they had, and the arriving cut takes the rest. Clamped the way
-      -- 0014 clamps, because the constraint is fraction > 0.
-      update lineage
-         set fraction = greatest(
-               least(fraction * held / nullif(new_total, 0), 1), 0.00001)
-       where child_id = resident;
-
-      -- The cut may already be a parent, from an earlier draw into this same
-      -- tank, in which case its share grows rather than being written twice.
-      insert into lineage (parent_id, child_id, fraction)
-      values (cut_id, resident,
-              greatest(least(p_volume_l / nullif(new_total, 0), 1), 0.00001))
-      on conflict (parent_id, child_id) do update
-        set fraction = least(lineage.fraction + excluded.fraction, 1);
+      -- 0156. The shares, through a helper that may change lineage, which a
+      -- cellar hand may not. Written here directly, as 0102 did, the rescale
+      -- of the parents already there was filtered out by row level security
+      -- for anybody but an administrator, silently, and the tank's lot came
+      -- from its sources in shares adding to more than one.
+      perform blend_cut_shares(resident, cut_id, p_volume_l, held);
 
       update placement set volume_l = new_total
        where vessel_id = p_vessel_id and to_at is null;
@@ -239,11 +258,13 @@ begin
       -- What is in the tank now, so over_capacity below reads the tank rather
       -- than this one cut.
       in_vessel := new_total;
+
     end if;
   end if;
 
   select capacity_l into cap from vessel where id = p_vessel_id;
 
+  perform resume_at(was_at);
   return jsonb_build_object(
     'cut_id',     cut_id,
     'event_id',   ev_id,
@@ -256,18 +277,16 @@ begin
     'blended_into', case when blended then res_name else null end,
     'variety_differs',
       blended and cut_var is not null and res_var is not null and cut_var <> res_var,
-    'load_total', (select coalesce(sum(n.quantity), 0) from node n
-                     join lineage l on l.child_id = n.id and l.parent_id = p_load_id)
+    -- 0151. What this press has given is what was drawn off it. Summing its
+    -- cuts' quantities counted a cut twice once it had gone into a tank
+    -- holding another of the same press's cuts.
+    'load_total', (select coalesce(sum((d.data ->> 'volume_l')::numeric), 0)
+                     from event d
+                    where d.operation_id = term_id('operation', 'press')
+                      and d.data ->> 'action' = 'drawn'
+                      and d.data ->> 'load' = p_load_id::text
+                      and not exists (select 1 from event s
+                                       where (s.data ->> 'supersedes')::uuid = d.id))
   );
 end;
-$$;
-
-revoke all on function draw_cut(uuid, uuid, numeric, uuid, text, text) from public;
-grant execute on function draw_cut(uuid, uuid, numeric, uuid, text, text) to authenticated;
-
-comment on function draw_cut(uuid, uuid, numeric, uuid, text, text) is
-  'Draws a cut off a press into a vessel. A vessel that already holds another '
-  'lot is a blend, not a refusal: the lot there keeps its identity and gains '
-  'the cut as a parent. See 0052 and 0102.';
-
-commit;
+$function$;

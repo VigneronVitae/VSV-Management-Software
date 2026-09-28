@@ -6,7 +6,8 @@
 -- Depends on: [supabase/migrations/0146_harvest_weights.sql,
 --              supabase/migrations/0143_a_record_can_say_when.sql]
 -- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql,
---                  packages/cellar/src/index.ts, scripts/smoke.ts]
+--                  packages/cellar/src/index.ts, scripts/smoke.ts,
+--                  supabase/migrations/0155_doctor.sql]
 -- Axioms enforced: T0-5. The bin's placement changes pick, which is the one
 --                  column a cellar hand has always been allowed to change on
 --                  it, so the move is written as an event on both picks, with

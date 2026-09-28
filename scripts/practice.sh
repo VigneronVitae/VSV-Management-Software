@@ -172,6 +172,29 @@ seed)
     die "practice has the rows and the app cannot read them: the grants did not come across"
   fi
 
+  # **And the photographs.** They are files in the storage container and rows
+  # in `storage.objects`, and the copy above is `public` only in effect: the
+  # dump's storage rows collide with practice's own and are refused as a
+  # block. So practice held every scale reading and none of the pictures
+  # taken since the last time it happened to line up. Found by `doctor` on its
+  # first run against practice, six photographs named and not there. Rows
+  # first, idempotently, then the files, the way scripts/db-backup.sh takes
+  # them.
+  CELLAR_STORAGE="${VSV_STORAGE_CONTAINER:-supabase_storage_vsv-management-software}"
+  PRACTICE_STORAGE="supabase_storage_vsv-sandbox"
+  photos_tmp="$(mktemp -d)"
+  if docker exec "$CELLAR_DB_CONTAINER" pg_dump -U postgres -d postgres --data-only --inserts \
+         -t storage.buckets -t storage.objects 2>/dev/null \
+       | sed -E 's/^(INSERT INTO .*);$/\1 ON CONFLICT DO NOTHING;/' \
+       | docker exec -i "$PRACTICE_DB_CONTAINER" psql -U postgres -q -d postgres >/dev/null 2>&1 \
+     && docker cp "$CELLAR_STORAGE:/mnt/." "$photos_tmp/" 2>/dev/null \
+     && docker cp "$photos_tmp/." "$PRACTICE_STORAGE:/mnt/" 2>/dev/null; then
+    say "Photographs copied too."
+  else
+    say "The photographs did not all come across; bun run doctor -- --practice will name the missing ones."
+  fi
+  rm -rf "$photos_tmp"
+
   say "Practice now has $rows tables copied from the cellar, readable by the app."
   say
   say "Its recorded migration history is now the cellar's too, which is correct:"

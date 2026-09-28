@@ -1,7 +1,7 @@
 ---
 Type: reference
 Purpose: "Orients a new reader: what this repository is, where its build truth lives, how to run it locally, and what to read next."
-Depends on: [CLAUDE.md, packages/cellar/docs/spec.md, docs/status-ledger.md, docs/sorry-ledger.md, docs/compost-ledger.md, docs/session-reports/index.md]
+Depends on: [CLAUDE.md, packages/cellar/docs/spec.md, docs/status-ledger.md, docs/sorry-ledger.md, docs/compost-ledger.md, docs/session-reports/index.md, scripts/doctor.sh]
 Depended on by: [docs/first-run.md, scripts/undefined-sites.sh]
 ---
 
@@ -51,8 +51,9 @@ to the same containers as the first, and running it there resets the first
 clone's database too. Use `bun run db:up` unless you mean it.
 
 `bun run typecheck` and `bun run lint` check the client. `bun run doctor` is the
-data-integrity check and currently exits non-zero on purpose, because it is not
-implemented; see sorry S-4.
+data-integrity check: it asks the cellar what looks wrong, prints each finding as
+a sentence, and exits 1 if anything is wrong rather than merely worth a look.
+`-- --practice` asks the practice stack instead. See sorry S-4.
 
 The Supabase CLI is a prerequisite and is not a dependency of this repository. If
 `supabase` is not on your path, `npx supabase@2.34.3 <command>` works for all of

@@ -5,7 +5,8 @@
 --           is the whole of the risk."
 -- Depends on: [supabase/migrations/0002_derived_and_rls.sql,
 --              supabase/migrations/0036_bins_on_loan.sql]
--- Depended on by: [tests/schema_assertions.sql, supabase/migrations/0038_cancel_a_pick.sql]
+-- Depended on by: [tests/schema_assertions.sql, supabase/migrations/0038_cancel_a_pick.sql,
+--                  supabase/migrations/0157_an_export_says_what_it_is.sql]
 -- Axioms enforced: T0-3 (an export is a copy of the record, and carries the
 --                  provenance of every row rather than flattening it)
 -- Open sorries: S-54 (an export is not a restore, and looks like one)

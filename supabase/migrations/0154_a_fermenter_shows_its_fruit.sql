@@ -4,7 +4,8 @@
 --           way a picking bin always has, instead of drawing empty."
 -- Depends on: [supabase/migrations/0100_a_jacket_is_on_a_machine.sql,
 --              supabase/migrations/0148_reds_go_into_fermenters.sql]
--- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql, scripts/smoke.ts]
+-- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql, scripts/smoke.ts,
+--                  supabase/migrations/0155_doctor.sql]
 -- Axioms enforced: T0-2. A fermenter's pounds are the lot's pounds divided the
 --                  way Sort and destem divided them when it filled the
 --                  fermenters, computed on read; nothing new is stored.

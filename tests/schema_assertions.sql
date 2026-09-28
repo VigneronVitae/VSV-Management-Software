@@ -111,7 +111,10 @@
 --              supabase/migrations/0151_a_cut_counts_once.sql,
 --              supabase/migrations/0152_who_may_do_what.sql,
 --              supabase/migrations/0153_a_bin_can_change_parts.sql,
---              supabase/migrations/0154_a_fermenter_shows_its_fruit.sql]
+--              supabase/migrations/0154_a_fermenter_shows_its_fruit.sql,
+--              supabase/migrations/0155_doctor.sql,
+--              supabase/migrations/0156_a_blend_stays_whole.sql,
+--              supabase/migrations/0157_an_export_says_what_it_is.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh, scripts/rpc-args.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -4467,7 +4470,12 @@ declare
     -- the table owner is subject to neither. `may()` answers false rather than
     -- null for an unknown setting, because `exists` is never null. Exercised in
     -- the 0152 block below, as the role a phone is, with a setting off and on.
-    'permission_door'
+    'permission_door',
+    -- `blend_cut_shares` returns void and refuses by raising. Its nulls all
+    -- refuse: a null volume or a null held is caught by `is null` before any
+    -- comparison, and the two `exists` guards are never null. Exercised in the
+    -- 0156 block below, as a cellar hand, with a lot that is not a press cut.
+    'blend_cut_shares'
   ];
 begin
   for r in
@@ -13734,6 +13742,159 @@ begin
     raise exception 'FAIL: a fermenter said to be 80%% full does not say so';
   end if;
   perform test_ok('a fermenter shows its share of the lot''s pounds and how full it was said to be');
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 0155. doctor.
+-- ---------------------------------------------------------------------------
+--
+-- S-4: event.subject_id cannot be a foreign key, so this is what notices.
+do $$
+declare
+  hand    uuid := '00000000-0000-0000-0000-00000000fb01';
+  nowhere uuid := gen_random_uuid();
+  half    uuid := gen_random_uuid();
+  src     uuid := gen_random_uuid();
+  whole   uuid := gen_random_uuid();
+  pick_a  uuid := gen_random_uuid();
+  pick_b  uuid := gen_random_uuid();
+  bin1    uuid := gen_random_uuid();
+  bin2    uuid := gen_random_uuid();
+begin
+  insert into auth.users (id) values (hand) on conflict do nothing;
+  insert into app_user (id, name, role) values (hand, 'ASSERT 0152 cellar hand', 'cellar')
+    on conflict (id) do nothing;
+
+  -- Not "nothing is wrong" here: the suite leaves deliberately odd rows behind
+  -- it all the way down. Clean from empty is scripts/green.sh's to check.
+  -- A note about a vessel that is not there, and a blend that is half a whole.
+  insert into event (operation_id, subject_type, subject_id, by_user, data)
+  values (term_id('operation', 'vessel_note'), 'vessel', nowhere, hand, '{"note": "ASSERT 0155"}');
+  insert into node (id, stage, name, quantity, unit, vintage) values
+    (half, 'load', 'ASSERT 0155 half a blend', 100, 'L', 2026),
+    (src,  'load', 'ASSERT 0155 its only source', 100, 'L', 2026);
+  insert into lineage (parent_id, child_id, fraction) values (src, half, 0.5);
+
+  if not exists (select 1 from doctor() d
+                  where d.severity = 'wrong' and d.check_name = 'points at nothing'
+                    and d.subject_id = nowhere) then
+    raise exception 'FAIL: doctor does not notice an event about a vessel that does not exist';
+  end if;
+  if not exists (select 1 from doctor() d
+                  where d.severity = 'wrong' and d.check_name = 'shares do not add to one'
+                    and d.subject_id = half) then
+    raise exception 'FAIL: doctor does not notice a blend whose shares are half a whole';
+  end if;
+  -- And a blend that is a whole is left alone.
+  insert into node (id, stage, name, quantity, unit, vintage) values
+    (whole, 'load', 'ASSERT 0155 a whole blend', 100, 'L', 2026);
+  insert into lineage (parent_id, child_id, fraction) values (src, whole, 0.6), (half, whole, 0.4);
+  if exists (select 1 from doctor() d
+              where d.check_name = 'shares do not add to one' and d.subject_id = whole) then
+    raise exception 'FAIL: doctor complains about a blend that adds up';
+  end if;
+  perform test_ok('doctor finds an orphaned subject and a broken blend, and leaves a sound blend alone (S-4)');
+
+  -- Found by the doctor: moving every bin out of a pick left it open and in
+  -- no vessel. It is closed now, and the move says so.
+  insert into node (id, stage, name, quantity, unit, vintage) values
+    (pick_a, 'bin', 'ASSERT 0155 all the wrong part', null, 'lbs', 2026),
+    (pick_b, 'bin', 'ASSERT 0155 the right part', null, 'lbs', 2026);
+  insert into vessel (id, name, type_id) values
+    (bin1, 'ASSERT 0155 bin', term_id('vessel_type', 'picking_bin'));
+  insert into placement (node_id, vessel_id) values (pick_a, bin1);
+  insert into vessel (id, name, type_id) values
+    (bin2, 'ASSERT 0155 other bin', term_id('vessel_type', 'picking_bin'));
+  insert into placement (node_id, vessel_id) values (pick_b, bin2);
+
+  perform test_act_as(hand);
+  set local role authenticated;
+  perform move_bins_to_pick(array[bin1], pick_b);
+  reset role;
+  perform test_act_as(null);
+  if (select status from node where id = pick_a) <> 'closed' then
+    raise exception 'FAIL: a pick every bin moved out of is still open';
+  end if;
+  if exists (select 1 from doctor() d where d.subject_id = pick_a) then
+    raise exception 'FAIL: doctor still has something to say about an emptied pick';
+  end if;
+  perform test_ok('a pick every bin moves out of is closed, and the doctor is satisfied');
+
+  perform test_act_as(hand);
+  set local role authenticated;
+  begin
+    perform * from doctor();
+    raise exception 'FAIL: a cellar hand asked the doctor';
+  exception when others then
+    if sqlerrm not like '%only an administrator asks the doctor%' then raise; end if;
+  end;
+  reset role;
+  perform test_act_as(null);
+  perform test_ok('only an administrator asks the doctor');
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 0156. A blend stays whole, whoever draws it.
+-- ---------------------------------------------------------------------------
+--
+-- Found by doctor: the free run and the 2nd free run drawn into one tank by a
+-- cellar hand came out at 1.18 of a whole.
+do $$
+declare
+  hand  uuid := '00000000-0000-0000-0000-00000000fb01';
+  load1 uuid := gen_random_uuid();
+  tank  uuid := gen_random_uuid();
+  out1  jsonb;
+  total numeric;
+begin
+  insert into auth.users (id) values (hand) on conflict do nothing;
+  insert into app_user (id, name, role) values (hand, 'ASSERT 0152 cellar hand', 'cellar')
+    on conflict (id) do nothing;
+  insert into node (id, stage, name, quantity, unit, vintage)
+  values (load1, 'load', 'ASSERT 0156 pressing', 500, 'lbs', 2026);
+  insert into vessel (id, name, type_id, capacity_l)
+  values (tank, 'ASSERT 0156 tank', term_id('vessel_type', 'tank'), 1000);
+
+  perform test_act_as(hand);
+  set local role authenticated;
+  out1 := draw_cut(load1, tank, 180, term_id('press_cut', 'free_run'));
+  perform draw_cut(load1, tank, 40, term_id('press_cut', 'second_free_run'));
+  begin
+    perform blend_cut_shares((out1 ->> 'cut_id')::uuid, load1, 10, 10);
+    raise exception 'FAIL: a lot that is not a press cut was blended as one';
+  exception when others then
+    if sqlerrm not like '%only a cut off a press%' then raise; end if;
+  end;
+  reset role;
+  perform test_act_as(null);
+
+  select sum(fraction) into total from lineage where child_id = (out1 ->> 'cut_id')::uuid;
+  if abs(total - 1) > 0.001 then
+    raise exception 'FAIL: two cuts drawn into one tank by a cellar hand come to % of a whole', total;
+  end if;
+  if (select fraction from lineage
+       where child_id = (out1 ->> 'cut_id')::uuid and parent_id = load1) not between 0.817 and 0.819 then
+    raise exception 'FAIL: the first cut kept % of the tank, not 180 of 220', 
+      (select fraction from lineage where child_id = (out1 ->> 'cut_id')::uuid and parent_id = load1);
+  end if;
+  if exists (select 1 from doctor() d where d.subject_id = (out1 ->> 'cut_id')::uuid) then
+    raise exception 'FAIL: doctor still has something to say about the blended tank';
+  end if;
+  perform test_ok('a cellar hand drawing a second cut into a tank leaves it one whole, 180 and 40 of 220');
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 0157. An export says what it is.
+-- ---------------------------------------------------------------------------
+do $$
+declare
+  about text;
+begin
+  about := export_cellar() ->> 'about';
+  if about is null or about not like '%not a restore point%' or about not like '%photographs%' then
+    raise exception 'FAIL: the export does not say it is not a restore point and has no photographs: %', about;
+  end if;
+  perform test_ok('the export file says in words that it is a record, not a restore point, and has no photographs (S-54, S-68)');
 end $$;
 
 do $$ begin raise notice '--- all assertions passed'; end $$;

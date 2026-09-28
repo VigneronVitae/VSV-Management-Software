@@ -43,6 +43,11 @@ and created by hand. *Load-bearing:* four of six protocols contain at least one.
 The cost of one events table across four subject types. A bad subject id fails
 silently. *Resolves when:* `doctor` checks it and is run on a schedule. Until then,
 every event count is unvalidated.
+*Narrowed 2026-09-27.* `doctor` checks it (`0155`, `bun run doctor`), for events, notes,
+attachments, attachment marks and tasks against every registered kind of subject, and
+scripts/green.sh runs it against a database built from empty and a copy of the cellar on
+every gate. What is left is the schedule: nothing runs it against the live cellar on its
+own. The nightly watchdog is the obvious place and was not touched tonight.
 
 **S-5. Vessel `type` granularity unverified.**
 `barrel` may need to distinguish puncheon from barrique from the acacia pieces.
@@ -621,6 +626,12 @@ screen offers the inline create and a cellar hand gets a legible refusal rather 
 form. *Resolves when:* the winemaker says whether a cellar hand may add a block, which is one
 sentence and changes one policy. *Load-bearing:* yes, during harvest, and the workaround is
 that he is reachable by phone.
+*Discharged 2026-09-27.* He answered with a better question: "maybe that should be a setting
+the admins can toggle, like in general what permissions are admin vs cellar." `0152` made it
+one. "Edit the vineyard" under Who may do what lets a cellar hand add a block, and the pick
+screen's inline create goes through the same policy; with it off, the refusal is a sentence
+naming where to change it. Whether it is on is now the administrator's decision on the day,
+not a gap.
 
 
 **S-53. A grower is a string in two places and nothing joins them.**
@@ -653,6 +664,12 @@ carries a header saying in words what it can and cannot do, which is an hour and
 protection. *Load-bearing:* yes, and immediately. The export exists because the desktop is a
 single point of failure, and the moment it is needed is the moment nobody can ask a question
 about it.
+*Narrowed 2026-09-27.* The hour is done: `0157` puts an `about` at the top of the file saying
+it is a record and not a restore point, and naming the nightly backup as the restore point,
+which since this week carries the photographs and has been restored table for table against
+the cellar (scripts/db-restore.sh). What is left is the importer, and it is no longer what
+stands between a lost desktop and the harvest. *Load-bearing:* no, now that the file says
+what it is and the backup is real.
 
 
 **S-55. Acres and elevation are numbers with no unit recorded beside them.**
@@ -830,6 +847,9 @@ after the server burns down", it does not mean that yet. *Resolves when:* the ex
 the json plus the bucket, or the button says plainly that photographs are not in it. The second is
 an hour and is honest; the first is right. *Load-bearing:* yes the day somebody relies on it, and
 the failure is silent until then, which is the worst shape.
+*Narrowed 2026-09-27.* The screen and the file (`0157`) both say the photographs are not in
+it, so the failure is no longer silent, and the nightly backup does carry them. What is left
+is the right fix, the export as a zip of the rows and the bucket. *Load-bearing:* no.
 
 **S-69. The rule that a lot says its vintage is enforced for new rows and not for old ones.**
 `0049` requires every lot to carry either a year or an explicit non-vintage, closing the third
@@ -1662,3 +1682,14 @@ sentence that says so.
 reading to be of that bin alone or a rule for dividing one that is not.
 *Load-bearing:* no. The scale screen offers the move before the weight, which is where the
 label on the bin is read.
+
+**S-150. Whether a punchdown on one fermenter makes that fermenter a different lot.**
+`record_event` forks a lot when an operation names only some of the vessels holding it: a
+treatment on part of a wine makes that part a different wine, which is right for an addition.
+A punchdown or a pumpover on one of two fermenters holding one lot would fork it the same way,
+and nobody has said whether that is right for cap management. The ferment log (`0158`) records
+those actions against the whole lot with the fermenter noted in the data, so nothing forks and
+the fermenter is still known. *Resolves when:* the winemaker says whether cap work on one
+fermenter separates it, and the ferment log either forks or keeps doing what it does.
+*Load-bearing:* no while each red lot is in one fermenter, which MB01's Pommard is; yes the
+first time a lot is split across two and they are worked differently.

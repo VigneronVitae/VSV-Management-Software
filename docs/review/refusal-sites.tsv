@@ -143,6 +143,14 @@ bind_vessel_code:guard:1	bind_vessel_code	guard	if found then	if false then	1
 bind_vessel_code:guard:2	bind_vessel_code	guard	if existing.vessel_id = p_vessel_id then	if false then	1
 bind_vessel_code:guard:3	bind_vessel_code	guard	if not is_admin() then	if false then	1
 bind_vessel_code:raise:1	bind_vessel_code	raise	raise exception	raise notice	1
+blend_cut_shares:guard:1	blend_cut_shares	guard	if not is_facility_user() then	if false then	1
+blend_cut_shares:raise:1	blend_cut_shares	raise	raise exception 'only somebody who works here draws juice into a tank'	raise notice 'only somebody who works here draws juice into a tank'	1
+blend_cut_shares:guard:2	blend_cut_shares	guard	if p_volume_l is null or p_volume_l <= 0 or p_held_l is null or p_held_l < 0 then	if false then	1
+blend_cut_shares:raise:2	blend_cut_shares	raise	raise exception 'a blend needs what arrived and what was already there';	raise notice 'a blend needs what arrived and what was already there';	1
+blend_cut_shares:head:1	blend_cut_shares	head	if not exists (select 1 from lineage l join node ld on ld.id = l.parent_id\n                  where l.child_id = p_cut and ld.stage = 'load') then	if false then	1
+blend_cut_shares:raise:3	blend_cut_shares	raise	raise exception 'only a cut off a press blends into a tank this way';	raise notice 'only a cut off a press blends into a tank this way';	1
+blend_cut_shares:guard:3	blend_cut_shares	guard	if not exists (select 1 from placement where node_id = p_resident and to_at is null) then	if false then	1
+blend_cut_shares:raise:4	blend_cut_shares	raise	raise exception 'that lot is not in a vessel, so nothing can be drawn into it';	raise notice 'that lot is not in a vessel, so nothing can be drawn into it';	1
 cancel_pick:guard:1	cancel_pick	guard	if n.id is null then	if false then	1
 cancel_pick:raise:1	cancel_pick	raise	raise exception 'no pick with id %', p_node_id;	raise notice 'no pick with id %', p_node_id;	1
 cancel_pick:guard:2	cancel_pick	guard	if n.stage <> 'bin' then	if false then	1
@@ -211,6 +219,10 @@ declare_barrel_colour:raise:3	declare_barrel_colour	raise	raise exception	raise 
 declare_barrel_colour:guard:4	declare_barrel_colour	guard	if want = 'white' then	if false then	1
 declare_barrel_colour:guard:5	declare_barrel_colour	guard	if now_ = 'red' then	if false then	1
 declare_barrel_colour:raise:4	declare_barrel_colour	raise	raise exception	raise notice	4
+doctor:guard:1	doctor	guard	if auth.uid() is not null and not is_admin() then	if false then	1
+doctor:raise:1	doctor	raise	raise exception 'only an administrator asks the doctor'	raise notice 'only an administrator asks the doctor'	1
+doctor:head:1	doctor	head	if not exists (\n      select 1 from information_schema.columns c\n       where c.table_schema = 'public' and c.table_name = r.relation\n         and c.column_name = 'id' and c.data_type = 'uuid'\n    ) then	if false then	1
+doctor:guard:2	doctor	guard	if to_regclass('storage.objects') is not null then	if false then	1
 draw_cut:guard:1	draw_cut	guard	if load_n.id is null then	if false then	1
 draw_cut:raise:1	draw_cut	raise	raise exception 'no load with id %', p_load_id;	raise notice 'no load with id %', p_load_id;	1
 draw_cut:guard:2	draw_cut	guard	if load_n.stage <> 'load' then	if false then	1
@@ -365,6 +377,7 @@ move_bins_to_pick:raise:10	move_bins_to_pick	raise	raise exception '% and % are 
 move_bins_to_pick:guard:11	move_bins_to_pick	guard	if weighed is not null then	if false then	1
 move_bins_to_pick:raise:11	move_bins_to_pick	raise	raise exception	raise notice	11
 move_bins_to_pick:silent:1	move_bins_to_pick	silent	where vessel_id = any (p_vessel_ids) and to_at is null and node_id = source.id;	where vessel_id = any (p_vessel_ids) and true;	1
+move_bins_to_pick:guard:12	move_bins_to_pick	guard	if emptied then	if false then	1
 move_place:guard:1	move_place	guard	if not is_facility_user() then	if false then	1
 move_place:raise:1	move_place	raise	raise exception 'places are moved by people who work here';	raise notice 'places are moved by people who work here';	1
 move_place:guard:2	move_place	guard	if not exists (select 1 from location where id = p_location_id) then	if false then	1

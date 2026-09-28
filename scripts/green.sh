@@ -8,7 +8,7 @@
 #           end green and this is what says whether it did."
 # Depends on: [scripts/verify.sh, tests/shim.sql, tests/schema_assertions.sql,
 #              scripts/guards.sh, scripts/status.sh, scripts/rpc-args.sh,
-#              scripts/screens.sh]
+#              scripts/screens.sh, scripts/doctor.sh]
 # Depended on by: [docs/session-reports/modularization-progress.md, docs/status-ledger.md]
 # ---------------------------------------------------------------------------
 #
@@ -246,6 +246,34 @@ if [ "$scratch_n" -gt 0 ] && [ "$copy_n" -gt 0 ]; then
   fi
 elif [ "$scratch_ok" = yes ] && [ "$copy_ok" = yes ]; then
   bad "one of the two assertion runs reported zero, so the reconciliation could not be done"
+fi
+
+# ---------------------------------------------------------------------------
+step "5b. the doctor, from empty and against the cellar copy"
+# ---------------------------------------------------------------------------
+# S-4. From empty there should be nothing to say at all, not even a look; in
+# the cellar copy, nothing wrong. Both suites end in rollback, so neither run
+# above has left anything behind for this to find.
+if [ "$scratch_ok" = yes ] && [ -z "$broke" ]; then
+  if bash scripts/doctor.sh --container "$CONTAINER" --database "$SCRATCH" > $LOGS/doctor-scratch.log 2>&1 \
+     && [ "$(grep -c . $LOGS/doctor-scratch.log)" -eq 1 ]; then
+    ok "doctor: nothing to say about a database built from empty"
+  else
+    bad "doctor has something to say about a database built from empty:"
+    head -5 $LOGS/doctor-scratch.log | sed 's/^/      /'
+  fi
+else
+  bad "doctor against scratch skipped: the migrations did not apply"
+fi
+if [ "$copy_ok" = yes ]; then
+  if bash scripts/doctor.sh --container "$CONTAINER" --database "$COPY" > $LOGS/doctor-copy.log 2>&1; then
+    ok "doctor: $(tail -1 $LOGS/doctor-copy.log | sed 's/^doctor: //; s/ in [^;]*//')"
+  else
+    bad "doctor finds something wrong in the cellar copy:"
+    grep -E '^WRONG|could not' $LOGS/doctor-copy.log | head -5 | sed 's/^/      /'
+  fi
+else
+  bad "doctor against the cellar copy skipped: there is no usable copy"
 fi
 
 # ---------------------------------------------------------------------------
