@@ -3213,3 +3213,82 @@ body.practising {
 .ferment-unit {
   width: auto;
 }
+
+/* ---------------------------------------------------------------------------
+   What sources say (0164). A claim is drawn with its source beside it, always:
+   the value, the source's own words as a quotation, then who said it.
+   --------------------------------------------------------------------------- */
+
+.claims {
+  display: grid;
+  gap: 1rem;
+}
+
+.claim-group {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.claim-kind {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.claim-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.claim {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.75rem 0.9rem;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 0.6rem;
+}
+
+.claim-confirmed {
+  border-color: var(--good);
+}
+
+.claim-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.claim-value {
+  font-weight: 600;
+}
+
+.claim-statement {
+  margin: 0;
+}
+
+.claim-quote {
+  margin: 0;
+  padding-left: 0.75rem;
+  border-left: 3px solid var(--rule);
+  color: var(--ink-soft);
+  font-style: italic;
+}
+
+.claim-source {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--ink-faint);
+  overflow-wrap: anywhere;
+}
+
+.tag-warn {
+  color: var(--warn);
+  border-color: var(--warn);
+}

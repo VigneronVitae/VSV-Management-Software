@@ -43,6 +43,12 @@ param(
   # a minute; three is room for a bad day.
   [int] $EngineWaitSeconds = 180,
 
+  # How long Docker Desktop may sit open with no engine before it counts as
+  # stuck rather than starting. Its window stayed up with the engine dead from
+  # 04:54 on 2026-09-30 for twenty-nine hours, and every pass of this watchdog
+  # read the open window as "already starting" and left it alone.
+  [int] $StuckAfterMinutes = 10,
+
   # Where the record goes. Outside the repository, because it is about this
   # machine rather than about the app.
   [string] $LogPath = "$env:LOCALAPPDATA\vsv-watchdog\watchdog.log",
@@ -306,9 +312,20 @@ if (-not $engineUp) {
   $running = Get-Process -Name "Docker Desktop" -ErrorAction SilentlyContinue
   if ($running) {
     # Already on its way. Starting a second copy is how one bad morning becomes
-    # twelve Docker Desktops.
-    Write-Log "wait     Docker Desktop is already starting, leaving it alone"
-    exit 0
+    # twelve Docker Desktops. But only for so long: a window that has been
+    # open for longer than any start takes, with no engine behind it, is a
+    # Docker Desktop that has stopped trying, and waiting on it is how the
+    # cellar sat dark for a day and a half.
+    $oldest = ($running | Sort-Object StartTime | Select-Object -First 1).StartTime
+    $minutes = if ($oldest) { ((Get-Date) - $oldest).TotalMinutes } else { 0 }
+    if ($minutes -lt $StuckAfterMinutes) {
+      Write-Log "wait     Docker Desktop is already starting, leaving it alone"
+      exit 0
+    }
+    Write-Log ("stuck    Docker Desktop has been open {0:N0} minutes with no engine; quitting it to start again" -f $minutes)
+    Get-Process -Name "Docker Desktop", "com.docker.backend", "com.docker.build" -ErrorAction SilentlyContinue |
+      Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 5
   }
 
   $exe = "C:\Program Files\Docker\Docker\Docker Desktop.exe"

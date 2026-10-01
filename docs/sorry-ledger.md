@@ -1701,3 +1701,14 @@ first time a lot is split across two and they are worked differently.
 lots). Punchdown and pumpovers don't create new lots." `0162` makes it the kernel's rule
 rather than the screen's habit: an operation marked as cap work keeps the vessels it names in
 its data and never forks, whoever calls `record_event`.
+
+**S-151. A block's acreage assumes one spacing, and Southeast has two.**
+`block_acreage` divides a block's plants by one `vines_per_acre`. The 2020 block map, loaded as
+claims by `0164`, says Southeast's rows 1 to 10 are 8 x 5 and rows 11 to 43 are 7 x 4.5, so the
+counted 1.86 acres is high against the map's stated 1.56: two thirds of the block is planted
+denser than the divisor assumes. Every other block is one spacing and agrees with its map to
+within a few hundredths. *Resolves when:* acreage is counted per row from that row's spacing,
+which `row_fact` (`0165`) can now give, once the spacing claims are confirmed rather than
+inferred; an inferred claim should not move a number the vineyard reports.
+*Load-bearing:* no for the cellar; yes for tons an acre on Southeast (`0159`), which reads low by
+the same proportion.

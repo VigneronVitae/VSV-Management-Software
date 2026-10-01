@@ -120,7 +120,10 @@
 --              supabase/migrations/0160_block_composition_works_again.sql,
 --              supabase/migrations/0161_what_each_wine_is_made_of.sql,
 --              supabase/migrations/0162_a_temperature_and_the_cap.sql,
---              supabase/migrations/0163_a_bin_tipped_or_thrown_away.sql]
+--              supabase/migrations/0163_a_bin_tipped_or_thrown_away.sql,
+--              supabase/migrations/0164_a_claim_says_where_it_came_from.sql,
+--              supabase/migrations/0165_what_each_row_is_said_to_be.sql,
+--              supabase/migrations/0166_a_confirmation_happens.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh, scripts/rpc-args.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -2723,7 +2726,10 @@ begin
   -- table for cellar hands when a setting allows it, every one `may(key)`.
   -- None of the sixteen is blanket true; each is off until an administrator
   -- turns it on.
-  want := '168';
+  -- 172 since 0164 added four on `source` and `note_source`: a read by the
+  -- facility and an administrators' write on each. None reads blanket true;
+  -- where a claim came from is the winery's business, like the claim.
+  want := '172';
   if have <> want then
     raise exception
       'FAIL: there are % policies in public and this suite was written against %. If that is deliberate, update this number, and judge the new policy in the disposition list below if it reads or writes blanket true', have, want;
@@ -3194,7 +3200,11 @@ begin
   -- and to its bank line) and three primary keys.
   -- c=79 f=140 p=64 u=28 before 0152: one primary key on `permission`, and one
   -- key naming who last changed a setting.
-  want := 'c=79 f=141 p=65 u=28';
+  -- c=79 f=141 p=65 u=28 before 0164: `source` and `note_source`. Five checks,
+  -- a source's kind, its title, a web source's address, a claim's quotation
+  -- and its row range; three foreign keys, who added a source and the note
+  -- and source a claim ties together; two primary keys.
+  want := 'c=84 f=144 p=67 u=28';
   if have <> want then
     raise exception
       E'FAIL: the constraint inventory changed.\nnow:  %\nwas:  %\nIf that is deliberate, update this line in the same commit that changed the schema.', have, want;
@@ -3543,7 +3553,11 @@ begin
   -- two vocabulary keys, matching `line_attestation`.
   -- a=81 c=34 n=9 r=16 before 0152: `permission.changed_by` is a plain
   -- no-action, like every other author key.
-  want := 'a=82 c=34 n=9 r=16';
+  -- a=82 c=34 n=9 r=16 before 0164: `source.created_by` is a plain reference
+  -- like every other author column, and a claim restricts the deletion of both
+  -- its note and its source, because a claim whose source has gone is the
+  -- thing the whole design exists to prevent.
+  want := 'a=83 c=34 n=9 r=18';
   if have <> want then
     raise exception
       E'FAIL: foreign key delete behaviour changed.\nnow:  %\nwas:  %\na is no action, c is cascade, n is set null, r is restrict.', have, want;
@@ -3587,6 +3601,10 @@ begin
        || 'import_step.import_step_capability_fkey, '
        || 'lineage.lineage_child_id_fkey, lineage.lineage_parent_id_fkey, '
        || 'note.note_about_event_fkey, note.note_subject_type_fkey, '
+       -- 0164. A claim and its source, two more guarding evidence: a claim
+       -- whose note or source could be deleted from under it would be a claim
+       -- with no lineage, which is what the table exists to prevent.
+       || 'note_source.note_source_note_id_fkey, note_source.note_source_source_id_fkey, '
        || 'placement.placement_node_id_fkey, placement.placement_vessel_id_fkey, '
        || 'procedure.procedure_subject_type_is_registered, '
        || 'supply_movement.supply_movement_caused_by_fkey, '
@@ -4225,6 +4243,10 @@ begin
           cand_arr := array[quote_literal('00000000-0000-0000-0000-000000000000')];
         elsif col.atttypid in ('timestamptz'::regtype,'timestamp'::regtype,'date'::regtype) then
           cand_arr := array['now()'];
+        elsif col.atttypid = 'int4range'::regtype then
+          -- 0164, the first range column. A range that holds rows, and the
+          -- empty range, which is the value its check exists to refuse.
+          cand_arr := array[quote_literal('[1,3)'), quote_literal('empty')];
         else
           cand_arr := null;
         end if;
@@ -14297,6 +14319,108 @@ begin
       (select round(lbs) from fruit_going_in(array[b4, b6]));
   end if;
   perform test_ok('tipped and thrown-away bins stop counting, the pick keeps its weight, the totals say picked and kept, and what is left to press is what is left');
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 0164 to 0166. A claim says where it came from; each row says what it is
+-- said to be; a confirmation happens.
+-- ---------------------------------------------------------------------------
+do $$
+declare
+  hand   uuid := '00000000-0000-0000-0000-00000000fb01';
+  admin_u uuid;
+  vy     uuid := gen_random_uuid();
+  blk    uuid := gen_random_uuid();
+  r1     uuid := gen_random_uuid();
+  r2     uuid := gen_random_uuid();
+  r3     uuid := gen_random_uuid();
+  src    jsonb := '{"kind": "document", "title": "ASSERT 0164 block map", "published_on": "2020-05-14"}';
+  web    jsonb := '{"kind": "web", "title": "ASSERT 0164 directory", "url": "https://example.test/assert-0164"}';
+  c1     jsonb;
+  c2     jsonb;
+  wide   jsonb;
+  f      record;
+begin
+  select id into admin_u from app_user where role = 'admin' limit 1;
+  insert into auth.users (id) values (hand) on conflict do nothing;
+  insert into app_user (id, name, role) values (hand, 'ASSERT 0152 cellar hand', 'cellar')
+    on conflict (id) do nothing;
+  insert into vineyard (id, name) values (vy, 'ASSERT 0164 vineyard');
+  insert into block (id, vineyard_id, name) values (blk, vy, 'ASSERT 0164 block');
+  insert into vine_row (id, block_id, number) values (r1, blk, 1), (r2, blk, 2), (r3, blk, 3);
+
+  -- The loader's path: nobody signed in, so the database's owner records.
+  wide := record_claim('block', blk, 'planted_year', '1980', null, src,
+                       'Mixed/Own 8 x 5 spacing PY 1980', 'block 3', null);
+  c1 := record_claim('block', blk, 'planted_year', '1990', 'Rows 1 and 2 replanted.', src,
+                     '1-2: PY 1990', 'block 3', int4range(1, 2, '[]'));
+  c2 := record_claim('vineyard', vy, 'acres_planted', '104', null, web, 'Acres Planted: 104');
+  perform record_claim('vineyard', vy, 'acres_planted', '70', null, web, 'The 70-acre vineyard');
+
+  if (select count(distinct source_id) from sourced_claim where vineyard_id = vy) <> 2 then
+    raise exception 'FAIL: one source read twice became two sources';
+  end if;
+  if exists (select 1 from sourced_claim where vineyard_id = vy and provenance <> 'inferred') then
+    raise exception 'FAIL: a claim was born anything but inferred';
+  end if;
+  if (select count(*) from sourced_claim where vineyard_id = vy and kind = 'acres_planted') <> 2 then
+    raise exception 'FAIL: two sources that disagree did not both stay';
+  end if;
+  perform test_ok('a claim is born inferred with its source and words, a source is read once, and two that disagree both stay');
+
+  -- Which claim a row takes: these rows over the whole block.
+  select * into f from row_fact where row_id = r1 and kind = 'planted_year';
+  if f.value <> '1990' or f.confirmed then
+    raise exception 'FAIL: row 1 reads %, not the claim about its own rows', f.value;
+  end if;
+  select * into f from row_fact where row_id = r3 and kind = 'planted_year';
+  if f.value <> '1980' then
+    raise exception 'FAIL: row 3 reads %, not the claim about the whole block', f.value;
+  end if;
+
+  -- A cellar hand confirms the block-wide claim, written by nobody. Before
+  -- 0166 this answered "confirmed" and changed nothing.
+  perform test_act_as(hand);
+  set local role authenticated;
+  perform confirm_note((wide ->> 'note_id')::uuid);
+  begin
+    perform record_claim('block', blk, 'rootstock', '3309', null, src, '3309');
+    raise exception 'FAIL: a cellar hand recorded a claim';
+  exception when others then
+    if sqlerrm not like '%only an administrator records%' then raise; end if;
+  end;
+  reset role;
+  perform test_act_as(null);
+
+  if (select provenance from note where id = (wide ->> 'note_id')::uuid) <> 'confirmed' then
+    raise exception 'FAIL: confirming a note somebody else wrote left it as it was';
+  end if;
+  -- Confirmed now outranks narrower but unconfirmed.
+  select * into f from row_fact where row_id = r1 and kind = 'planted_year';
+  if f.value <> '1980' or not f.confirmed then
+    raise exception 'FAIL: row 1 reads % after the block-wide claim was confirmed', f.value;
+  end if;
+  perform test_ok('each row takes confirmed over inferred and its own rows over the whole block, and confirming another''s note confirms it');
+
+  begin
+    perform record_claim('block', blk, 'planted_year', 'the eighties', null, src, 'PY 1980s');
+    raise exception 'FAIL: words were taken as a year';
+  exception when others then
+    if sqlerrm not like '%is a number%' then raise; end if;
+  end;
+  begin
+    perform record_claim('block', blk, 'rootstock', '3309', null, src, '  ');
+    raise exception 'FAIL: a claim was recorded without the source''s words';
+  exception when others then
+    if sqlerrm not like '%quote the source%' then raise; end if;
+  end;
+  begin
+    perform record_claim('block', blk, 'rootstock', '3309', null, '{"kind": "web", "title": "no address"}'::jsonb, '3309');
+    raise exception 'FAIL: a web source with no address was taken';
+  exception when others then
+    if sqlerrm not like '%source_web_has_an_address%' then raise; end if;
+  end;
+  perform test_ok('words for a number, a claim with no quotation, and a web page with no address are each refused');
 end $$;
 
 do $$ begin raise notice '--- all assertions passed'; end $$;

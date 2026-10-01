@@ -3,7 +3,7 @@ Type: document
 Purpose: "Says what this directory holds and why none of it is committed."
 Depends on: [scripts/data-surface.py]
 Depended on by: [scripts/import-machine.py, scripts/import-qfx.py, scripts/import-vinemap.py, scripts/seed-terms.py,
-                 scripts/import-ledger.py]
+                 scripts/import-ledger.py, scripts/import-claims.py]
 ---
 
 # Not in git
@@ -17,6 +17,7 @@ The repository says what can exist. This directory says what does.
 Put the real files here and load them with the importers in `scripts/`:
 
     scripts/import-vinemap.py   data/vineyard/vine-map.tsv
+    scripts/import-claims.py    data/vineyard/claims.json
     scripts/import-machine.py   data/machines/<machine>/
     scripts/import-qfx.py       data/books/<download>.qfx
 

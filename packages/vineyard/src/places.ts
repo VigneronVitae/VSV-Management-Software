@@ -10,10 +10,13 @@
 export type VinePlace =
   | { at: "blocks" }
   | { at: "block"; id: string }
-  | { at: "row"; id: string };
+  | { at: "row"; id: string }
+  // 0164. One vineyard and what sources say about it. Every vineyard, including
+  // the ones this winery buys from and has no map of.
+  | { at: "vineyard"; id: string };
 
 // The keys, as a plain list, because a shell script reads this file.
-export const PLACES = new Set(["blocks", "block", "row"]);
+export const PLACES = new Set(["blocks", "block", "row", "vineyard"]);
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -25,7 +28,7 @@ export function decode(hash: string): VinePlace {
   const parts = hash.replace(/^#\/?/, "").split("/").filter(Boolean);
   const [at, id] = parts;
   if (at === "blocks" && parts.length === 1) return { at: "blocks" };
-  if ((at === "block" || at === "row") && id && UUID.test(id)) {
+  if ((at === "block" || at === "row" || at === "vineyard") && id && UUID.test(id)) {
     return { at, id } as VinePlace;
   }
   return { at: "blocks" };

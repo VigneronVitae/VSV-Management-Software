@@ -4,7 +4,7 @@
 //           frozen header, dates as dates and numbers as numbers, without a
 //           library."
 // Depends on: []
-// Depended on by: [packages/cellar/src/index.ts]
+// Depended on by: [packages/core/src/index.ts, packages/vineyard/src/export.ts]
 // ---------------------------------------------------------------------------
 //
 // "It can export into at least an excel." CSV would open in Excel, and it
@@ -25,13 +25,90 @@
 
 // `{ at }` is an instant, written as the winery's wall-clock date and time,
 // because a ferment log is read by the hour and a model wants the time too.
-export type Cell = string | number | null | { date: string } | { at: string };
+// `{ fill }` is a coloured cell, which is how a vine map says what stands in a
+// plant space: the vineyard's own spreadsheet carried the variety in the cell
+// colour, and an export of it that dropped the colours would be a list of
+// letters. `ink` is the text colour on top, white or black.
+export type Cell =
+  | string
+  | number
+  | null
+  | { date: string }
+  | { at: string }
+  | { text: string | number; fill: string; ink?: string };
 
 export type Sheet = {
   name: string;
   columns: { header: string; width?: number }[];
   rows: Cell[][];
+  // A sheet that is a picture rather than a table: no frozen header, so the
+  // map can be scrolled as one thing.
+  freeze?: boolean;
 };
+
+// The coloured cells' styles, numbered after the four fixed ones. Built per
+// workbook from the colours actually used, because a fixed list would be a
+// palette this file has no business knowing.
+type Styles = { xml: string; of: (fill: string, ink: string) => number };
+
+function hex(c: string): string {
+  const h = c.replace(/^#/, "");
+  const full =
+    h.length === 3
+      ? h
+          .split("")
+          .map((x) => x + x)
+          .join("")
+      : h;
+  return /^[0-9a-fA-F]{6}$/.test(full) ? full.toUpperCase() : "FFFFFF";
+}
+
+function buildStyles(sheets: Sheet[]): Styles {
+  const fills: string[] = [];
+  const combos: string[] = [];
+  for (const s of sheets)
+    for (const row of s.rows)
+      for (const v of row)
+        if (v !== null && typeof v === "object" && "fill" in v) {
+          const f = hex(v.fill);
+          const k = `${f}|${hex(v.ink ?? "#000000")}`;
+          if (!fills.includes(f)) fills.push(f);
+          if (!combos.includes(k)) combos.push(k);
+        }
+  const fillXml = fills
+    .map(
+      (f) =>
+        `<fill><patternFill patternType="solid"><fgColor rgb="FF${f}"/><bgColor indexed="64"/></patternFill></fill>`,
+    )
+    .join("");
+  const xfs = combos
+    .map((k) => {
+      const [f, ink] = k.split("|");
+      const font = ink === "FFFFFF" ? 2 : 0;
+      return `<xf numFmtId="0" fontId="${font}" fillId="${2 + fills.indexOf(f ?? "")}" borderId="0" xfId="0" applyFill="1" applyFont="1" applyAlignment="1"><alignment horizontal="center"/></xf>`;
+    })
+    .join("");
+  const xml =
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">` +
+    `<fonts count="3"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font><font><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font></fonts>` +
+    `<fills count="${2 + fills.length}"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>${fillXml}</fills>` +
+    `<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>` +
+    `<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>` +
+    // 0 plain, 1 bold header, 2 a date, 3 a date and time (0158), then one per
+    // colour and ink the workbook uses.
+    `<cellXfs count="${4 + combos.length}">` +
+    `<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>` +
+    `<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>` +
+    `<xf numFmtId="14" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>` +
+    `<xf numFmtId="22" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>` +
+    xfs +
+    `</cellXfs></styleSheet>`;
+  return {
+    xml,
+    of: (fill, ink) => 4 + combos.indexOf(`${hex(fill)}|${hex(ink)}`),
+  };
+}
 
 const enc = new TextEncoder();
 
@@ -94,10 +171,16 @@ function serialAt(iso: string): number | null {
   return wall / 86400000 + 25569;
 }
 
-function cellXml(ref: string, v: Cell, header: boolean): string {
+function cellXml(ref: string, v: Cell, header: boolean, styles: Styles): string {
   if (v === null || v === "") return "";
   if (typeof v === "number") {
     return Number.isFinite(v) ? `<c r="${ref}"><v>${v}</v></c>` : "";
+  }
+  if (typeof v === "object" && "fill" in v) {
+    const s = styles.of(v.fill, v.ink ?? "#000000");
+    return typeof v.text === "number"
+      ? `<c r="${ref}" s="${s}"><v>${v.text}</v></c>`
+      : `<c r="${ref}" s="${s}" t="inlineStr"><is><t xml:space="preserve">${esc(v.text)}</t></is></c>`;
   }
   if (typeof v === "object" && "at" in v) {
     const n = serialAt(v.at);
@@ -116,27 +199,35 @@ function cellXml(ref: string, v: Cell, header: boolean): string {
   )}</t></is></c>`;
 }
 
-function sheetXml(sheet: Sheet): string {
-  const cols = sheet.columns
-    .map(
-      (c, i) =>
-        `<col min="${i + 1}" max="${i + 1}" width="${c.width ?? 14}" customWidth="1"/>`,
-    )
-    .join("");
+function sheetXml(sheet: Sheet, styles: Styles): string {
+  // A map has more columns than it names; the ones past the named ones take
+  // the last named width, so a row of plant spaces is a row of equal cells.
+  const widest = Math.max(sheet.columns.length, ...sheet.rows.map((r) => r.length));
+  const lastWidth = sheet.columns[sheet.columns.length - 1]?.width ?? 14;
+  const cols = Array.from(
+    { length: widest },
+    (_, i) =>
+      `<col min="${i + 1}" max="${i + 1}" width="${sheet.columns[i]?.width ?? lastWidth}" customWidth="1"/>`,
+  ).join("");
   const header = `<row r="1">${sheet.columns
-    .map((c, i) => cellXml(`${colName(i)}1`, c.header, true))
+    .map((c, i) => cellXml(`${colName(i)}1`, c.header, true, styles))
     .join("")}</row>`;
   const body = sheet.rows
     .map(
       (row, r) =>
-        `<row r="${r + 2}">${row.map((v, i) => cellXml(`${colName(i)}${r + 2}`, v, false)).join("")}</row>`,
+        `<row r="${r + 2}">${row.map((v, i) => cellXml(`${colName(i)}${r + 2}`, v, false, styles)).join("")}</row>`,
     )
     .join("");
-  // The header row stays on screen as the sheet scrolls.
+  // The header row stays on screen as the sheet scrolls, unless the sheet is a
+  // picture that reads better whole.
+  const pane =
+    sheet.freeze === false
+      ? ""
+      : `<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>`;
   return (
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
     `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">` +
-    `<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>` +
+    pane +
     `<cols>${cols}</cols><sheetData>${header}${body}</sheetData></worksheet>`
   );
 }
@@ -146,22 +237,8 @@ function sheetName(name: string): string {
   return name.replace(/[[\]:*?/\\]/g, " ").slice(0, 31) || "Sheet";
 }
 
-const STYLES =
-  `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
-  `<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">` +
-  `<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>` +
-  `<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>` +
-  `<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>` +
-  `<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>` +
-  // 0 plain, 1 bold header, 2 a date, 3 a date and time (0158).
-  `<cellXfs count="4">` +
-  `<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>` +
-  `<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>` +
-  `<xf numFmtId="14" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>` +
-  `<xf numFmtId="22" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>` +
-  `</cellXfs></styleSheet>`;
-
 export function workbook(sheets: Sheet[]): Blob {
+  const styles = buildStyles(sheets);
   const files: [string, string][] = [
     [
       "[Content_Types].xml",
@@ -211,10 +288,10 @@ export function workbook(sheets: Sheet[]): Blob {
         `<Relationship Id="rId${sheets.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>` +
         `</Relationships>`,
     ],
-    ["xl/styles.xml", STYLES],
+    ["xl/styles.xml", styles.xml],
     ...sheets.map((s, i): [string, string] => [
       `xl/worksheets/sheet${i + 1}.xml`,
-      sheetXml(s),
+      sheetXml(s, styles),
     ]),
   ];
   // `.buffer`, because the typings allow a Uint8Array over shared memory and a

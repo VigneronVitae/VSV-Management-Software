@@ -1584,6 +1584,101 @@ export type PlantSpace = {
   provenance: string | null;
 };
 
+// Every plant space in the vineyard, for the export. In pages, because the
+// API answers at most a thousand rows a request and the vineyard is thirteen
+// and a half thousand spaces; a single request would hand back the first
+// thousand and look complete.
+export async function allPlantSpaces(): Promise<PlantSpace[]> {
+  const page = 1000;
+  const out: PlantSpace[] = [];
+  for (let from = 0; ; from += page) {
+    const { data, error } = await kernel()
+      .from("plant_space_now")
+      .select(
+        "space_id,space_number,row_id,row_number,orientation,block_id,block,vineyard_id,vineyard,as_of,state,state_label,variety_id,variety,clone,note,provenance",
+      )
+      .order("block")
+      .order("row_number")
+      .order("space_number")
+      .range(from, from + page - 1);
+    if (error) throw new KernelError(error);
+    const got = (data ?? []) as PlantSpace[];
+    out.push(...got);
+    if (got.length < page) return out;
+  }
+}
+
+// 0164. What a source says about a vineyard, block or row, with its words.
+export type SourcedClaim = {
+  note_id: Uuid;
+  subject_type: string;
+  subject_id: Uuid;
+  about: string | null;
+  vineyard_id: Uuid | null;
+  kind: string;
+  kind_label: string;
+  unit: string | null;
+  value: string;
+  statement: string;
+  provenance: string;
+  excerpt: string;
+  locator: string | null;
+  row_from: number | null;
+  row_to: number | null;
+  source_id: Uuid;
+  source_kind: "web" | "document";
+  source_title: string;
+  source_url: string | null;
+  publisher: string | null;
+  published_on: string | null;
+  retrieved_at: string;
+};
+
+export async function sourcedClaims(): Promise<SourcedClaim[]> {
+  const { data, error } = await kernel()
+    .from("sourced_claim")
+    .select(
+      "note_id,subject_type,subject_id,about,vineyard_id,kind,kind_label,unit,value,statement,provenance,excerpt,locator,row_from,row_to,source_id,source_kind,source_title,source_url,publisher,published_on,retrieved_at",
+    )
+    .order("about")
+    .order("kind")
+    .limit(5000);
+  if (error) throw new KernelError(error);
+  return (data ?? []) as SourcedClaim[];
+}
+
+// 0165. Each row's planting year, rootstock and spacing, from the best claim.
+export type RowFact = {
+  row_id: Uuid;
+  block_id: Uuid;
+  row_number: number;
+  kind: string;
+  kind_label: string;
+  value: string;
+  confirmed: boolean;
+  disputed: boolean;
+  sources: string;
+};
+
+export async function rowFacts(): Promise<RowFact[]> {
+  const page = 1000;
+  const out: RowFact[] = [];
+  for (let from = 0; ; from += page) {
+    const { data, error } = await kernel()
+      .from("row_fact")
+      .select(
+        "row_id,block_id,row_number,kind,kind_label,value,confirmed,disputed,sources",
+      )
+      .order("block_id")
+      .order("row_number")
+      .range(from, from + page - 1);
+    if (error) throw new KernelError(error);
+    const got = (data ?? []) as RowFact[];
+    out.push(...got);
+    if (got.length < page) return out;
+  }
+}
+
 export async function plantSpaces(rowId: Uuid): Promise<PlantSpace[]> {
   const { data, error } = await kernel()
     .from("plant_space_now")

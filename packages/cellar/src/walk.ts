@@ -31,6 +31,7 @@ import {
   binsToReturn,
   blocks,
   blockYield,
+  type Cell,
   cancelPick,
   captionPhoto,
   claimAccount,
@@ -47,6 +48,7 @@ import {
   dayNotes,
   declareBarrelColour,
   discardFruit,
+  download,
   drawCut,
   drawToLevel,
   dumpWine,
@@ -193,6 +195,7 @@ import {
   weighBins,
   weighingsWithoutPhoto,
   withdrawInvite,
+  workbook,
   writableColumns,
 } from "core";
 import {
@@ -235,7 +238,6 @@ import {
   variantSwitch,
   whenNoteWanted,
 } from "./ui.ts";
-import { type Cell, download, workbook } from "./xlsx.ts";
 
 // The inventory walk. Its acceptance test is a stranger's first run: empty
 // database, fresh account, and you get from sign up to a labelled barrel with

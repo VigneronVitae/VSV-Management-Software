@@ -6,7 +6,8 @@
 -- Depends on: [supabase/migrations/0027_term_kind_registry.sql,
 --              supabase/migrations/0062_a_note_on_anything.sql]
 -- Depended on by: [tests/schema_assertions.sql, supabase/migrations/0065_confirming_without_owning.sql, supabase/migrations/0067_sampling.sql,
---                  supabase/migrations/0158_a_ferment_is_variables.sql]
+--                  supabase/migrations/0158_a_ferment_is_variables.sql,
+--                  supabase/migrations/0164_a_claim_says_where_it_came_from.sql]
 -- Axioms enforced: T0-4 (an agent may write inferred and may never write
 --                  confirmed), AR-E6 (the list of fact kinds is registry rows,
 --                  so an unsettled list is data rather than schema)

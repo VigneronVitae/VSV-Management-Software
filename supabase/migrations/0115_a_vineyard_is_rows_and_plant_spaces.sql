@@ -13,7 +13,9 @@
 --                  scripts/import-vinemap.py,
 --                  packages/vineyard/src/vineyard.ts,
 --                  supabase/migrations/0131_work_is_not_only_done_to_wine.sql,
---                  supabase/migrations/0159_what_an_acre_gave.sql]
+--                  supabase/migrations/0159_what_an_acre_gave.sql,
+--                  supabase/migrations/0164_a_claim_says_where_it_came_from.sql,
+--                  packages/vineyard/src/export.ts]
 -- Axioms enforced: T0-2, acreage and plant counts become derivations and stop
 --                  being figures anybody types. T0-5, a vine that died and was
 --                  replanted is two records and not an edit. AR-E5, plant state

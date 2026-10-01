@@ -198,11 +198,15 @@ confirm_event:raise:1	confirm_event	raise	raise exception 'only a verifier may c
 confirm_event:silent:1	confirm_event	silent	where id = p_event_id and provenance = 'inferred'	where id = p_event_id and true	1
 confirm_event:guard:2	confirm_event	guard	if e.id is null then	if false then	1
 confirm_event:raise:2	confirm_event	raise	raise exception 'event % is not an inferred event awaiting confirmation', p_event_id;	raise notice 'event % is not an inferred event awaiting confirmation', p_event_id;	1
-confirm_note:guard:1	confirm_note	guard	if n.id is null then	if false then	1
-confirm_note:raise:1	confirm_note	raise	raise exception 'there is no note with id %', p_note_id;	raise notice 'there is no note with id %', p_note_id;	1
-confirm_note:guard:2	confirm_note	guard	if n.kind_id is null then	if false then	1
-confirm_note:raise:2	confirm_note	raise	raise exception 'that note has not been typed, so there is no fact in it to confirm';	raise notice 'that note has not been typed, so there is no fact in it to confirm';	1
-confirm_note:guard:3	confirm_note	guard	if n.provenance = 'confirmed' then	if false then	1
+confirm_note:guard:1	confirm_note	guard	if not is_facility_user() then	if false then	1
+confirm_note:raise:1	confirm_note	raise	raise exception 'only somebody who works here confirms a fact'	raise notice 'only somebody who works here confirms a fact'	1
+confirm_note:guard:2	confirm_note	guard	if n.id is null then	if false then	1
+confirm_note:raise:2	confirm_note	raise	raise exception 'there is no note with id %', p_note_id;	raise notice 'there is no note with id %', p_note_id;	1
+confirm_note:guard:3	confirm_note	guard	if n.kind_id is null then	if false then	1
+confirm_note:raise:3	confirm_note	raise	raise exception 'that note has not been typed, so there is no fact in it to confirm';	raise notice 'that note has not been typed, so there is no fact in it to confirm';	1
+confirm_note:guard:4	confirm_note	guard	if n.provenance = 'confirmed' then	if false then	1
+confirm_note:guard:5	confirm_note	guard	if changed <> 1 then	if false then	1
+confirm_note:raise:4	confirm_note	raise	raise exception 'the note was not confirmed; nothing changed';	raise notice 'the note was not confirmed; nothing changed';	1
 count_supply:guard:1	count_supply	guard	if s.id is null then	if false then	1
 count_supply:raise:1	count_supply	raise	raise exception 'no supply with id %', p_supply_id;	raise notice 'no supply with id %', p_supply_id;	1
 count_supply:guard:2	count_supply	guard	if p_counted is null or p_counted < 0 then	if false then	1
@@ -593,6 +597,23 @@ recondition_barrel:guard:2	recondition_barrel	guard	if vt <> 'barrel' then	if fa
 recondition_barrel:raise:2	recondition_barrel	raise	raise exception '% is a %, and reconditioning is a thing done to a barrel', v.name, vt;	raise notice '% is a %, and reconditioning is a thing done to a barrel', v.name, vt;	1
 recondition_barrel:guard:3	recondition_barrel	guard	if p_method is null or btrim(p_method) = '' then	if false then	1
 recondition_barrel:raise:3	recondition_barrel	raise	raise exception	raise notice	3
+record_claim:guard:1	record_claim	guard	if auth.uid() is not null and not is_admin() then	if false then	1
+record_claim:raise:1	record_claim	raise	raise exception 'only an administrator records what a source says about a vineyard'	raise notice 'only an administrator records what a source says about a vineyard'	1
+record_claim:guard:2	record_claim	guard	if p_subject_type not in ('vineyard', 'block', 'vine_row') then	if false then	1
+record_claim:raise:2	record_claim	raise	raise exception 'a claim here is about a vineyard, a block or a row, not a %', p_subject_type;	raise notice 'a claim here is about a vineyard, a block or a row, not a %', p_subject_type;	1
+record_claim:guard:3	record_claim	guard	if resolve_subject_name(p_subject_type, p_subject_id) is null then	if false then	1
+record_claim:raise:3	record_claim	raise	raise exception 'there is no % with id %', p_subject_type, p_subject_id;	raise notice 'there is no % with id %', p_subject_type, p_subject_id;	1
+record_claim:guard:4	record_claim	guard	if kt.id is null then	if false then	1
+record_claim:raise:4	record_claim	raise	raise exception 'there is no kind of fact called %', p_kind;	raise notice 'there is no kind of fact called %', p_kind;	1
+record_claim:guard:5	record_claim	guard	if nullif(btrim(coalesce(p_value, '')), '') is null then	if false then	1
+record_claim:raise:5	record_claim	raise	raise exception 'say what the claim says';	raise notice 'say what the claim says';	1
+record_claim:guard:6	record_claim	guard	if kt.attributes ->> 'value_type' = 'number' and btrim(p_value) !~ '^-?[0-9]+([.][0-9]+)?$' then	if false then	1
+record_claim:raise:6	record_claim	raise	raise exception '% is a number, and "%" is not one', kt.label, p_value;	raise notice '% is a number, and "%" is not one', kt.label, p_value;	1
+record_claim:guard:7	record_claim	guard	if nullif(btrim(coalesce(p_excerpt, '')), '') is null then	if false then	1
+record_claim:raise:7	record_claim	raise	raise exception 'quote the source; a claim without the source''s own words cannot be checked';	raise notice 'quote the source; a claim without the source''s own words cannot be checked';	1
+record_claim:guard:8	record_claim	guard	if s_kind is null or s_title is null then	if false then	1
+record_claim:raise:8	record_claim	raise	raise exception 'say what the source is: its kind, web or document, and its title';	raise notice 'say what the source is: its kind, web or document, and its title';	1
+record_claim:guard:9	record_claim	guard	if src is null then	if false then	1
 record_event:guard:1	record_event	guard	if op_id is null then	if false then	1
 record_event:raise:1	record_event	raise	raise exception 'there is no operation called %', p_operation;	raise notice 'there is no operation called %', p_operation;	1
 record_event:head:1	record_event	head	if coalesce((select (t.attributes ->> 'cap')::boolean from term t where t.id = op_id), false)\n     and p_vessel_ids is not null and array_length(p_vessel_ids, 1) > 0 then	if false then	1

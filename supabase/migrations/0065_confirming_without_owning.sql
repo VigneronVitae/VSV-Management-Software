@@ -3,7 +3,8 @@
 -- Purpose: "confirm_note could only be run by somebody who owns the table,
 --           which is nobody who uses this app."
 -- Depends on: [supabase/migrations/0064_typing_a_note.sql]
--- Depended on by: [tests/schema_assertions.sql, supabase/migrations/0066_a_guard_that_can_be_weakened.sql]
+-- Depended on by: [tests/schema_assertions.sql, supabase/migrations/0066_a_guard_that_can_be_weakened.sql,
+--                  supabase/migrations/0166_a_confirmation_happens.sql]
 -- Axioms enforced: T0-4 (only a person's deliberate act writes confirmed, and
 --                  the act is still the only path)
 -- ---------------------------------------------------------------------------

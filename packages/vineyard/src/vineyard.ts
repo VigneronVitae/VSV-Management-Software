@@ -3,7 +3,8 @@
 // Purpose: "The vineyard, as a periphery of its own: blocks, rows, and the vine
 //           standing in each position."
 // Depends on: [supabase/migrations/0115_a_vineyard_is_rows_and_plant_spaces.sql,
-//              supabase/migrations/0117_the_vine_map_is_loaded.sql]
+//              supabase/migrations/0117_the_vine_map_is_loaded.sql,
+//              packages/vineyard/src/claims.ts, packages/vineyard/src/export.ts]
 // Depended on by: [packages/vineyard/src/index.ts]
 // ---------------------------------------------------------------------------
 //
@@ -23,6 +24,7 @@
 
 import {
   addNote,
+  allPlantSpaces,
   type BlockAcreage,
   type BlockPlanting,
   banner,
@@ -36,10 +38,15 @@ import {
   on,
   type PlantSpace,
   plantSpaces,
+  rowFacts,
   rows,
+  sourcedClaims,
   type VineRow,
   vineRows,
+  vineyards,
 } from "core";
+import { claimList } from "./claims.ts";
+import { downloadVineMap } from "./export.ts";
 import { decode, encode, PLACES, type VinePlace } from "./places.ts";
 
 let root: HTMLElement | null = null;
@@ -179,6 +186,65 @@ function blocksScreen(): HTMLElement {
         return row;
       }
 
+      const [allVineyards, claims] = await Promise.all([vineyards(), sourcedClaims()]);
+      const said = el("div", {});
+      // "Like the map I gave you but consolidated into an export." Every
+      // block, coloured as the spreadsheet was, with each row's planting from
+      // the claims, every vine, and every claim with its source.
+      const exportButton = button(
+        "Download the vine map for Excel",
+        async () => {
+          try {
+            const [spaces, facts] = await Promise.all([allPlantSpaces(), rowFacts()]);
+            downloadVineMap({
+              vineyard: mine[0]?.vineyard ?? "vineyard",
+              spaces,
+              acreage: all,
+              facts,
+              claims,
+              palette: { colourOf, inkOn },
+            });
+            said.replaceChildren(
+              banner(
+                `Downloaded: ${spaces.length.toLocaleString()} plant spaces, ${claims.length} claims.`,
+                "good",
+              ),
+            );
+          } catch (error) {
+            said.replaceChildren(banner((error as Error).message, "error"));
+          }
+        },
+        "secondary",
+      );
+
+      function vineyardRow(id: string, name: string): HTMLElement {
+        const n = claims.filter((c) => c.vineyard_id === id).length;
+        const confirmed = claims.filter(
+          (c) => c.vineyard_id === id && c.provenance === "confirmed",
+        ).length;
+        const row = el(
+          "li",
+          { class: "vessel-row", role: "button", tabindex: "0" },
+          el("span", { class: "vessel-name", text: name }),
+          el("span", {
+            class: "vessel-detail",
+            text:
+              n === 0
+                ? "nothing from any source"
+                : `${n} claim${n === 1 ? "" : "s"}, ${confirmed} confirmed`,
+          }),
+        );
+        const open = () => go({ at: "vineyard", id });
+        on(row, "click", open);
+        on(row, "keydown", (ev) => {
+          if (ev.key === "Enter" || ev.key === " ") {
+            ev.preventDefault();
+            open();
+          }
+        });
+        return row;
+      }
+
       body.replaceChildren(
         rows(
           el("ul", { class: "vessel-list" }, ...mine.map(blockRow)),
@@ -189,6 +255,20 @@ function blocksScreen(): HTMLElement {
               `${totalAcres.toFixed(2)} acres. A rootstock counts as a plant, ` +
               "which is how the vine map counts.",
           }),
+          exportButton,
+          el("p", {
+            class: "field-hint",
+            text:
+              "One workbook: the blocks, a coloured map of each, every vine, and every claim with its source. " +
+              "Made from the records each time, so it is never older than they are.",
+          }),
+          said,
+          el("h2", { class: "section-head", text: "What sources say" }),
+          el(
+            "ul",
+            { class: "vessel-list" },
+            ...allVineyards.map((v) => vineyardRow(v.id, v.name)),
+          ),
         ),
       );
     } catch (error) {
@@ -207,11 +287,15 @@ function blockScreen(blockId: string): HTMLElement {
 
   void (async () => {
     try {
-      const [acre, planted, rowList] = await Promise.all([
+      const [acre, planted, rowList, claims] = await Promise.all([
         blockAcreage(),
         blockPlanting(blockId),
         vineRows(blockId),
+        sourcedClaims(),
       ]);
+      const mineClaims = claims.filter(
+        (c) => c.subject_type === "block" && c.subject_id === blockId,
+      );
       const b = acre.find((x) => x.block_id === blockId);
       if (!b) {
         body.replaceChildren(
@@ -272,6 +356,8 @@ function blockScreen(blockId: string): HTMLElement {
             class: "field-hint",
             text: `${rowList.length} rows. Tap one to see the vines in it.`,
           }),
+          el("h2", { class: "section-head", text: "What sources say" }),
+          claimList(mineClaims, () => render()),
           button("The vineyard", () => go({ at: "blocks" }), "quiet"),
         ),
       );
@@ -454,6 +540,63 @@ function rowScreen(rowId: string): HTMLElement {
   return view;
 }
 
+// --- one vineyard, by what sources say --------------------------------------
+
+// 0164. Every vineyard this winery deals with, including the ones it buys from
+// and has no map of: what public sources and its own documents say, each with
+// its source and words, its blocks' claims beneath its own.
+function vineyardScreen(vineyardId: string): HTMLElement {
+  const body = el("div", {}, empty("Loading."));
+  const view = screen("vineyard", "Vineyard", body);
+
+  void (async () => {
+    try {
+      const [all, claims] = await Promise.all([vineyards(), sourcedClaims()]);
+      const v = all.find((x) => x.id === vineyardId);
+      if (!v) {
+        body.replaceChildren(
+          banner("That vineyard is not there to open.", "note"),
+          button("The vineyard", () => go({ at: "blocks" }), "quiet"),
+        );
+        return;
+      }
+      view.replaceChildren(el("h1", { text: v.name }), body);
+      const own = claims.filter(
+        (c) => c.subject_type === "vineyard" && c.subject_id === vineyardId,
+      );
+      const blockClaims = claims.filter(
+        (c) => c.subject_type !== "vineyard" && c.vineyard_id === vineyardId,
+      );
+      const byBlock = new Map<string, typeof blockClaims>();
+      for (const c of blockClaims) {
+        const k = c.about ?? "A block";
+        byBlock.set(k, [...(byBlock.get(k) ?? []), c]);
+      }
+      body.replaceChildren(
+        rows(
+          el("p", {
+            class: "lede",
+            text:
+              own.length + blockClaims.length === 0
+                ? "Nothing recorded from any source yet."
+                : "What sources say, each with its own words and where it came from. Nothing here is confirmed until somebody who knows says so.",
+          }),
+          claimList(own, () => render()),
+          ...[...byBlock].flatMap(([block, list]) => [
+            el("h2", { class: "section-head", text: block }),
+            claimList(list, () => render()),
+          ]),
+          button("The vineyard", () => go({ at: "blocks" }), "quiet"),
+        ),
+      );
+    } catch (error) {
+      body.replaceChildren(banner((error as Error).message, "error"));
+    }
+  })();
+
+  return view;
+}
+
 // --- the shell ------------------------------------------------------------
 
 function render(): void {
@@ -464,6 +607,8 @@ function render(): void {
       root.replaceChildren(blockScreen(place.id));
     } else if (place.at === "row") {
       root.replaceChildren(rowScreen(place.id));
+    } else if (place.at === "vineyard") {
+      root.replaceChildren(vineyardScreen(place.id));
     } else {
       root.replaceChildren(blocksScreen());
     }
