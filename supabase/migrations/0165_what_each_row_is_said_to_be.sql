@@ -5,7 +5,8 @@
 --           anybody here has confirmed it."
 -- Depends on: [supabase/migrations/0164_a_claim_says_where_it_came_from.sql]
 -- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql,
---                  packages/vineyard/src/index.ts, packages/vineyard/src/export.ts]
+--                  packages/vineyard/src/index.ts, packages/vineyard/src/export.ts,
+--                  supabase/migrations/0168_a_claim_can_be_wrong.sql]
 -- Axioms enforced: T0-2. Read from the claims on every call; a row stores no
 --                  planting year. T0-4. A confirmed claim outranks an inferred
 --                  one, and the view says which it used.

@@ -3292,3 +3292,20 @@ body.practising {
   color: var(--warn);
   border-color: var(--warn);
 }
+
+/* 0168. What somebody here said about a claim. */
+.claim-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.claim-wrong {
+  flex: 1 1 16rem;
+}
+
+.claim-verdict {
+  margin: 0;
+  color: var(--warn);
+}

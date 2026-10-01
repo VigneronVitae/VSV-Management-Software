@@ -5,7 +5,7 @@
 -- Depends on: [supabase/migrations/0065_confirming_without_owning.sql,
 --              supabase/migrations/0164_a_claim_says_where_it_came_from.sql]
 -- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql,
---                  packages/vineyard/src/claims.ts]
+--                  packages/vineyard/src/claims.ts, supabase/migrations/0168_a_claim_can_be_wrong.sql]
 -- Axioms enforced: T0-4. Confirming is still only this function's act, and who
 --                  did it is still recorded. A13. A confirmation that changes
 --                  nothing is refused, not reported.

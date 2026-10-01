@@ -123,7 +123,9 @@
 --              supabase/migrations/0163_a_bin_tipped_or_thrown_away.sql,
 --              supabase/migrations/0164_a_claim_says_where_it_came_from.sql,
 --              supabase/migrations/0165_what_each_row_is_said_to_be.sql,
---              supabase/migrations/0166_a_confirmation_happens.sql]
+--              supabase/migrations/0166_a_confirmation_happens.sql,
+--              supabase/migrations/0167_the_vineyard_asks_once.sql,
+--              supabase/migrations/0168_a_claim_can_be_wrong.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh, scripts/rpc-args.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -2729,7 +2731,10 @@ begin
   -- 172 since 0164 added four on `source` and `note_source`: a read by the
   -- facility and an administrators' write on each. None reads blanket true;
   -- where a claim came from is the winery's business, like the claim.
-  want := '172';
+  -- 173 since 0168 added a read on `claim_verdict` for the facility. It has
+  -- no write policy at all: verdicts arrive only through the three functions
+  -- that judge a claim.
+  want := '173';
   if have <> want then
     raise exception
       'FAIL: there are % policies in public and this suite was written against %. If that is deliberate, update this number, and judge the new policy in the disposition list below if it reads or writes blanket true', have, want;
@@ -3204,7 +3209,10 @@ begin
   -- a source's kind, its title, a web source's address, a claim's quotation
   -- and its row range; three foreign keys, who added a source and the note
   -- and source a claim ties together; two primary keys.
-  want := 'c=84 f=144 p=67 u=28';
+  -- c=84 f=144 p=67 u=28 before 0168, which added `claim_verdict`: a check on
+  -- the verdict and one that a rejection says why, the note and the person,
+  -- and a primary key. `source`'s kind check was replaced, not added.
+  want := 'c=86 f=146 p=68 u=28';
   if have <> want then
     raise exception
       E'FAIL: the constraint inventory changed.\nnow:  %\nwas:  %\nIf that is deliberate, update this line in the same commit that changed the schema.', have, want;
@@ -3557,7 +3565,9 @@ begin
   -- like every other author column, and a claim restricts the deletion of both
   -- its note and its source, because a claim whose source has gone is the
   -- thing the whole design exists to prevent.
-  want := 'a=83 c=34 n=9 r=18';
+  -- a=83 c=34 n=9 r=18 before 0168: a verdict restricts deleting its claim,
+  -- and its author is a plain reference.
+  want := 'a=84 c=34 n=9 r=19';
   if have <> want then
     raise exception
       E'FAIL: foreign key delete behaviour changed.\nnow:  %\nwas:  %\na is no action, c is cascade, n is set null, r is restrict.', have, want;
@@ -3597,6 +3607,8 @@ begin
        -- not quietly leave circles pointing at nothing.
        || 'attachment_mark.attachment_mark_subject_type_fkey, '
        || 'capability.capability_subject_fkey, '
+       -- 0168. What somebody said about a claim outlives nothing it was about.
+       || 'claim_verdict.claim_verdict_note_id_fkey, '
        || 'event.event_subject_type_is_registered, '
        || 'import_step.import_step_capability_fkey, '
        || 'lineage.lineage_child_id_fkey, lineage.lineage_parent_id_fkey, '
@@ -14421,6 +14433,70 @@ begin
     if sqlerrm not like '%source_web_has_an_address%' then raise; end if;
   end;
   perform test_ok('words for a number, a claim with no quotation, and a web page with no address are each refused');
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 0167 and 0168. The vineyard asks once; a claim can be wrong.
+-- ---------------------------------------------------------------------------
+do $$
+declare
+  hand   uuid := '00000000-0000-0000-0000-00000000fb01';
+  vy     uuid := gen_random_uuid();
+  blk    uuid := gen_random_uuid();
+  r1     uuid := gen_random_uuid();
+  src    jsonb := '{"kind": "document", "title": "ASSERT 0168 block map"}';
+  c1     jsonb;
+  c2     jsonb;
+  out1   jsonb;
+  f      record;
+begin
+  insert into auth.users (id) values (hand) on conflict do nothing;
+  insert into app_user (id, name, role) values (hand, 'ASSERT 0152 cellar hand', 'cellar')
+    on conflict (id) do nothing;
+  insert into vineyard (id, name) values (vy, 'ASSERT 0168 vineyard');
+  insert into block (id, vineyard_id, name) values (blk, vy, 'ASSERT 0168 block');
+  insert into vine_row (id, block_id, number) values (r1, blk, 1);
+  c1 := record_claim('block', blk, 'rootstock', 'Riparia Gloire', null, src, 'PN 115/RG');
+  c2 := record_claim('block', blk, 'planted_year', '1999', null, src, 'PY 1999');
+
+  perform test_act_as(hand);
+  set local role authenticated;
+  if jsonb_typeof(vine_map_spaces()) <> 'array' then
+    raise exception 'FAIL: the vine map is not one document';
+  end if;
+  begin
+    perform reject_claim((c1 ->> 'note_id')::uuid, '  ');
+    raise exception 'FAIL: a claim was called wrong without saying why';
+  exception when others then
+    if sqlerrm not like '%say what is wrong%' then raise; end if;
+  end;
+  out1 := reject_claim((c1 ->> 'note_id')::uuid, 'It is on 101-14', '101-14');
+  perform confirm_note((c2 ->> 'note_id')::uuid);
+  perform reopen_claim((c2 ->> 'note_id')::uuid);
+  reset role;
+  perform test_act_as(null);
+
+  if (select verdict from sourced_claim where note_id = (c1 ->> 'note_id')::uuid) <> 'rejected'
+     or not exists (select 1 from claim_to_follow_up where note_id = (c1 ->> 'note_id')::uuid) then
+    raise exception 'FAIL: a claim called wrong is not on the follow-up list';
+  end if;
+  select * into f from sourced_claim where note_id = (out1 ->> 'correction')::uuid;
+  if f.value <> '101-14' or f.provenance <> 'confirmed' or f.source_kind <> 'person'
+     or f.excerpt <> 'It is on 101-14' then
+    raise exception 'FAIL: the correction is % % from a %', f.value, f.provenance, f.source_kind;
+  end if;
+  select * into f from row_fact where row_id = r1 and kind = 'rootstock';
+  if f.value <> '101-14' then
+    raise exception 'FAIL: the row still reads % after its claim was called wrong', f.value;
+  end if;
+  select * into f from sourced_claim where note_id = (c2 ->> 'note_id')::uuid;
+  if f.provenance <> 'inferred' or f.verdict <> 'reopened' then
+    raise exception 'FAIL: undoing a confirmation left it % and %', f.provenance, f.verdict;
+  end if;
+  if (select count(*) from claim_verdict where note_id = (c2 ->> 'note_id')::uuid) <> 2 then
+    raise exception 'FAIL: the confirmation and its undoing are not both in the history';
+  end if;
+  perform test_ok('a claim called wrong says why, leaves the map for the follow-up list, and its correction is the person''s own confirmed claim; an undone confirmation keeps both verdicts');
 end $$;
 
 do $$ begin raise notice '--- all assertions passed'; end $$;

@@ -45,8 +45,8 @@ import {
   vineRows,
   vineyards,
 } from "core";
-import { claimList } from "./claims.ts";
-import { downloadVineMap } from "./export.ts";
+import { claimList, followUpList } from "./claims.ts";
+import { downloadVineHighlights, downloadVineMap } from "./export.ts";
 import { decode, encode, PLACES, type VinePlace } from "./places.ts";
 
 let root: HTMLElement | null = null;
@@ -191,8 +191,29 @@ function blocksScreen(): HTMLElement {
       // "Like the map I gave you but consolidated into an export." Every
       // block, coloured as the spreadsheet was, with each row's planting from
       // the claims, every vine, and every claim with its source.
+      // "Maybe a much abridged version too, just the highlights." The short
+      // one first, because it is the one somebody outside asks for.
+      const highlightsButton = button(
+        "Highlights for Excel",
+        async () => {
+          try {
+            const [spaces, facts] = await Promise.all([allPlantSpaces(), rowFacts()]);
+            downloadVineHighlights({
+              vineyard: mine[0]?.vineyard ?? "vineyard",
+              spaces,
+              acreage: all,
+              facts,
+              claims,
+            });
+            said.replaceChildren(banner("Downloaded the highlights.", "good"));
+          } catch (error) {
+            said.replaceChildren(banner((error as Error).message, "error"));
+          }
+        },
+        "secondary",
+      );
       const exportButton = button(
-        "Download the vine map for Excel",
+        "Everything for Excel",
         async () => {
           try {
             const [spaces, facts] = await Promise.all([allPlantSpaces(), rowFacts()]);
@@ -214,7 +235,7 @@ function blocksScreen(): HTMLElement {
             said.replaceChildren(banner((error as Error).message, "error"));
           }
         },
-        "secondary",
+        "quiet",
       );
 
       function vineyardRow(id: string, name: string): HTMLElement {
@@ -255,12 +276,17 @@ function blocksScreen(): HTMLElement {
               `${totalAcres.toFixed(2)} acres. A rootstock counts as a plant, ` +
               "which is how the vine map counts.",
           }),
+          highlightsButton,
+          el("p", {
+            class: "field-hint",
+            text: "The highlights: what each vineyard is said to be, every block, and its rows gathered into runs planted alike.",
+          }),
           exportButton,
           el("p", {
             class: "field-hint",
             text:
-              "One workbook: the blocks, a coloured map of each, every vine, and every claim with its source. " +
-              "Made from the records each time, so it is never older than they are.",
+              "Everything: a coloured map of each block, every vine, and every claim with its source. " +
+              "Both are made from the records each time, so neither is older than they are.",
           }),
           said,
           el("h2", { class: "section-head", text: "What sources say" }),
@@ -269,6 +295,8 @@ function blocksScreen(): HTMLElement {
             { class: "vessel-list" },
             ...allVineyards.map((v) => vineyardRow(v.id, v.name)),
           ),
+          el("h2", { class: "section-head", text: "Marked wrong, to follow up" }),
+          followUpList(claims, () => render()),
         ),
       );
     } catch (error) {

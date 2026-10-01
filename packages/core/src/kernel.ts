@@ -1584,28 +1584,16 @@ export type PlantSpace = {
   provenance: string | null;
 };
 
-// Every plant space in the vineyard, for the export. In pages, because the
-// API answers at most a thousand rows a request and the vineyard is thirteen
-// and a half thousand spaces; a single request would hand back the first
+// Every plant space in the vineyard, for the export. Not a select on the view:
+// the API answers at most a thousand rows a request and the vineyard is
+// thirteen and a half thousand spaces, so a select would hand back the first
 // thousand and look complete.
 export async function allPlantSpaces(): Promise<PlantSpace[]> {
-  const page = 1000;
-  const out: PlantSpace[] = [];
-  for (let from = 0; ; from += page) {
-    const { data, error } = await kernel()
-      .from("plant_space_now")
-      .select(
-        "space_id,space_number,row_id,row_number,orientation,block_id,block,vineyard_id,vineyard,as_of,state,state_label,variety_id,variety,clone,note,provenance",
-      )
-      .order("block")
-      .order("row_number")
-      .order("space_number")
-      .range(from, from + page - 1);
-    if (error) throw new KernelError(error);
-    const got = (data ?? []) as PlantSpace[];
-    out.push(...got);
-    if (got.length < page) return out;
-  }
+  // 0167. One call, worked out once: paging through the view made the
+  // database rebuild the whole map for every page.
+  const { data, error } = await kernel().rpc("vine_map_spaces");
+  if (error) throw new KernelError(error);
+  return (data ?? []) as PlantSpace[];
 }
 
 // 0164. What a source says about a vineyard, block or row, with its words.
@@ -1626,25 +1614,54 @@ export type SourcedClaim = {
   row_from: number | null;
   row_to: number | null;
   source_id: Uuid;
-  source_kind: "web" | "document";
+  source_kind: "web" | "document" | "person";
   source_title: string;
   source_url: string | null;
   publisher: string | null;
   published_on: string | null;
   retrieved_at: string;
+  // 0168. The claim's standing: the latest thing somebody here said about it.
+  verdict: "confirmed" | "rejected" | "reopened" | null;
+  verdict_reason: string | null;
+  verdict_by: string | null;
+  verdict_at: string | null;
 };
 
 export async function sourcedClaims(): Promise<SourcedClaim[]> {
   const { data, error } = await kernel()
     .from("sourced_claim")
     .select(
-      "note_id,subject_type,subject_id,about,vineyard_id,kind,kind_label,unit,value,statement,provenance,excerpt,locator,row_from,row_to,source_id,source_kind,source_title,source_url,publisher,published_on,retrieved_at",
+      "note_id,subject_type,subject_id,about,vineyard_id,kind,kind_label,unit,value,statement,provenance,excerpt,locator,row_from,row_to,source_id,source_kind,source_title,source_url,publisher,published_on,retrieved_at,verdict,verdict_reason,verdict_by,verdict_at",
     )
     .order("about")
     .order("kind")
     .limit(5000);
   if (error) throw new KernelError(error);
   return (data ?? []) as SourcedClaim[];
+}
+
+// 0168. A claim is wrong, and why, and what is right if the person knows.
+export async function rejectClaim(args: {
+  noteId: Uuid;
+  reason: string;
+  right?: string | null;
+}): Promise<{ note_id: Uuid; verdict: string; correction: Uuid | null }> {
+  const { data, error } = await kernel().rpc("reject_claim", {
+    p_note_id: args.noteId,
+    p_reason: args.reason,
+    p_right: args.right ?? null,
+  });
+  if (error) throw new KernelError(error);
+  return data as { note_id: Uuid; verdict: string; correction: Uuid | null };
+}
+
+// 0168. Take back the last confirmation or rejection.
+export async function reopenClaim(noteId: Uuid, reason?: string | null): Promise<void> {
+  const { error } = await kernel().rpc("reopen_claim", {
+    p_note_id: noteId,
+    p_reason: reason ?? null,
+  });
+  if (error) throw new KernelError(error);
 }
 
 // 0165. Each row's planting year, rootstock and spacing, from the best claim.

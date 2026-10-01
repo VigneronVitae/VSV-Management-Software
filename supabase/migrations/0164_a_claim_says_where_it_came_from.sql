@@ -8,7 +8,8 @@
 -- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql,
 --                  scripts/import-claims.py, packages/vineyard/src/index.ts,
 --                  packages/vineyard/src/claims.ts, supabase/migrations/0165_what_each_row_is_said_to_be.sql,
---                  supabase/migrations/0166_a_confirmation_happens.sql]
+--                  supabase/migrations/0166_a_confirmation_happens.sql,
+--                  supabase/migrations/0168_a_claim_can_be_wrong.sql]
 -- Axioms enforced: T0-4. A claim is born `inferred` whoever writes it, and only
 --                  `confirm_note` promotes it, recording who did. T0-5. A claim
 --                  is not edited; a better one is recorded beside it and both

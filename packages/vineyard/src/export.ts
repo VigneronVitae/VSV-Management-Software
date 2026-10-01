@@ -254,7 +254,11 @@ export function downloadVineMap(args: {
           : c.row_from === c.row_to
             ? String(c.row_from)
             : `${c.row_from}-${c.row_to}`,
-        c.provenance === "confirmed" ? "confirmed" : "a source says",
+        c.verdict === "rejected"
+          ? `marked wrong: ${c.verdict_reason ?? ""}`
+          : c.provenance === "confirmed"
+            ? "confirmed"
+            : "a source says",
         c.source_title,
         c.publisher ?? "",
         c.published_on ? { date: c.published_on } : null,
@@ -269,5 +273,200 @@ export function downloadVineMap(args: {
   download(
     blob,
     `${args.vineyard.replace(/[^A-Za-z0-9]+/g, "-")}-vine-map-${day}.xlsx`,
+  );
+}
+
+// --- the highlights ----------------------------------------------------------
+
+// "Maybe a much abridged version too, just the highlights without every single
+// row." Three sheets that fit on a screen: what each vineyard is said to be,
+// each block with what is planted in it, and the rows of each block gathered
+// into runs that are planted alike, so "rows 1 to 10, Grüner Veltliner, 1980,
+// own roots, 8 x 5" is one line rather than ten and nine hundred vines.
+export function downloadVineHighlights(args: {
+  vineyard: string;
+  spaces: PlantSpace[];
+  acreage: BlockAcreage[];
+  facts: RowFact[];
+  claims: SourcedClaim[];
+}): void {
+  const { spaces, acreage, facts, claims } = args;
+
+  // What a row mostly is: the variety and clone most of its vines are.
+  const rowCrop = (inRow: PlantSpace[]): string => {
+    const n = new Map<string, number>();
+    for (const s of inRow) {
+      if (s.state === "empty" || s.state === "rootstock_only" || !s.variety) continue;
+      const k = s.clone ? `${s.variety} ${s.clone}` : s.variety;
+      n.set(k, (n.get(k) ?? 0) + 1);
+    }
+    const top = [...n].sort((a, b) => b[1] - a[1]);
+    if (top.length === 0) return "nothing planted";
+    const [first, second] = top;
+    return second && second[1] > inRow.length * 0.1
+      ? `${first?.[0]}, some ${second[0]}`
+      : (first?.[0] ?? "");
+  };
+
+  type Run = {
+    block: string;
+    from: number;
+    to: number;
+    crop: string;
+    planted: string;
+    rootstock: string;
+    spacing: string;
+    plants: number;
+    gaps: number;
+  };
+  const runs: Run[] = [];
+  const blocks = [...new Set(spaces.map((s) => s.block_id))];
+  for (const blockId of blocks) {
+    const here = spaces.filter((s) => s.block_id === blockId);
+    const rowIds = [...new Set(here.map((s) => s.row_id))];
+    for (const rowId of rowIds) {
+      const inRow = here.filter((s) => s.row_id === rowId);
+      const r: Run = {
+        block: inRow[0]?.block ?? "",
+        from: inRow[0]?.row_number ?? 0,
+        to: inRow[0]?.row_number ?? 0,
+        crop: rowCrop(inRow),
+        planted: said(factOf(facts, rowId, "planted_year")),
+        rootstock: said(factOf(facts, rowId, "rootstock")),
+        spacing: said(factOf(facts, rowId, "spacing")),
+        plants: inRow.filter((s) => s.state !== "empty").length,
+        gaps: inRow.filter((s) => s.state === "empty").length,
+      };
+      const last = runs[runs.length - 1];
+      if (
+        last &&
+        last.block === r.block &&
+        last.to + 1 === r.from &&
+        last.crop === r.crop &&
+        last.planted === r.planted &&
+        last.rootstock === r.rootstock &&
+        last.spacing === r.spacing
+      ) {
+        last.to = r.from;
+        last.plants += r.plants;
+        last.gaps += r.gaps;
+      } else {
+        runs.push(r);
+      }
+    }
+  }
+
+  // Per vineyard and kind of fact: what is confirmed if anything is, otherwise
+  // every value the sources give, so a disagreement shows on its face.
+  const vineyardFacts: Cell[][] = [];
+  const keyed = new Map<string, SourcedClaim[]>();
+  // A claim somebody here has called wrong is not a highlight.
+  for (const c of claims.filter(
+    (x) => x.subject_type === "vineyard" && x.verdict !== "rejected",
+  )) {
+    const k = `${c.about}\u0000${c.kind_label}`;
+    keyed.set(k, [...(keyed.get(k) ?? []), c]);
+  }
+  for (const [, list] of keyed) {
+    const confirmed = list.filter((c) => c.provenance === "confirmed");
+    const use = confirmed.length > 0 ? confirmed : list;
+    const values = [
+      ...new Set(use.map((c) => `${c.value}${c.unit ? ` ${c.unit}` : ""}`)),
+    ];
+    vineyardFacts.push([
+      list[0]?.about ?? "",
+      list[0]?.kind_label ?? "",
+      values.join(" / "),
+      confirmed.length > 0
+        ? "confirmed"
+        : values.length > 1
+          ? "sources differ"
+          : "a source says",
+      [...new Set(use.map((c) => c.publisher ?? c.source_title))].join("; "),
+    ]);
+  }
+
+  const blockRows: Cell[][] = acreage
+    .filter((b) => spaces.some((s) => s.block_id === b.block_id))
+    .map((b) => {
+      const crops = [
+        ...new Set(runs.filter((r) => r.block === b.block).map((r) => r.crop)),
+      ];
+      return [
+        b.block,
+        crops.join("; "),
+        b.plants,
+        b.acres === null ? null : Number(b.acres),
+        [
+          ...new Set(
+            runs
+              .filter((r) => r.block === b.block)
+              .map((r) => r.planted)
+              .filter(Boolean),
+          ),
+        ].join(", "),
+        [
+          ...new Set(
+            runs
+              .filter((r) => r.block === b.block)
+              .map((r) => r.rootstock)
+              .filter(Boolean),
+          ),
+        ].join(", "),
+      ];
+    });
+
+  const blob = workbook([
+    {
+      name: "Vineyards",
+      columns: [
+        { header: "Vineyard", width: 24 },
+        { header: "Fact", width: 16 },
+        { header: "Value", width: 44 },
+        { header: "Status", width: 15 },
+        { header: "Said by", width: 40 },
+      ],
+      rows: vineyardFacts,
+    },
+    {
+      name: "Blocks",
+      columns: [
+        { header: "Block", width: 20 },
+        { header: "Planted to", width: 48 },
+        { header: "Plants", width: 9 },
+        { header: "Acres, counted", width: 14 },
+        { header: "Planted", width: 20 },
+        { header: "Rootstock", width: 22 },
+      ],
+      rows: blockRows,
+    },
+    {
+      name: "Rows",
+      columns: [
+        { header: "Block", width: 20 },
+        { header: "Rows", width: 9 },
+        { header: "Planted to", width: 34 },
+        { header: "Plants", width: 8 },
+        { header: "Gaps", width: 7 },
+        { header: "Planted", width: 16 },
+        { header: "Rootstock", width: 18 },
+        { header: "Spacing", width: 16 },
+      ],
+      rows: runs.map((r) => [
+        r.block,
+        r.from === r.to ? String(r.from) : `${r.from}-${r.to}`,
+        r.crop,
+        r.plants,
+        r.gaps,
+        r.planted,
+        r.rootstock,
+        r.spacing,
+      ]),
+    },
+  ]);
+  const day = new Date().toISOString().slice(0, 10);
+  download(
+    blob,
+    `${args.vineyard.replace(/[^A-Za-z0-9]+/g, "-")}-highlights-${day}.xlsx`,
   );
 }

@@ -207,6 +207,7 @@ confirm_note:raise:3	confirm_note	raise	raise exception 'that note has not been 
 confirm_note:guard:4	confirm_note	guard	if n.provenance = 'confirmed' then	if false then	1
 confirm_note:guard:5	confirm_note	guard	if changed <> 1 then	if false then	1
 confirm_note:raise:4	confirm_note	raise	raise exception 'the note was not confirmed; nothing changed';	raise notice 'the note was not confirmed; nothing changed';	1
+confirm_note:guard:6	confirm_note	guard	if exists (select 1 from note_source where note_id = p_note_id) then	if false then	1
 count_supply:guard:1	count_supply	guard	if s.id is null then	if false then	1
 count_supply:raise:1	count_supply	raise	raise exception 'no supply with id %', p_supply_id;	raise notice 'no supply with id %', p_supply_id;	1
 count_supply:guard:2	count_supply	guard	if p_counted is null or p_counted < 0 then	if false then	1
@@ -730,6 +731,16 @@ register_machine_model:head:1	register_machine_model	head	if exists (select 1 fr
 register_machine_model:raise:4	register_machine_model	raise	raise exception 'there is already a % % registered', mk, md;	raise notice 'there is already a % % registered', mk, md;	1
 register_subject_resolver:guard:1	register_subject_resolver	guard	if not is_admin() then	if false then	1
 register_subject_resolver:raise:1	register_subject_resolver	raise	raise exception 'only an administrator may register a resolver'	raise notice 'only an administrator may register a resolver'	1
+reject_claim:guard:1	reject_claim	guard	if not is_facility_user() then	if false then	1
+reject_claim:raise:1	reject_claim	raise	raise exception 'only somebody who works here says a claim is wrong'	raise notice 'only somebody who works here says a claim is wrong'	1
+reject_claim:guard:2	reject_claim	guard	if n.id is null or ns.note_id is null then	if false then	1
+reject_claim:raise:2	reject_claim	raise	raise exception 'there is no claim with id %', p_note_id;	raise notice 'there is no claim with id %', p_note_id;	1
+reject_claim:guard:3	reject_claim	guard	if nullif(btrim(coalesce(p_reason, '')), '') is null then	if false then	1
+reject_claim:raise:3	reject_claim	raise	raise exception 'say what is wrong with it; that is what the follow-up starts from';	raise notice 'say what is wrong with it; that is what the follow-up starts from';	1
+reject_claim:head:1	reject_claim	head	if right_v is not null and kt.attributes ->> 'value_type' = 'number'\n     and right_v !~ '^-?[0-9]+([.][0-9]+)?$' then	if false then	1
+reject_claim:raise:4	reject_claim	raise	raise exception '% is a number, and "%" is not one', kt.label, right_v;	raise notice '% is a number, and "%" is not one', kt.label, right_v;	1
+reject_claim:guard:4	reject_claim	guard	if right_v is not null then	if false then	1
+reject_claim:guard:5	reject_claim	guard	if src is null then	if false then	1
 remove_pick:guard:1	remove_pick	guard	if n.id is null then	if false then	1
 remove_pick:raise:1	remove_pick	raise	raise exception 'no pick with id %', p_node_id;	raise notice 'no pick with id %', p_node_id;	1
 remove_pick:guard:2	remove_pick	guard	if n.stage <> 'bin' then	if false then	1
@@ -744,6 +755,10 @@ remove_pick:guard:6	remove_pick	guard	if exists (select 1 from event where subje
 remove_pick:raise:6	remove_pick	raise	raise exception '% has events recorded against it, so it is a record rather than a mistake', n.name;	raise notice '% has events recorded against it, so it is a record rather than a mistake', n.name;	1
 remove_pick:guard:7	remove_pick	guard	if gone = 0 then	if false then	1
 remove_pick:raise:7	remove_pick	raise	raise exception 'that pick was not removed. Removing a pick is something only an administrator may do';	raise notice 'that pick was not removed. Removing a pick is something only an administrator may do';	1
+reopen_claim:guard:1	reopen_claim	guard	if not is_facility_user() then	if false then	1
+reopen_claim:raise:1	reopen_claim	raise	raise exception 'only somebody who works here reopens a claim'	raise notice 'only somebody who works here reopens a claim'	1
+reopen_claim:guard:2	reopen_claim	guard	if n.id is null or not exists (select 1 from note_source where note_id = p_note_id) then	if false then	1
+reopen_claim:raise:2	reopen_claim	raise	raise exception 'there is no claim with id %', p_note_id;	raise notice 'there is no claim with id %', p_note_id;	1
 resolve_subject_name:notfound:1	resolve_subject_name	notfound	if not found then	if false then	1
 resolve_subject_name:earlyreturn:1	resolve_subject_name	earlyreturn	return null;	null;	1
 resolve_subject_name:guard:1	resolve_subject_name	guard	if to_regclass('public.' || quote_ident(r.relation)) is null then	if false then	1
