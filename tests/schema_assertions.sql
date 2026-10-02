@@ -125,7 +125,8 @@
 --              supabase/migrations/0165_what_each_row_is_said_to_be.sql,
 --              supabase/migrations/0166_a_confirmation_happens.sql,
 --              supabase/migrations/0167_the_vineyard_asks_once.sql,
---              supabase/migrations/0168_a_claim_can_be_wrong.sql]
+--              supabase/migrations/0168_a_claim_can_be_wrong.sql,
+--              supabase/migrations/0169_every_policy_asks_once.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh, scripts/rpc-args.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -14497,6 +14498,38 @@ begin
     raise exception 'FAIL: the confirmation and its undoing are not both in the history';
   end if;
   perform test_ok('a claim called wrong says why, leaves the map for the follow-up list, and its correction is the person''s own confirmed claim; an undone confirmation keeps both verdicts');
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 0169. Every policy asks once.
+-- ---------------------------------------------------------------------------
+--
+-- A policy that calls is_admin(), is_facility_user(), current_party_id(),
+-- auth.uid() or may('a setting') bare asks it once a row; inside a sub-select
+-- Postgres asks once a query. The answer is the same and the cost is not: the
+-- vine map spent a minute on it. Refused here so it cannot come back.
+do $$
+declare
+  bare text;
+begin
+  select string_agg(c.relname || '.' || p.polname, ', ' order by c.relname, p.polname)
+    into bare
+    from pg_policy p
+    join pg_class c on c.oid = p.polrelid
+    join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'public'
+     and (coalesce(pg_get_expr(p.polqual, p.polrelid), '') || ' ' ||
+          coalesce(pg_get_expr(p.polwithcheck, p.polrelid), ''))
+         ~ '(^|[^A-Za-z_.])((auth\.)?(is_admin|is_facility_user|current_party_id|uid)\(\)|may\(''[^'']*''(::text)?\))'
+     and regexp_replace(
+           coalesce(pg_get_expr(p.polqual, p.polrelid), '') || ' ' ||
+           coalesce(pg_get_expr(p.polwithcheck, p.polrelid), ''),
+           'SELECT ((auth\.)?(is_admin|is_facility_user|current_party_id|uid)\(\)|may\(''[^'']*''(::text)?\))', '', 'g')
+         ~ '(^|[^A-Za-z_.])((auth\.)?(is_admin|is_facility_user|current_party_id|uid)\(\)|may\(''[^'']*''(::text)?\))';
+  if bare is not null then
+    raise exception 'FAIL: these policies ask who you are once a row; wrap the call in ( SELECT ... ): %', bare;
+  end if;
+  perform test_ok('every policy asks who the reader is once a query, not once a row');
 end $$;
 
 do $$ begin raise notice '--- all assertions passed'; end $$;
