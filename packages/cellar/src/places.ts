@@ -65,6 +65,8 @@ export type Place =
   | { at: "ferment" }
   // 0161. Every wine by the blocks and varieties it came from.
   | { at: "makeup" }
+  // 0170. A question in a sentence, and proposals to confirm.
+  | { at: "ask" }
   | { at: "vineyards" }
   // One vineyard. A vineyard used to be a heading on the list and nothing else,
   // which meant a vineyard with no blocks in it yet was a dead end: nothing to
@@ -139,6 +141,7 @@ const WITHOUT_ID = new Set([
   "weights",
   "ferment",
   "makeup",
+  "ask",
   "day",
   "paper",
   "makers",

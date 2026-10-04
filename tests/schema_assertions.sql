@@ -126,7 +126,8 @@
 --              supabase/migrations/0166_a_confirmation_happens.sql,
 --              supabase/migrations/0167_the_vineyard_asks_once.sql,
 --              supabase/migrations/0168_a_claim_can_be_wrong.sql,
---              supabase/migrations/0169_every_policy_asks_once.sql]
+--              supabase/migrations/0169_every_policy_asks_once.sql,
+--              supabase/migrations/0170_an_assistant_asks_as_you.sql]
 -- Depended on by: [docs/status-ledger.md, scripts/green.sh, scripts/mutate.sh,
 --                  scripts/status.sh, scripts/rpc-args.sh]
 -- Axioms enforced: none. This file checks that the migrations enforce theirs.
@@ -2735,7 +2736,11 @@ begin
   -- 173 since 0168 added a read on `claim_verdict` for the facility. It has
   -- no write policy at all: verdicts arrive only through the three functions
   -- that judge a claim.
-  want := '173';
+  -- 175 since 0170 added a read on `agent_turn` and one on `agent_outcome`:
+  -- the asker's own, and an administrator's everybody's. Neither reads
+  -- blanket true, and neither table has a write policy: a question and what
+  -- became of it arrive only through the two functions that keep them.
+  want := '175';
   if have <> want then
     raise exception
       'FAIL: there are % policies in public and this suite was written against %. If that is deliberate, update this number, and judge the new policy in the disposition list below if it reads or writes blanket true', have, want;
@@ -3213,7 +3218,13 @@ begin
   -- c=84 f=144 p=67 u=28 before 0168, which added `claim_verdict`: a check on
   -- the verdict and one that a rejection says why, the note and the person,
   -- and a primary key. `source`'s kind check was replaced, not added.
-  want := 'c=86 f=146 p=68 u=28';
+  -- c=86 f=146 p=68 u=28 before 0170, which added `agent_turn` and
+  -- `agent_outcome`. Ten checks: the provider, a question that says
+  -- something, reads and proposals as lists, two token counts not below
+  -- nothing, a turn that ends in an answer, a proposal or a failure, a
+  -- proposal's number, an outcome's kind, and a refusal that says what was
+  -- said. Three keys, the asker, the decider and the question; two primary keys.
+  want := 'c=96 f=149 p=70 u=28';
   if have <> want then
     raise exception
       E'FAIL: the constraint inventory changed.\nnow:  %\nwas:  %\nIf that is deliberate, update this line in the same commit that changed the schema.', have, want;
@@ -3568,7 +3579,10 @@ begin
   -- thing the whole design exists to prevent.
   -- a=83 c=34 n=9 r=18 before 0168: a verdict restricts deleting its claim,
   -- and its author is a plain reference.
-  want := 'a=84 c=34 n=9 r=19';
+  -- a=84 c=34 n=9 r=19 before 0170: who asked and who decided are plain
+  -- references like every other author, and what became of a proposal
+  -- restricts deleting its question.
+  want := 'a=86 c=34 n=9 r=20';
   if have <> want then
     raise exception
       E'FAIL: foreign key delete behaviour changed.\nnow:  %\nwas:  %\na is no action, c is cascade, n is set null, r is restrict.', have, want;
@@ -3601,7 +3615,9 @@ begin
   -- 0094 added import_step.capability. A capability that has been removed
   -- leaves steps naming a call that cannot run, and a step is a claim about
   -- something somebody proposed: worth a refusal rather than a dangling key.
-  want := 'attachment.attachment_about_event_fkey, '
+  -- 0170. What became of a proposal outlives nothing about the question.
+  want := 'agent_outcome.agent_outcome_turn_id_fkey, '
+       || 'attachment.attachment_about_event_fkey, '
        || 'attachment.attachment_subject_type_fkey, '
        -- 0135. A mark points at a subject through the same registry a photograph
        -- does, and restricts for the same reason: retiring a kind of thing must
@@ -14530,6 +14546,200 @@ begin
     raise exception 'FAIL: these policies ask who you are once a row; wrap the call in ( SELECT ... ): %', bare;
   end if;
   perform test_ok('every policy asks who the reader is once a query, not once a row');
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 0170. The assistant asks as you.
+-- ---------------------------------------------------------------------------
+--
+-- Who may ask is a permission that starts off for cellar hands; the books are
+-- closed to the assistant; a question is kept and never edited; a turn ends in
+-- an answer, a proposal or a failure; and only the person who asked decides
+-- what becomes of its proposals.
+do $$
+declare
+  hand    uuid := '00000000-0000-0000-0000-00000000fb01';
+  admin_u uuid;
+  turn    uuid := gen_random_uuid();
+  c       jsonb;
+  refused boolean;
+begin
+  select id into admin_u from app_user where role = 'admin' limit 1;
+  insert into auth.users (id) values (hand) on conflict do nothing;
+  insert into app_user (id, name, role) values (hand, 'ASSERT 0152 cellar hand', 'cellar')
+    on conflict (id) do nothing;
+
+  if (select cellar_may from permission where key = 'agent.ask') then
+    raise exception 'FAIL: cellar hands may ask the assistant before anybody allowed it';
+  end if;
+  if (select agent_reads from module where key = 'books') then
+    raise exception 'FAIL: the books start open to the assistant';
+  end if;
+
+  -- A cellar hand is refused, in a sentence, both the contract and the log.
+  perform test_act_as(hand);
+  refused := false;
+  begin
+    perform agent_contract();
+  exception when others then
+    refused := sqlerrm like 'asking the assistant is for administrators%';
+  end;
+  if not refused then
+    raise exception 'FAIL: a cellar hand was given the assistant''s contract';
+  end if;
+  refused := false;
+  begin
+    perform record_agent_turn(gen_random_uuid(), 'anthropic', 'm', 'q', 'a', null, null, null, null, null, null);
+  exception when others then
+    refused := sqlerrm like 'asking the assistant is for administrators%';
+  end;
+  if not refused then
+    raise exception 'FAIL: a cellar hand''s question was kept although they may not ask';
+  end if;
+
+  -- An administrator gets the contract, without the books and with core.
+  perform test_act_as(admin_u);
+  c := agent_contract();
+  if exists (select 1 from jsonb_array_elements(c -> 'readables') r where r ->> 'module' = 'books')
+     or exists (select 1 from jsonb_array_elements(c -> 'capabilities') k where k ->> 'module' = 'books') then
+    raise exception 'FAIL: the assistant''s contract includes the books';
+  end if;
+  if not exists (select 1 from jsonb_array_elements(c -> 'readables') r where r ->> 'module' = 'core')
+     or not exists (select 1 from jsonb_array_elements(c -> 'capabilities') k where k ->> 'key' = 'core.set_permission') then
+    raise exception 'FAIL: core, which has no module row, was left out of the assistant''s contract';
+  end if;
+
+  -- A turn that says nothing is refused; one that answers is kept.
+  refused := false;
+  begin
+    perform record_agent_turn(gen_random_uuid(), 'anthropic', 'm', 'q', '  ', null, '[]', '[]', 0, 0, null);
+  exception when check_violation then
+    refused := true;
+  end;
+  if not refused then
+    raise exception 'FAIL: a question that ended in nothing was kept as if answered';
+  end if;
+  perform record_agent_turn(turn, 'anthropic', 'm', 'ASSERT 0170 what is in MB01?', null, 'end_turn',
+    '[{"readable": "cellar.vessels", "rows": 1, "more": false}]',
+    '[{"capability": "core.set_permission", "label": "x", "fn": "set_permission", "summary": "x", "fields": []}]',
+    10, 2, null);
+  if (select asked_by from agent_turn where id = turn) <> admin_u then
+    raise exception 'FAIL: a question was kept under somebody other than who asked it';
+  end if;
+
+  -- An outcome for a question that was never asked.
+  refused := false;
+  begin
+    perform record_agent_outcome(gen_random_uuid(), 0, 'done', null, null);
+  exception when others then
+    refused := sqlerrm = 'there is no question with that id';
+  end;
+  if not refused then
+    raise exception 'FAIL: an outcome was kept for a question nobody asked';
+  end if;
+
+  -- What the assistant may read: an administrator decides, yes or no, of a
+  -- module that exists.
+  -- Two statements: the contract is stable, and in the same statement as the
+  -- change it would read the module as it was before.
+  if (set_agent_reads('books', true) ->> 'agent_reads')::boolean is not true then
+    raise exception 'FAIL: opening the books to the assistant did not say so';
+  end if;
+  if not exists (select 1 from jsonb_array_elements(agent_contract() -> 'readables') r
+                     where r ->> 'module' = 'books') then
+    raise exception 'FAIL: opening the books to the assistant did not put them in its contract';
+  end if;
+  perform set_agent_reads('books', false);
+  refused := false;
+  begin
+    perform set_agent_reads('books', null);
+  exception when others then
+    refused := sqlerrm = 'say yes or no';
+  end;
+  if not refused then
+    raise exception 'FAIL: the assistant''s reading was set to neither yes nor no';
+  end if;
+  refused := false;
+  begin
+    perform set_agent_reads('ASSERT 0170 nowhere', true);
+  exception when others then
+    refused := sqlerrm like 'there is no module called%';
+  end;
+  if not refused then
+    raise exception 'FAIL: a module that does not exist was opened to the assistant';
+  end if;
+  perform test_act_as(hand);
+  refused := false;
+  begin
+    perform set_agent_reads('books', true);
+  exception when others then
+    refused := sqlerrm like 'only an administrator%';
+  end;
+  if not refused then
+    raise exception 'FAIL: a cellar hand opened the books to the assistant';
+  end if;
+  perform test_act_as(admin_u);
+
+  -- What became of it: proposal 0 exists, proposal 1 does not.
+  perform record_agent_outcome(turn, 0, 'declined', null, null);
+  refused := false;
+  begin
+    perform record_agent_outcome(turn, 1, 'done', null, null);
+  exception when others then
+    refused := sqlerrm like 'that question had no proposal%';
+  end;
+  if not refused then
+    raise exception 'FAIL: an outcome was kept for a proposal the question never made';
+  end if;
+  refused := false;
+  begin
+    perform record_agent_outcome(turn, 0, 'refused', null, ' ');
+  exception when check_violation then
+    refused := true;
+  end;
+  if not refused then
+    raise exception 'FAIL: a refusal was kept without what was said';
+  end if;
+
+  -- Somebody else cannot decide it, and cannot read it.
+  update permission set cellar_may = true where key = 'agent.ask';
+  perform test_act_as(hand);
+  refused := false;
+  begin
+    perform record_agent_outcome(turn, 0, 'done', null, null);
+  exception when others then
+    refused := sqlerrm like 'only the person who asked%';
+  end;
+  if not refused then
+    raise exception 'FAIL: somebody other than the asker decided what became of a proposal';
+  end if;
+  set local role authenticated;
+  if exists (select 1 from agent_turn where id = turn) or exists (select 1 from agent_log where id = turn) then
+    raise exception 'FAIL: a cellar hand can read an administrator''s question';
+  end if;
+  reset role;
+  -- Allowed, a cellar hand gets the contract.
+  if agent_contract() is null then
+    raise exception 'FAIL: a cellar hand who was allowed was still refused';
+  end if;
+  perform test_act_as(null);
+  update permission set cellar_may = false where key = 'agent.ask';
+
+  -- Nothing edits a question: no write policy, so an update as the asker
+  -- changes no row.
+  perform test_act_as(admin_u);
+  set local role authenticated;
+  if not exists (select 1 from agent_log where id = turn and proposals = 1) then
+    raise exception 'FAIL: the asker cannot read their own question in the log';
+  end if;
+  update agent_turn set answer = 'changed' where id = turn;
+  reset role;
+  perform test_act_as(null);
+  if (select answer from agent_turn where id = turn) is not null then
+    raise exception 'FAIL: a kept question was edited';
+  end if;
+
+  perform test_ok('the assistant asks as you: cellar hands refused until allowed, the books closed, every question kept as asked and never edited, and only the asker decides what becomes of a proposal');
 end $$;
 
 do $$ begin raise notice '--- all assertions passed'; end $$;

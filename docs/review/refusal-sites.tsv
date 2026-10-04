@@ -108,6 +108,8 @@ add_vessels:guard:10	add_vessels	guard	if prefix = '' then	if false then	1
 add_vessels:guard:11	add_vessels	guard	if want = 1 and given <> '' then	if false then	1
 add_vessels:permissive:2	add_vessels	permissive	coalesce((p_vessel ->> 'has_glycol')::boolean, false),	coalesce((p_vessel ->> 'has_glycol')::boolean, true),	1
 add_vessels:permissive:3	add_vessels	permissive	coalesce((p_vessel ->> 'has_glycol')::boolean, false),	coalesce((p_vessel ->> 'has_glycol')::boolean, true),	2
+agent_contract:guard:1	agent_contract	guard	if not may('agent.ask') then	if false then	1
+agent_contract:raise:1	agent_contract	raise	raise exception 'asking the assistant is for administrators unless an administrator has allowed cellar hands';	raise notice 'asking the assistant is for administrators unless an administrator has allowed cellar hands';	1
 apply_owner_privacy:guard:1	apply_owner_privacy	guard	if new.hidden = '{}' and new.owner_id is not null then	if false then	1
 attach_photo:guard:1	attach_photo	guard	if not is_facility_user() then	if false then	1
 attach_photo:raise:1	attach_photo	raise	raise exception 'photographs are attached by people who work here';	raise notice 'photographs are attached by people who work here';	1
@@ -598,6 +600,14 @@ recondition_barrel:guard:2	recondition_barrel	guard	if vt <> 'barrel' then	if fa
 recondition_barrel:raise:2	recondition_barrel	raise	raise exception '% is a %, and reconditioning is a thing done to a barrel', v.name, vt;	raise notice '% is a %, and reconditioning is a thing done to a barrel', v.name, vt;	1
 recondition_barrel:guard:3	recondition_barrel	guard	if p_method is null or btrim(p_method) = '' then	if false then	1
 recondition_barrel:raise:3	recondition_barrel	raise	raise exception	raise notice	3
+record_agent_outcome:notfound:1	record_agent_outcome	notfound	if not found then	if false then	1
+record_agent_outcome:raise:1	record_agent_outcome	raise	raise exception 'there is no question with that id';	raise notice 'there is no question with that id';	1
+record_agent_outcome:guard:1	record_agent_outcome	guard	if t.asked_by is distinct from auth.uid() then	if false then	1
+record_agent_outcome:raise:2	record_agent_outcome	raise	raise exception 'only the person who asked can confirm or decline what the assistant proposed';	raise notice 'only the person who asked can confirm or decline what the assistant proposed';	1
+record_agent_outcome:guard:2	record_agent_outcome	guard	if p_proposal is null or p_proposal < 0 or p_proposal >= jsonb_array_length(t.proposals) then	if false then	1
+record_agent_outcome:raise:3	record_agent_outcome	raise	raise exception 'that question had no proposal %', p_proposal;	raise notice 'that question had no proposal %', p_proposal;	1
+record_agent_turn:guard:1	record_agent_turn	guard	if auth.uid() is null or not may('agent.ask') then	if false then	1
+record_agent_turn:raise:1	record_agent_turn	raise	raise exception 'asking the assistant is for administrators unless an administrator has allowed cellar hands';	raise notice 'asking the assistant is for administrators unless an administrator has allowed cellar hands';	1
 record_claim:guard:1	record_claim	guard	if auth.uid() is not null and not is_admin() then	if false then	1
 record_claim:raise:1	record_claim	raise	raise exception 'only an administrator records what a source says about a vineyard'	raise notice 'only an administrator records what a source says about a vineyard'	1
 record_claim:guard:2	record_claim	guard	if p_subject_type not in ('vineyard', 'block', 'vine_row') then	if false then	1
@@ -787,6 +797,12 @@ send_fruit_away:guard:3	send_fruit_away	guard	if nullif(btrim(coalesce(p_destina
 send_fruit_away:raise:3	send_fruit_away	raise	raise exception 'fruit does not leave to nowhere; say where it went';	raise notice 'fruit does not leave to nowhere; say where it went';	1
 send_fruit_away:silent:1	send_fruit_away	silent	where node_id = p_node_id and to_at is null;	where node_id = p_node_id and true;	1
 send_fruit_away:guard:4	send_fruit_away	guard	if not p_returning then	if false then	1
+set_agent_reads:guard:1	set_agent_reads	guard	if not is_admin() then	if false then	1
+set_agent_reads:raise:1	set_agent_reads	raise	raise exception 'only an administrator decides what the assistant may read';	raise notice 'only an administrator decides what the assistant may read';	1
+set_agent_reads:guard:2	set_agent_reads	guard	if p_open is null then	if false then	1
+set_agent_reads:raise:2	set_agent_reads	raise	raise exception 'say yes or no';	raise notice 'say yes or no';	1
+set_agent_reads:notfound:1	set_agent_reads	notfound	if not found then	if false then	1
+set_agent_reads:raise:3	set_agent_reads	raise	raise exception 'there is no module called %', p_module;	raise notice 'there is no module called %', p_module;	1
 set_bin_fruit:guard:1	set_bin_fruit	guard	if not is_facility_user() then	if false then	1
 set_bin_fruit:raise:1	set_bin_fruit	raise	raise exception 'only somebody who works here says what is in a bin'	raise notice 'only somebody who works here says what is in a bin'	1
 set_bin_fruit:guard:2	set_bin_fruit	guard	if said = 0 then	if false then	1

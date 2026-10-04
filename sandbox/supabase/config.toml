@@ -77,3 +77,12 @@ enable_confirmations = false
 
 [analytics]
 enabled = false
+
+# The assistant (0170). The function's source is the cellar's, one copy for
+# both stacks; its keys are in sandbox/supabase/functions/.env, never committed.
+[edge_runtime]
+enabled = true
+
+[functions.agent]
+verify_jwt = true
+entrypoint = "../../supabase/functions/agent/index.ts"

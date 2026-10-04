@@ -3309,3 +3309,77 @@ body.practising {
   margin: 0;
   color: var(--warn);
 }
+
+/* --- ask (0170) ------------------------------------------------------------ */
+
+.ask-talk {
+  display: grid;
+  gap: 1rem;
+}
+
+.ask-entry {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.ask-question {
+  margin: 0;
+  justify-self: end;
+  max-width: 85%;
+  padding: 0.6rem 0.85rem;
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-radius: 0.8rem 0.8rem 0.2rem 0.8rem;
+  white-space: pre-wrap;
+}
+
+.ask-answer {
+  margin: 0;
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
+.ask-waiting {
+  margin: 0;
+  color: var(--ink-faint);
+  font-style: italic;
+}
+
+.ask-proposal {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.75rem 0.9rem;
+  background: var(--surface);
+  border: 1px dashed var(--accent);
+  border-radius: 0.6rem;
+}
+
+.ask-proposal-done {
+  border-style: solid;
+  border-color: var(--good);
+}
+
+.ask-proposal-kind {
+  margin: 0;
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.ask-proposal-summary {
+  margin: 0;
+  font-weight: 600;
+}
+
+.ask-box {
+  min-height: 5rem;
+  resize: vertical;
+  font: inherit;
+}
+
+.ask-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}

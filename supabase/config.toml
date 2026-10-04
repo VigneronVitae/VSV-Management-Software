@@ -64,3 +64,12 @@ enable_confirmations = false
 
 [analytics]
 enabled = false
+
+# The assistant (0170). Its source is supabase/functions/agent; its keys are in
+# supabase/functions/.env on this computer, never committed. Takes effect the
+# next time the stack starts.
+[edge_runtime]
+enabled = true
+
+[functions.agent]
+verify_jwt = true

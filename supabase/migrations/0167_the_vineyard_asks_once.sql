@@ -4,7 +4,8 @@
 --           vine."
 -- Depends on: [supabase/migrations/0116_the_vineyard_is_not_everybodys_business.sql]
 -- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql,
---                  supabase/migrations/0169_every_policy_asks_once.sql]
+--                  supabase/migrations/0169_every_policy_asks_once.sql,
+--                  supabase/migrations/0170_an_assistant_asks_as_you.sql]
 -- Axioms enforced: none new; the same people read and write the same rows.
 -- Open sorries: none new.
 -- ---------------------------------------------------------------------------

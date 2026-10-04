@@ -3708,3 +3708,156 @@ export async function dumpWine(args: {
   if (error) throw new KernelError(error);
   return data as { dumped_l: number; lots: Array<{ node_id: Uuid; event_id: Uuid }> };
 }
+
+// --- the assistant (0170) ----------------------------------------------------
+//
+// The question goes to the `agent` edge function, which holds the provider's
+// key and reads as this person. What comes back is words and proposals; a
+// proposal is a capability from the contract with its values filled in, and
+// confirming one calls that capability here, as this person, exactly as its
+// own screen would. The function never writes anything but its log.
+
+export type AgentProvider = { key: string; label: string; model: string };
+
+export type AgentProposalField = {
+  key: string;
+  label: string;
+  param: string;
+  type: string;
+  value: unknown;
+  /** The value as the person should see it: a vessel's name, not its id. */
+  shown: string;
+};
+
+export type AgentProposal = {
+  capability: string;
+  label: string;
+  fn: string;
+  summary: string;
+  fields: AgentProposalField[];
+};
+
+export type AgentAnswer = {
+  turn_id: Uuid;
+  provider: string;
+  model: string;
+  answer: string;
+  failure: string | null;
+  proposals: AgentProposal[];
+  reads: number;
+};
+
+export type AgentPriorTurn = { role: "user" | "assistant"; text: string };
+
+async function callAgent<T>(body: Record<string, unknown>): Promise<T> {
+  const { data, error } = await kernel().functions.invoke("agent", { body });
+  if (error) {
+    // The function says what went wrong in its body; the client library's own
+    // message is only that the status was not 2xx.
+    let message = error.message;
+    const context = (error as { context?: unknown }).context;
+    if (context instanceof Response) {
+      const said = (await context.json().catch(() => null)) as {
+        error?: string;
+      } | null;
+      if (said?.error) message = said.error;
+    }
+    throw new KernelError({ message });
+  }
+  return data as T;
+}
+
+/** Whether this person may ask, and which providers the winery computer has
+ * set up. Asks nothing of any provider. */
+export async function agentProviders(): Promise<{
+  may: boolean;
+  providers: AgentProvider[];
+}> {
+  return callAgent({ op: "providers" });
+}
+
+/** Whether this person may ask, from the database alone, for deciding whether
+ * to show the way in without waking the function. */
+export async function mayAskAgent(): Promise<boolean> {
+  const { data, error } = await kernel().rpc("may", { p_key: "agent.ask" });
+  if (error) throw new KernelError(error);
+  return data === true;
+}
+
+export async function askAgent(args: {
+  question: string;
+  provider?: string | null;
+  history?: AgentPriorTurn[];
+}): Promise<AgentAnswer> {
+  return callAgent({
+    question: args.question,
+    provider: args.provider ?? null,
+    history: args.history ?? [],
+  });
+}
+
+async function recordAgentOutcome(
+  turnId: Uuid,
+  index: number,
+  outcome: "done" | "declined" | "refused",
+  result: unknown,
+  said: string | null,
+): Promise<void> {
+  const { error } = await kernel().rpc("record_agent_outcome", {
+    p_turn_id: turnId,
+    p_proposal: index,
+    p_outcome: outcome,
+    p_result: result ?? null,
+    p_said: said,
+  });
+  if (error) throw new KernelError(error);
+}
+
+/** Do what was proposed: the capability, as this person, with the values they
+ * were shown. Which function and which parameter each value goes to come from
+ * the contract as it is now, not from the proposal, so a proposal can only
+ * ever call something the contract offers. */
+export async function confirmAgentProposal(
+  turnId: Uuid,
+  index: number,
+  proposal: AgentProposal,
+): Promise<unknown> {
+  const c = await contract();
+  const cap = c.capabilities.find((k) => k.key === proposal.capability);
+  if (!cap) {
+    throw new KernelError({
+      message: "That is no longer something the app can record. Ask again.",
+    });
+  }
+  const defs = cap.fields as Array<{ key: string; param: string }>;
+  const args: Record<string, unknown> = {};
+  for (const f of proposal.fields) {
+    const def = defs.find((d) => d.key === f.key);
+    if (!def) {
+      throw new KernelError({
+        message: "The form for this has changed since it was proposed. Ask again.",
+      });
+    }
+    args[def.param] = f.value;
+  }
+  const { data, error } = await kernel().rpc(cap.fn, args);
+  if (error) {
+    // Kept as refused, then shown the way the capability said it.
+    await recordAgentOutcome(turnId, index, "refused", null, error.message).catch(
+      () => undefined,
+    );
+    throw new KernelError(error);
+  }
+  try {
+    await recordAgentOutcome(turnId, index, "done", data ?? null, null);
+  } catch (e) {
+    throw new KernelError({
+      message: `Recorded. The assistant's log could not note it: ${(e as Error).message}`,
+    });
+  }
+  return data;
+}
+
+export async function declineAgentProposal(turnId: Uuid, index: number): Promise<void> {
+  await recordAgentOutcome(turnId, index, "declined", null, null);
+}

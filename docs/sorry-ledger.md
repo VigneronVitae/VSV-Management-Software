@@ -1712,3 +1712,15 @@ which `row_fact` (`0165`) can now give, once the spacing claims are confirmed ra
 inferred; an inferred claim should not move a number the vineyard reports.
 *Load-bearing:* no for the cellar; yes for tons an acre on Southeast (`0159`), which reads low by
 the same proportion.
+
+**S-152. What the assistant reads goes to an outside provider, and the only control is per module.**
+`0170` lets somebody ask the assistant a question, and the edge function sends the provider the
+question and whatever rows it read to answer it. Row level security keeps it to what the asker
+may see, and `module.agent_reads` keeps whole modules away from it (the books start closed), but
+nothing finer exists: a note typed into a cellar record, a client's name on a custom crush lot or
+a vineyard claim's excerpt all go out if the question touches them. Nothing here is a secret
+today, and the provider is one the winemaker chose and pays, but the setting cannot say "the
+cellar, but not that". *Resolves when:* either the readables carry their own open or closed
+setting, or a winery says module-wide is the right grain and this is closed as decided.
+*Load-bearing:* no while the books are closed and the asker is the winemaker; yes the first time
+a custom crush client's records are somewhere a cellar hand asking could send them.

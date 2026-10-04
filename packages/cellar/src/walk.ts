@@ -1,4 +1,8 @@
 import {
+  type AgentAnswer,
+  type AgentPriorTurn,
+  type AgentProposal,
+  type AgentProvider,
   type AppUser,
   type Attachment,
   addBinsToPick,
@@ -17,7 +21,9 @@ import {
   addVessels,
   addVesselTypeNote,
   addVineyard,
+  agentProviders,
   appUsers,
+  askAgent,
   attachmentsFor,
   type BarrelColour,
   type BinFruit,
@@ -36,6 +42,7 @@ import {
   captionPhoto,
   claimAccount,
   colourConflicts,
+  confirmAgentProposal,
   confirmNote,
   contract,
   countSupply,
@@ -47,6 +54,7 @@ import {
   dayLog,
   dayNotes,
   declareBarrelColour,
+  declineAgentProposal,
   discardFruit,
   download,
   drawCut,
@@ -81,6 +89,7 @@ import {
   makeInvite,
   markBought,
   markPropagated,
+  mayAskAgent,
   moveBinsToPick,
   moveSupply,
   moveVessels,
@@ -424,6 +433,8 @@ async function screenFor(place: Place): Promise<HTMLElement> {
       return fermentScreen();
     case "makeup":
       return makeupScreen();
+    case "ask":
+      return askScreen();
     case "fruit":
       return fruitScreen();
     case "vineyards":
@@ -1048,6 +1059,7 @@ async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> 
     uncoloured,
     clashes,
     inFlight,
+    mayAsk,
   ] = await Promise.all([
     locations(),
     vessels(),
@@ -1060,6 +1072,9 @@ async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> 
     lotsWithoutColour(),
     colourConflicts(),
     running(),
+    // 0170. Whether to show the way in. A failure here hides one button
+    // rather than the whole home screen.
+    mayAskAgent().catch(() => false),
   ]);
   const filled = kit.filter((v) => !v.is_empty).length;
   // On the home screen on purpose. T1-4 allows a bin to exist with no weight,
@@ -1385,6 +1400,7 @@ async function homeScreen(user: AppUser, facility: Party): Promise<HTMLElement> 
     facility.name,
     lede(`${user.name}, ${user.role}. What would you like to do?`),
     button("Go anywhere", () => go({ at: "go" }), "secondary"),
+    mayAsk ? button("Ask", () => go({ at: "ask" }), "secondary") : null,
     arrangeBar,
     section("Harvest", menu(harvest, everything)),
     section("In the cellar", menu(cellar, everything)),
@@ -14137,4 +14153,234 @@ function makeupCard(l: LotMakeup): HTMLElement {
       .join(", "),
   });
   return el("article", { class: "makeup-card" }, head, bar, legend, varieties);
+}
+
+// --- ask (0170) ---------------------------------------------------------------
+//
+// "A way for an AI agent can navigate within, not server admin access like you
+// have, but more like an LLM call." A question in a sentence; an answer from
+// what this person may read; and, where something should be recorded, the
+// form for it filled in, with Confirm and Not this. Confirm is the same call
+// the form's own screen makes, so a refusal reads the way it would by hand.
+//
+// The conversation lives as long as the page does, so going to look at a
+// vessel and coming back finds it where it was. It is not kept on the phone:
+// the log of every question is in the database.
+
+type AskEntry = {
+  question: string;
+  answer: AgentAnswer | null;
+  error: string | null;
+  /** What became of each proposal, by its index. */
+  decided: Map<number, { kind: "good" | "note" | "error"; text: string }>;
+};
+
+let askEntries: AskEntry[] = [];
+let askProvider = "";
+
+function askHistory(): AgentPriorTurn[] {
+  return askEntries.flatMap((e): AgentPriorTurn[] =>
+    e.answer?.answer
+      ? [
+          { role: "user", text: e.question },
+          { role: "assistant", text: e.answer.answer },
+        ]
+      : [],
+  );
+}
+
+function askScreen(): HTMLElement {
+  const talk = el("div", { class: "ask-talk" });
+  const pick = el("select", { class: "input" });
+  const pickRoot = el(
+    "label",
+    { class: "field" },
+    el("span", { class: "field-label", text: "Ask" }),
+    pick,
+  );
+  const status = el("div", {}, empty("Finding out who is set up to answer."));
+  const box = el("textarea", {
+    class: "input ask-box",
+    rows: 3,
+    placeholder: "What is in MB01 and when was it last punched down?",
+  });
+  const draw = (): void => {
+    talk.replaceChildren(...askEntries.map((e) => askEntryView(e, draw)));
+  };
+  const send = async (): Promise<void> => {
+    const question = box.value.trim();
+    if (!question) return;
+    const history = askHistory();
+    const entry: AskEntry = { question, answer: null, error: null, decided: new Map() };
+    askEntries.push(entry);
+    box.value = "";
+    draw();
+    try {
+      entry.answer = await askAgent({
+        question,
+        provider: askProvider || null,
+        history,
+      });
+    } catch (error) {
+      entry.error = describeRefusal(error, scope);
+    }
+    draw();
+  };
+  const askButton = button("Ask", send);
+  on(box, "keydown", (ev) => {
+    // Enter sends; shift and Enter is a new line, as in any message box.
+    if (ev.key === "Enter" && !ev.shiftKey) {
+      ev.preventDefault();
+      askButton.click();
+    }
+  });
+  on(pick, "change", () => {
+    askProvider = pick.value;
+  });
+
+  const view = screen(
+    "Ask",
+    lede(
+      "Ask in a sentence. The assistant reads what you may read, and when " +
+        "something should be recorded it fills in the form for you to check. " +
+        "Nothing is recorded until you confirm it.",
+    ),
+    status,
+    talk,
+    box,
+    el(
+      "div",
+      { class: "ask-actions" },
+      askButton,
+      button(
+        "Start over",
+        () => {
+          askEntries = [];
+          draw();
+        },
+        "quiet",
+      ),
+    ),
+    button("Back", () => goBack(), "quiet"),
+  );
+  draw();
+
+  void (async () => {
+    try {
+      const { may, providers } = await agentProviders();
+      if (!may) {
+        status.replaceChildren(
+          banner(
+            "Asking the assistant is for administrators unless an administrator has allowed cellar hands.",
+            "error",
+          ),
+        );
+        box.remove();
+        askButton.disabled = true;
+        return;
+      }
+      if (providers.length === 0) {
+        status.replaceChildren(
+          banner(
+            "Nobody is set up to answer yet. The keys go on the winery computer.",
+            "note",
+          ),
+        );
+        askButton.disabled = true;
+        return;
+      }
+      if (!providers.some((p) => p.key === askProvider))
+        askProvider = providers[0]?.key ?? "";
+      pick.replaceChildren(
+        ...providers.map((p: AgentProvider) => {
+          const o = el("option", { value: p.key, text: `${p.label} (${p.model})` });
+          o.selected = p.key === askProvider;
+          return o;
+        }),
+      );
+      // One provider is not a choice.
+      status.replaceChildren(
+        providers.length > 1
+          ? pickRoot
+          : el("p", {
+              class: "field-hint",
+              text: `Answered by ${providers[0]?.label} (${providers[0]?.model}).`,
+            }),
+      );
+      box.focus();
+    } catch (error) {
+      status.replaceChildren(fail(error));
+    }
+  })();
+
+  return view;
+}
+
+function askEntryView(e: AskEntry, redraw: () => void): HTMLElement {
+  const parts: HTMLElement[] = [el("p", { class: "ask-question", text: e.question })];
+  if (!e.answer && !e.error)
+    parts.push(el("p", { class: "ask-waiting", text: "Reading." }));
+  if (e.error) parts.push(banner(e.error, "error"));
+  if (e.answer) {
+    const a = e.answer;
+    if (a.answer) parts.push(el("p", { class: "ask-answer", text: a.answer }));
+    if (a.failure) parts.push(banner(a.failure, "error"));
+    a.proposals.forEach((p, i) => {
+      parts.push(askProposalView(a.turn_id, i, p, e, redraw));
+    });
+  }
+  return el("div", { class: "ask-entry" }, ...parts);
+}
+
+function askProposalView(
+  turnId: string,
+  index: number,
+  p: AgentProposal,
+  e: AskEntry,
+  redraw: () => void,
+): HTMLElement {
+  const decided = e.decided.get(index);
+  const card = el(
+    "article",
+    { class: `ask-proposal${decided?.kind === "good" ? " ask-proposal-done" : ""}` },
+    el("p", { class: "ask-proposal-kind", text: `Proposed: ${p.label}` }),
+    el("p", { class: "ask-proposal-summary", text: p.summary }),
+    ...p.fields.map((f) => summaryRow(f.label, f.shown)),
+  );
+  if (decided) {
+    card.append(banner(decided.text, decided.kind));
+    if (decided.kind !== "error") return card;
+  }
+  card.append(
+    el(
+      "div",
+      { class: "ask-actions" },
+      button("Confirm", async () => {
+        try {
+          await confirmAgentProposal(turnId, index, p);
+          e.decided.set(index, { kind: "good", text: "Done." });
+        } catch (error) {
+          e.decided.set(index, { kind: "error", text: describeRefusal(error, scope) });
+        }
+        redraw();
+      }),
+      button(
+        "Not this",
+        async () => {
+          try {
+            await declineAgentProposal(turnId, index);
+            e.decided.set(index, { kind: "note", text: "Not done." });
+          } catch (error) {
+            e.decided.set(index, {
+              kind: "error",
+              text: describeRefusal(error, scope),
+            });
+          }
+          redraw();
+        },
+        "quiet",
+      ),
+    ),
+  );
+  return card;
 }

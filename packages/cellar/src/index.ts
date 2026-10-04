@@ -17,6 +17,7 @@
 //              supabase/migrations/0159_what_an_acre_gave.sql,
 //              supabase/migrations/0161_what_each_wine_is_made_of.sql,
 //              supabase/migrations/0163_a_bin_tipped_or_thrown_away.sql,
+//              supabase/migrations/0170_an_assistant_asks_as_you.sql,
 //             packages/core/src/index.ts]
 // Depended on by: [apps/web/src/index.ts]
 // ---------------------------------------------------------------------------

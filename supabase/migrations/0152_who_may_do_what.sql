@@ -6,7 +6,8 @@
 -- Depends on: [supabase/migrations/0002_derived_and_rls.sql,
 --              supabase/migrations/0148_reds_go_into_fermenters.sql]
 -- Depended on by: [docs/status-ledger.md, tests/schema_assertions.sql,
---                  packages/cellar/src/index.ts, scripts/smoke.ts]
+--                  packages/cellar/src/index.ts, scripts/smoke.ts,
+--                  supabase/migrations/0170_an_assistant_asks_as_you.sql]
 -- Axioms enforced: A13. A refusal says what was refused and who can change
 --                  it, instead of "new row violates row-level security policy".
 -- Open sorries: none new. S-145 is discharged.
